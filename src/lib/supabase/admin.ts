@@ -1,10 +1,11 @@
 import { createClient } from "@supabase/supabase-js";
 
-import { env, getServiceRoleKey } from "@/lib/env";
+import { getServiceRoleKey, getSupabaseUrl } from "@/lib/env";
 
 export function createAdminClient() {
+  // ONLY use this in webhooks and server-side admin operations
   return createClient(
-    env.NEXT_PUBLIC_SUPABASE_URL,
+    getSupabaseUrl(),
     getServiceRoleKey(),
     {
       auth: {

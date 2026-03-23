@@ -1,9 +1,20 @@
 import type { Metadata } from "next";
+import { Inter } from "next/font/google";
+
+import { FooterGate } from "@/components/layout/footer-gate";
+import { Navbar } from "@/components/layout/navbar";
+import { Toaster } from "@/components/ui/sonner";
 import "./globals.css";
 
+const inter = Inter({
+  subsets: ["latin"],
+  display: "swap",
+});
+
 export const metadata: Metadata = {
-  title: "P2P Rental Marketplace",
-  description: "Peer-to-peer rental marketplace",
+  title: "RentHub - P2P Rental Marketplace",
+  description:
+    "RentHub is a peer-to-peer rental marketplace for listing, booking, inventory, payments, and trust.",
 };
 
 export default function RootLayout({
@@ -12,9 +23,14 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en" className="h-full antialiased">
-      <body className="min-h-full bg-background font-sans text-foreground">
-        {children}
+    <html lang="en" className="h-full">
+      <body className={`${inter.className} min-h-full bg-background text-foreground`}>
+        <div className="flex min-h-screen flex-col">
+          <Navbar />
+          <div className="flex-1">{children}</div>
+          <FooterGate />
+        </div>
+        <Toaster />
       </body>
     </html>
   );

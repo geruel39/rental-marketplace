@@ -1,33 +1,42 @@
 import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
 
-import { env } from "@/lib/env";
-
-const protectedRoutes = ["/dashboard", "/listings/new", "/settings"];
+const protectedRoutes = ["/dashboard", "/listings/new"];
 const authRoutes = ["/login", "/register"];
 
-function isProtectedRoute(pathname: string) {
-  return protectedRoutes.some(
+function matchesRoute(pathname: string, routes: string[]) {
+  return routes.some(
     (route) => pathname === route || pathname.startsWith(`${route}/`),
   );
 }
 
-function isAuthRoute(pathname: string) {
-  return authRoutes.some(
-    (route) => pathname === route || pathname.startsWith(`${route}/`),
-  );
-}
-
-export async function proxy(request: NextRequest) {
+export async function middleware(request: NextRequest) {
   const response = NextResponse.next({
     request: {
       headers: request.headers,
     },
   });
 
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+
+  if (!supabaseUrl || !supabaseAnonKey) {
+    return response;
+  }
+
+  function setCookie(name: string, value: string, options?: Record<string, unknown>) {
+    request.cookies.set(name, value);
+    response.cookies.set(name, value, options);
+  }
+
+  function removeCookie(name: string, options?: Record<string, unknown>) {
+    request.cookies.set(name, "");
+    response.cookies.set(name, "", { ...options, maxAge: 0 });
+  }
+
   const supabase = createServerClient(
-    env.NEXT_PUBLIC_SUPABASE_URL,
-    env.NEXT_PUBLIC_SUPABASE_ANON_KEY,
+    supabaseUrl,
+    supabaseAnonKey,
     {
       cookies: {
         getAll() {
@@ -35,8 +44,12 @@ export async function proxy(request: NextRequest) {
         },
         setAll(cookiesToSet) {
           cookiesToSet.forEach(({ name, value, options }) => {
-            request.cookies.set(name, value);
-            response.cookies.set(name, value, options);
+            if (options?.maxAge === 0) {
+              removeCookie(name, options);
+              return;
+            }
+
+            setCookie(name, value, options);
           });
         },
       },
@@ -49,14 +62,14 @@ export async function proxy(request: NextRequest) {
 
   const { pathname } = request.nextUrl;
 
-  if (!user && isProtectedRoute(pathname)) {
+  if (!user && matchesRoute(pathname, protectedRoutes)) {
     const redirectUrl = request.nextUrl.clone();
     redirectUrl.pathname = "/login";
     redirectUrl.searchParams.set("redirectedFrom", pathname);
     return NextResponse.redirect(redirectUrl);
   }
 
-  if (user && isAuthRoute(pathname)) {
+  if (user && matchesRoute(pathname, authRoutes)) {
     const redirectUrl = request.nextUrl.clone();
     redirectUrl.pathname = "/dashboard";
     redirectUrl.searchParams.delete("redirectedFrom");
@@ -68,6 +81,6 @@ export async function proxy(request: NextRequest) {
 
 export const config = {
   matcher: [
-    "/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)",
+    "/((?!_next/static|_next/image|favicon.ico|api/webhooks(?:/.*)?$).*)",
   ],
 };
