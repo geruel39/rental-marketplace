@@ -27,6 +27,14 @@ async function parsePayload(request: Request) {
   );
 }
 
+export async function GET() {
+  return NextResponse.json({ success: true }, { status: 200 });
+}
+
+export async function HEAD() {
+  return new NextResponse(null, { status: 200 });
+}
+
 export async function POST(request: Request) {
   try {
     const payload = await parsePayload(request);
