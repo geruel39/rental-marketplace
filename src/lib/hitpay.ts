@@ -147,23 +147,23 @@ export async function getPaymentStatus(
 }
 
 export function verifyWebhookSignature(
-  payload: Record<string, string>,
+  payload: Record<string, string> | string,
   signature: string,
 ) {
   if (!env.HITPAY_WEBHOOK_SALT || !signature) {
     return false;
   }
 
-  const payloadWithoutHmac = { ...payload };
-  delete payloadWithoutHmac.hmac;
-
-  const sortedPayload = Object.keys(payloadWithoutHmac)
-    .sort((a, b) => a.localeCompare(b))
-    .map((key) => `${key}${payloadWithoutHmac[key]}`)
-    .join("");
-
   const generated = createHmac("sha256", env.HITPAY_WEBHOOK_SALT)
-    .update(sortedPayload)
+    .update(
+      typeof payload === "string"
+        ? payload
+        : Object.keys({ ...payload, hmac: undefined as unknown as string })
+            .filter((key) => key !== "hmac")
+            .sort((a, b) => a.localeCompare(b))
+            .map((key) => `${key}${payload[key]}`)
+            .join(""),
+    )
     .digest("hex");
 
   const generatedBuffer = Buffer.from(generated, "hex");

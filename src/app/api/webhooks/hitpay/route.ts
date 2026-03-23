@@ -11,20 +11,34 @@ interface WebhookBookingRecord {
   listing: { title: string } | Array<{ title: string }> | null;
 }
 
-async function parsePayload(request: Request) {
-  const contentType = request.headers.get("content-type") ?? "";
+function normalizeEventPayload(payload: Record<string, unknown>) {
+  const event = typeof payload.event === "string" ? payload.event : "";
+  const data =
+    payload.data && typeof payload.data === "object"
+      ? (payload.data as Record<string, unknown>)
+      : payload;
 
-  if (contentType.includes("application/json")) {
-    const json = (await request.json()) as Record<string, unknown>;
-    return Object.fromEntries(
-      Object.entries(json).map(([key, value]) => [key, String(value ?? "")]),
-    );
-  }
-
-  const formData = await request.formData();
-  return Object.fromEntries(
-    Array.from(formData.entries()).map(([key, value]) => [key, String(value)]),
-  );
+  return {
+    event,
+    bookingId:
+      typeof data.reference_number === "string"
+        ? data.reference_number
+        : typeof payload.reference_number === "string"
+          ? payload.reference_number
+          : "",
+    paymentId:
+      typeof data.payment_id === "string"
+        ? data.payment_id
+        : typeof payload.payment_id === "string"
+          ? payload.payment_id
+          : "",
+    status:
+      typeof data.status === "string"
+        ? data.status
+        : typeof payload.status === "string"
+          ? payload.status
+          : "",
+  };
 }
 
 export async function GET() {
@@ -37,16 +51,47 @@ export async function HEAD() {
 
 export async function POST(request: Request) {
   try {
-    const payload = await parsePayload(request);
-    const signature = payload.hmac ?? "";
+    const signature =
+      request.headers.get("Hitpay-Signature") ??
+      request.headers.get("x-hitpay-signature") ??
+      "";
+    const contentType = request.headers.get("content-type") ?? "";
+    const rawBody = await request.text();
+    let payload: Record<string, string> = {};
 
-    if (!verifyWebhookSignature(payload, signature)) {
+    if (contentType.includes("application/json")) {
+      const json = rawBody
+        ? (JSON.parse(rawBody) as Record<string, unknown>)
+        : {};
+      payload = Object.fromEntries(
+        Object.entries(json).map(([key, value]) => [key, String(value ?? "")]),
+      );
+    } else {
+      const formData = new URLSearchParams(rawBody);
+      payload = Object.fromEntries(formData.entries());
+    }
+
+    const fallbackSignature = payload.hmac ?? "";
+    const isValidSignature =
+      verifyWebhookSignature(rawBody, signature) ||
+      verifyWebhookSignature(payload, fallbackSignature);
+
+    if (!isValidSignature) {
       return NextResponse.json({ error: "Invalid signature" }, { status: 401 });
     }
 
-    if (payload.status === "completed") {
+    const jsonPayload = contentType.includes("application/json") && rawBody
+      ? (JSON.parse(rawBody) as Record<string, unknown>)
+      : {};
+    const normalized = normalizeEventPayload(jsonPayload);
+    const isCompletedEvent =
+      normalized.event === "payment_request.completed" ||
+      normalized.status === "completed" ||
+      normalized.status === "succeeded";
+
+    if (isCompletedEvent && normalized.bookingId) {
       const admin = createAdminClient();
-      const bookingId = payload.reference_number;
+      const bookingId = normalized.bookingId;
 
       const { data: booking, error: bookingError } = await admin
         .from("bookings")
@@ -80,7 +125,7 @@ export async function POST(request: Request) {
       const { error: updateError } = await admin
         .from("bookings")
         .update({
-          hitpay_payment_id: payload.payment_id,
+          hitpay_payment_id: normalized.paymentId || null,
           hitpay_payment_status: "completed",
           paid_at: new Date().toISOString(),
           status: "active",
