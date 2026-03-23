@@ -31,15 +31,17 @@ interface PaymentBookingRecord {
   hitpay_payment_status?: string | null;
 }
 
-async function markBookingPaid(booking: PaymentBookingRecord) {
+async function markBookingPaid(
+  booking: PaymentBookingRecord,
+): Promise<{ error?: string }> {
   if (!booking.renter_id || !booking.lister_id || !booking.listing_id) {
-    return { error: "Booking is missing ownership details" } as const;
+    return { error: "Booking is missing ownership details" };
   }
 
   const listing = Array.isArray(booking.listing) ? booking.listing[0] : booking.listing;
 
   if (!listing?.title) {
-    return { error: "Booking is missing listing details" } as const;
+    return { error: "Booking is missing listing details" };
   }
 
   const admin = createAdminClient();
@@ -54,7 +56,7 @@ async function markBookingPaid(booking: PaymentBookingRecord) {
     .neq("hitpay_payment_status", "completed");
 
   if (updateError) {
-    return { error: updateError.message } as const;
+    return { error: updateError.message };
   }
 
   await admin.from("notifications").insert([
@@ -80,7 +82,7 @@ async function markBookingPaid(booking: PaymentBookingRecord) {
     },
   ]);
 
-  return { success: true } as const;
+  return {};
 }
 
 export async function createPaymentForBooking(
@@ -183,8 +185,8 @@ export async function checkPaymentStatus(
 
     if (payment.status === "completed") {
       const result = await markBookingPaid(booking);
-      if ("error" in result) {
-        return result;
+      if (result.error) {
+        return { error: result.error };
       }
     }
 
