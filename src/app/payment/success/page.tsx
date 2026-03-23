@@ -28,7 +28,7 @@ export default async function PaymentSuccessPage({
   if (bookingId && booking && booking.hitpay_payment_status !== "completed") {
     const paymentStatus = await checkPaymentStatus(bookingId);
 
-    if (paymentStatus.status === "completed") {
+    if ("status" in paymentStatus && paymentStatus.status === "completed") {
       booking = await getBookingDetails(bookingId);
     }
   }
