@@ -2,6 +2,7 @@ import Link from "next/link";
 import { CheckCircle2, Loader2 } from "lucide-react";
 
 import { getBookingDetails } from "@/actions/bookings";
+import { checkPaymentStatus } from "@/actions/hitpay";
 import { PaymentStatusPoller } from "@/components/payments/payment-status-poller";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -22,7 +23,16 @@ export default async function PaymentSuccessPage({
 }: PaymentSuccessPageProps) {
   const resolvedSearchParams = await searchParams;
   const bookingId = getSingleValue(resolvedSearchParams.booking);
-  const booking = bookingId ? await getBookingDetails(bookingId) : null;
+  let booking = bookingId ? await getBookingDetails(bookingId) : null;
+
+  if (bookingId && booking && booking.hitpay_payment_status !== "completed") {
+    const paymentStatus = await checkPaymentStatus(bookingId);
+
+    if (paymentStatus.status === "completed") {
+      booking = await getBookingDetails(bookingId);
+    }
+  }
+
   const isPaid = booking?.hitpay_payment_status === "completed";
 
   return (

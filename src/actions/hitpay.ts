@@ -2,6 +2,7 @@
 
 import { getAppUrl } from "@/lib/env";
 import { createPaymentRequest, getPaymentStatus } from "@/lib/hitpay";
+import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
 
 interface PaymentBookingRecord {
@@ -23,6 +24,63 @@ interface PaymentBookingRecord {
     | { title: string }
     | Array<{ title: string }>
     | null;
+  renter_id?: string;
+  lister_id?: string;
+  listing_id?: string;
+  hitpay_payment_request_id?: string | null;
+  hitpay_payment_status?: string | null;
+}
+
+async function markBookingPaid(booking: PaymentBookingRecord) {
+  if (!booking.renter_id || !booking.lister_id || !booking.listing_id) {
+    return { error: "Booking is missing ownership details" } as const;
+  }
+
+  const listing = Array.isArray(booking.listing) ? booking.listing[0] : booking.listing;
+
+  if (!listing?.title) {
+    return { error: "Booking is missing listing details" } as const;
+  }
+
+  const admin = createAdminClient();
+  const { error: updateError } = await admin
+    .from("bookings")
+    .update({
+      hitpay_payment_status: "completed",
+      paid_at: new Date().toISOString(),
+      status: "active",
+    })
+    .eq("id", booking.id)
+    .neq("hitpay_payment_status", "completed");
+
+  if (updateError) {
+    return { error: updateError.message } as const;
+  }
+
+  await admin.from("notifications").insert([
+    {
+      user_id: booking.lister_id,
+      type: "payment_received",
+      title: `Payment received for ${listing.title}`,
+      booking_id: booking.id,
+      listing_id: booking.listing_id,
+      from_user_id: booking.renter_id,
+      body: "The renter has completed payment.",
+      action_url: "/dashboard/requests?status=active",
+    },
+    {
+      user_id: booking.renter_id,
+      type: "payment_confirmed",
+      title: "Payment confirmed",
+      booking_id: booking.id,
+      listing_id: booking.listing_id,
+      from_user_id: booking.lister_id,
+      body: `Your payment for ${listing.title} has been confirmed.`,
+      action_url: "/dashboard/my-rentals?status=active",
+    },
+  ]);
+
+  return { success: true } as const;
 }
 
 export async function createPaymentForBooking(
@@ -98,15 +156,38 @@ export async function checkPaymentStatus(
     const supabase = await createClient();
     const { data: booking, error } = await supabase
       .from("bookings")
-      .select("hitpay_payment_request_id")
+      .select(
+        `
+          id,
+          renter_id,
+          lister_id,
+          listing_id,
+          hitpay_payment_request_id,
+          hitpay_payment_status,
+          renter:profiles!bookings_renter_id_fkey(email, display_name, full_name),
+          listing:listings!bookings_listing_id_fkey(title)
+        `,
+      )
       .eq("id", bookingId)
-      .maybeSingle<{ hitpay_payment_request_id: string | null }>();
+      .maybeSingle<PaymentBookingRecord>();
 
     if (error || !booking?.hitpay_payment_request_id) {
       return { error: "Payment request not found" };
     }
 
+    if (booking.hitpay_payment_status === "completed") {
+      return { status: "completed" };
+    }
+
     const payment = await getPaymentStatus(booking.hitpay_payment_request_id);
+
+    if (payment.status === "completed") {
+      const result = await markBookingPaid(booking);
+      if ("error" in result) {
+        return result;
+      }
+    }
+
     return { status: payment.status };
   } catch (error) {
     return {
