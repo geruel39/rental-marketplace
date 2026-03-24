@@ -118,8 +118,7 @@ export async function POST(request: Request) {
             id,
             renter_id,
             lister_id,
-            listing_id,
-            listing:listings!bookings_listing_id_fkey(title)
+            listing_id
           `,
         )
         .eq("id", bookingId)
@@ -128,18 +127,6 @@ export async function POST(request: Request) {
       if (bookingError || !booking) {
         console.log("[WEBHOOK] Booking not found or error:", bookingError?.message);
         return NextResponse.json({ error: "Booking not found" }, { status: 404 });
-      }
-
-      const listing = Array.isArray(booking.listing)
-        ? booking.listing[0]
-        : booking.listing;
-
-      if (!listing?.title) {
-        console.log("[WEBHOOK] Booking missing listing details");
-        return NextResponse.json(
-          { error: "Booking is missing listing details" },
-          { status: 400 },
-        );
       }
 
       console.log("[WEBHOOK] Updating booking status to completed");
@@ -165,7 +152,7 @@ export async function POST(request: Request) {
         {
           user_id: booking.lister_id,
           type: "payment_received",
-          title: `Payment received for ${listing.title}`,
+          title: `Payment received`,
           booking_id: bookingId,
           listing_id: booking.listing_id,
           from_user_id: booking.renter_id,
@@ -179,7 +166,7 @@ export async function POST(request: Request) {
           booking_id: bookingId,
           listing_id: booking.listing_id,
           from_user_id: booking.lister_id,
-          body: `Your payment for ${listing.title} has been confirmed.`,
+          body: `Your payment has been confirmed.`,
           action_url: "/dashboard/my-rentals?status=active",
         },
       ]);
