@@ -34,13 +34,17 @@ interface PaymentBookingRecord {
 async function markBookingPaid(
   booking: PaymentBookingRecord,
 ): Promise<{ error?: string }> {
+  console.log("[MARK_PAID] Marking booking as paid:", booking.id);
+
   if (!booking.renter_id || !booking.lister_id || !booking.listing_id) {
+    console.log("[MARK_PAID] Missing ownership details");
     return { error: "Booking is missing ownership details" };
   }
 
   const listing = Array.isArray(booking.listing) ? booking.listing[0] : booking.listing;
 
   if (!listing?.title) {
+    console.log("[MARK_PAID] Missing listing details");
     return { error: "Booking is missing listing details" };
   }
 
@@ -56,8 +60,11 @@ async function markBookingPaid(
     .neq("hitpay_payment_status", "completed");
 
   if (updateError) {
+    console.log("[MARK_PAID] Update error:", updateError.message);
     return { error: updateError.message };
   }
+
+  console.log("[MARK_PAID] Booking updated, sending notifications");
 
   await admin.from("notifications").insert([
     {
@@ -82,6 +89,7 @@ async function markBookingPaid(
     },
   ]);
 
+  console.log("[MARK_PAID] Notifications sent");
   return {};
 }
 
@@ -154,6 +162,8 @@ export async function createPaymentForBooking(
 export async function checkPaymentStatus(
   bookingId: string,
 ): Promise<{ status: string } | { error: string }> {
+  console.log("[PAYMENT_STATUS] Checking status for booking:", bookingId);
+
   try {
     const supabase = await createClient();
     const { data: booking, error } = await supabase
@@ -174,24 +184,35 @@ export async function checkPaymentStatus(
       .maybeSingle<PaymentBookingRecord>();
 
     if (error || !booking?.hitpay_payment_request_id) {
+      console.log("[PAYMENT_STATUS] Booking not found or no payment request ID:", error?.message);
       return { error: "Payment request not found" };
     }
 
+    console.log("[PAYMENT_STATUS] Current DB status:", booking.hitpay_payment_status);
+
     if (booking.hitpay_payment_status === "completed") {
+      console.log("[PAYMENT_STATUS] Already completed in DB");
       return { status: "completed" };
     }
 
+    console.log("[PAYMENT_STATUS] Fetching status from HitPay API for request:", booking.hitpay_payment_request_id);
+
     const payment = await getPaymentStatus(booking.hitpay_payment_request_id);
 
+    console.log("[PAYMENT_STATUS] HitPay API status:", payment.status);
+
     if (payment.status === "completed") {
+      console.log("[PAYMENT_STATUS] Marking booking as paid");
       const result = await markBookingPaid(booking);
       if (result.error) {
+        console.log("[PAYMENT_STATUS] Error marking as paid:", result.error);
         return { error: result.error };
       }
     }
 
     return { status: payment.status };
   } catch (error) {
+    console.error("[PAYMENT_STATUS] Error checking payment status:", error);
     return {
       error: error instanceof Error ? error.message : "Failed to check payment status",
     };

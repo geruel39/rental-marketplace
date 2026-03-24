@@ -115,6 +115,8 @@ export async function createPaymentRequest(params: {
 export async function getPaymentStatus(
   paymentRequestId: string,
 ): Promise<{ status: string; payments: Record<string, unknown>[] }> {
+  console.log("[HITPAY_API] Fetching payment status for request:", paymentRequestId);
+
   if (!env.HITPAY_API_KEY) {
     throw new Error("Missing required environment variable: HITPAY_API_KEY");
   }
@@ -131,12 +133,16 @@ export async function getPaymentStatus(
     },
   );
 
+  console.log("[HITPAY_API] API response status:", response.status);
+
   if (!response.ok) {
     const errorText = await response.text();
+    console.error("[HITPAY_API] API error:", errorText);
     throw new Error(errorText || "Failed to fetch HitPay payment status");
   }
 
   const data = (await response.json()) as Record<string, unknown>;
+  console.log("[HITPAY_API] API response data status:", data.status);
 
   return {
     status: typeof data.status === "string" ? data.status : "unknown",

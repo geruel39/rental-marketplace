@@ -23,17 +23,25 @@ export default async function PaymentSuccessPage({
 }: PaymentSuccessPageProps) {
   const resolvedSearchParams = await searchParams;
   const bookingId = getSingleValue(resolvedSearchParams.booking);
+  console.log("[SUCCESS_PAGE] Loaded with bookingId:", bookingId);
+
   let booking = bookingId ? await getBookingDetails(bookingId) : null;
+  console.log("[SUCCESS_PAGE] Initial booking status:", booking?.hitpay_payment_status);
 
   if (bookingId && booking && booking.hitpay_payment_status !== "completed") {
+    console.log("[SUCCESS_PAGE] Checking payment status via API");
     const paymentStatus = await checkPaymentStatus(bookingId);
 
     if ("status" in paymentStatus && paymentStatus.status === "completed") {
+      console.log("[SUCCESS_PAGE] Refetching booking after API check");
       booking = await getBookingDetails(bookingId);
+    } else {
+      console.log("[SUCCESS_PAGE] API check result:", paymentStatus);
     }
   }
 
   const isPaid = booking?.hitpay_payment_status === "completed";
+  console.log("[SUCCESS_PAGE] Final isPaid:", isPaid);
 
   return (
     <main className="mx-auto flex min-h-[70vh] max-w-3xl items-center px-4 py-12 sm:px-6 lg:px-8">

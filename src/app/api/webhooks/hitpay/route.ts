@@ -50,6 +50,8 @@ export async function HEAD() {
 }
 
 export async function POST(request: Request) {
+  console.log("[WEBHOOK] Received POST request");
+
   try {
     const signature =
       request.headers.get("Hitpay-Signature") ??
@@ -59,6 +61,10 @@ export async function POST(request: Request) {
     const rawBody = await request.text();
     let payload: Record<string, string> = {};
 
+    console.log("[WEBHOOK] Signature header:", signature ? "present" : "missing");
+    console.log("[WEBHOOK] Content-Type:", contentType);
+    console.log("[WEBHOOK] Raw body length:", rawBody.length);
+
     if (contentType.includes("application/json")) {
       const json = rawBody
         ? (JSON.parse(rawBody) as Record<string, unknown>)
@@ -66,9 +72,11 @@ export async function POST(request: Request) {
       payload = Object.fromEntries(
         Object.entries(json).map(([key, value]) => [key, String(value ?? "")]),
       );
+      console.log("[WEBHOOK] Parsed JSON payload keys:", Object.keys(json));
     } else {
       const formData = new URLSearchParams(rawBody);
       payload = Object.fromEntries(formData.entries());
+      console.log("[WEBHOOK] Parsed form payload keys:", Object.keys(payload));
     }
 
     const fallbackSignature = payload.hmac ?? "";
@@ -76,7 +84,10 @@ export async function POST(request: Request) {
       verifyWebhookSignature(rawBody, signature) ||
       verifyWebhookSignature(payload, fallbackSignature);
 
+    console.log("[WEBHOOK] Signature validation:", isValidSignature ? "valid" : "invalid");
+
     if (!isValidSignature) {
+      console.log("[WEBHOOK] Invalid signature, returning 401");
       return NextResponse.json({ error: "Invalid signature" }, { status: 401 });
     }
 
@@ -89,7 +100,14 @@ export async function POST(request: Request) {
       normalized.status === "completed" ||
       normalized.status === "succeeded";
 
+    console.log("[WEBHOOK] Normalized event:", normalized.event);
+    console.log("[WEBHOOK] Normalized status:", normalized.status);
+    console.log("[WEBHOOK] Normalized bookingId:", normalized.bookingId);
+    console.log("[WEBHOOK] Is completed event:", isCompletedEvent);
+
     if (isCompletedEvent && normalized.bookingId) {
+      console.log("[WEBHOOK] Processing completed payment for booking:", normalized.bookingId);
+
       const admin = createAdminClient();
       const bookingId = normalized.bookingId;
 
@@ -108,6 +126,7 @@ export async function POST(request: Request) {
         .maybeSingle<WebhookBookingRecord>();
 
       if (bookingError || !booking) {
+        console.log("[WEBHOOK] Booking not found or error:", bookingError?.message);
         return NextResponse.json({ error: "Booking not found" }, { status: 404 });
       }
 
@@ -116,11 +135,14 @@ export async function POST(request: Request) {
         : booking.listing;
 
       if (!listing?.title) {
+        console.log("[WEBHOOK] Booking missing listing details");
         return NextResponse.json(
           { error: "Booking is missing listing details" },
           { status: 400 },
         );
       }
+
+      console.log("[WEBHOOK] Updating booking status to completed");
 
       const { error: updateError } = await admin
         .from("bookings")
@@ -133,8 +155,11 @@ export async function POST(request: Request) {
         .eq("id", bookingId);
 
       if (updateError) {
+        console.log("[WEBHOOK] Error updating booking:", updateError.message);
         return NextResponse.json({ error: updateError.message }, { status: 500 });
       }
+
+      console.log("[WEBHOOK] Sending notifications");
 
       await admin.from("notifications").insert([
         {
@@ -158,10 +183,15 @@ export async function POST(request: Request) {
           action_url: "/dashboard/my-rentals?status=active",
         },
       ]);
+
+      console.log("[WEBHOOK] Webhook processing completed successfully");
+    } else {
+      console.log("[WEBHOOK] Skipping processing: not a completed event or no bookingId");
     }
 
     return NextResponse.json({ success: true }, { status: 200 });
   } catch (error) {
+    console.error("[WEBHOOK] Error processing webhook:", error);
     return NextResponse.json(
       {
         error: error instanceof Error ? error.message : "Webhook processing failed",
