@@ -157,25 +157,56 @@ export function verifyWebhookSignature(
   signature: string,
 ) {
   if (!env.HITPAY_WEBHOOK_SALT || !signature) {
+    console.log("[SIGNATURE] Missing salt or signature:", {
+      hasSalt: !!env.HITPAY_WEBHOOK_SALT,
+      hasSignature: !!signature,
+    });
     return false;
   }
 
+  // Handle different signature formats
+  let signatureBuffer: Buffer;
+  try {
+    // Try hex format first (most common)
+    if (signature.length === 64) {
+      signatureBuffer = Buffer.from(signature, "hex");
+    } else if (signature.length === 44 && signature.includes("=")) {
+      // Base64 format
+      signatureBuffer = Buffer.from(signature, "base64");
+    } else {
+      // Try as hex anyway
+      signatureBuffer = Buffer.from(signature, "hex");
+    }
+  } catch (e) {
+    console.log("[SIGNATURE] Failed to parse signature:", signature.substring(0, 20));
+    return false;
+  }
+
+  let payloadToVerify: string;
+  if (typeof payload === "string") {
+    payloadToVerify = payload;
+  } else {
+    // For object payloads, sort keys and create string
+    const sortedKeys = Object.keys({ ...payload, hmac: undefined as unknown as string })
+      .filter((key) => key !== "hmac")
+      .sort((a, b) => a.localeCompare(b));
+    payloadToVerify = sortedKeys.map((key) => `${key}${payload[key]}`).join("");
+  }
+
+  console.log("[SIGNATURE] Payload length:", payloadToVerify.length);
+  console.log("[SIGNATURE] Signature length:", signatureBuffer.length);
+
   const generated = createHmac("sha256", env.HITPAY_WEBHOOK_SALT)
-    .update(
-      typeof payload === "string"
-        ? payload
-        : Object.keys({ ...payload, hmac: undefined as unknown as string })
-            .filter((key) => key !== "hmac")
-            .sort((a, b) => a.localeCompare(b))
-            .map((key) => `${key}${payload[key]}`)
-            .join(""),
-    )
+    .update(payloadToVerify)
     .digest("hex");
 
   const generatedBuffer = Buffer.from(generated, "hex");
-  const signatureBuffer = Buffer.from(signature, "hex");
 
   if (generatedBuffer.length !== signatureBuffer.length) {
+    console.log("[SIGNATURE] Length mismatch:", {
+      generated: generatedBuffer.length,
+      received: signatureBuffer.length,
+    });
     return false;
   }
 

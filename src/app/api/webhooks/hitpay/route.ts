@@ -12,36 +12,78 @@ interface WebhookBookingRecord {
 }
 
 function normalizeEventPayload(payload: Record<string, unknown>) {
-  const event = typeof payload.event === "string" ? payload.event : "";
-  const data =
-    payload.data && typeof payload.data === "object"
-      ? (payload.data as Record<string, unknown>)
-      : payload;
+  // Log the raw payload structure for debugging
+  console.log("[WEBHOOK] Raw payload structure:", JSON.stringify(payload, null, 2));
 
-  return {
-    event,
-    bookingId:
-      typeof data.reference_number === "string"
-        ? data.reference_number
-        : typeof payload.reference_number === "string"
-          ? payload.reference_number
-          : "",
-    paymentId:
-      typeof data.payment_id === "string"
-        ? data.payment_id
-        : typeof payload.payment_id === "string"
-          ? payload.payment_id
-          : "",
-    status:
-      typeof data.status === "string"
-        ? data.status
-        : typeof payload.status === "string"
-          ? payload.status
-          : "",
-  };
+  // HitPay may send different event formats - check various possibilities
+  const eventKeys = ["event", "type", "event_type", "eventType"];
+  let event = "";
+  for (const key of eventKeys) {
+    if (payload[key] && typeof payload[key] === "string") {
+      event = payload[key] as string;
+      console.log(`[WEBHOOK] Found event in key '${key}':`, event);
+      break;
+    }
+  }
+
+  // The data object may contain the actual payment details
+  const data = payload.data && typeof payload.data === "object"
+    ? (payload.data as Record<string, unknown>)
+    : payload;
+
+  // Check various status keys that HitPay might use
+  const statusKeys = ["status", "payment_status", "state"];
+  let status = "";
+  for (const key of statusKeys) {
+    if (data[key] && typeof data[key] === "string") {
+      status = data[key] as string;
+      console.log(`[WEBHOOK] Found status in key '${key}':`, status);
+      break;
+    }
+  }
+
+  // Reference number may be in different places
+  const refKeys = ["reference_number", "reference", "booking_id", "order_id"];
+  let bookingId = "";
+  for (const key of refKeys) {
+    if (data[key] && typeof data[key] === "string") {
+      bookingId = data[key] as string;
+      console.log(`[WEBHOOK] Found bookingId in key '${key}':`, bookingId);
+      break;
+    }
+  }
+
+  // Payment ID may be in different locations
+  const paymentIdKeys = ["payment_id", "paymentId", "id", "transaction_id"];
+  let paymentId = "";
+  for (const key of paymentIdKeys) {
+    if (data[key] && typeof data[key] === "string") {
+      paymentId = data[key] as string;
+      console.log(`[WEBHOOK] Found paymentId in key '${key}':`, paymentId);
+      break;
+    }
+  }
+
+  return { event, bookingId, paymentId, status };
 }
 
-export async function GET() {
+export async function GET(request: Request) {
+  const { searchParams } = new URL(request.url);
+  const debug = searchParams.get("debug");
+  
+  if (debug === "1") {
+    // Return diagnostic information
+    return NextResponse.json({
+      status: "Webhook endpoint is active",
+      timestamp: new Date().toISOString(),
+      hints: {
+        testWith: "Send a POST request with valid HitPay signature",
+        signatureHeaders: ["Hitpay-Signature", "x-hitpay-signature"],
+        expectedEventTypes: ["payment_request.completed", "completed", "paid"],
+      },
+    });
+  }
+  
   return NextResponse.json({ success: true }, { status: 200 });
 }
 
@@ -80,14 +122,21 @@ export async function POST(request: Request) {
     }
 
     const fallbackSignature = payload.hmac ?? "";
-    const isValidSignature =
-      verifyWebhookSignature(rawBody, signature) ||
-      verifyWebhookSignature(payload, fallbackSignature);
+    
+    // Log signature verification details
+    console.log("[WEBHOOK] Signature header present:", !!signature);
+    console.log("[WEBHOOK] Fallback hmac present:", !!fallbackSignature);
+    
+    const headerValid = signature ? verifyWebhookSignature(rawBody, signature) : false;
+    const fallbackValid = fallbackSignature ? verifyWebhookSignature(payload, fallbackSignature) : false;
+    const isValidSignature = headerValid || fallbackValid;
 
-    console.log("[WEBHOOK] Signature validation:", isValidSignature ? "valid" : "invalid");
+    console.log("[WEBHOOK] Header signature valid:", headerValid);
+    console.log("[WEBHOOK] Fallback signature valid:", fallbackValid);
 
     if (!isValidSignature) {
-      console.log("[WEBHOOK] Invalid signature, returning 401");
+      console.log("[WEBHOOK] Invalid signature - returning 401");
+      console.log("[WEBHOOK] Hint: Check HITPAY_WEBHOOK_SALT environment variable");
       return NextResponse.json({ error: "Invalid signature" }, { status: 401 });
     }
 
@@ -96,9 +145,11 @@ export async function POST(request: Request) {
       : {};
     const normalized = normalizeEventPayload(jsonPayload);
     const isCompletedEvent =
-      normalized.event === "payment_request.completed" ||
+      normalized.event?.includes("completed") ||
+      normalized.event?.includes("paid") ||
       normalized.status === "completed" ||
-      normalized.status === "succeeded";
+      normalized.status === "succeeded" ||
+      normalized.status === "paid";
 
     console.log("[WEBHOOK] Normalized event:", normalized.event);
     console.log("[WEBHOOK] Normalized status:", normalized.status);
