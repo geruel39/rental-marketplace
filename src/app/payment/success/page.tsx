@@ -26,10 +26,11 @@ export default async function PaymentSuccessPage({
   console.log("[SUCCESS_PAGE] Loaded with bookingId:", bookingId);
 
   let booking = bookingId ? await getBookingDetails(bookingId) : null;
+  console.log("[SUCCESS_PAGE] Booking fetched:", booking ? "exists" : "null");
   console.log("[SUCCESS_PAGE] Initial booking status:", booking?.hitpay_payment_status);
 
   if (bookingId && booking && booking.hitpay_payment_status !== "completed") {
-    console.log("[SUCCESS_PAGE] Checking payment status via API");
+    console.log("[SUCCESS_PAGE] About to check payment status via API");
     try {
       const paymentStatus = await checkPaymentStatus(bookingId);
       console.log("[SUCCESS_PAGE] checkPaymentStatus returned:", paymentStatus);
@@ -43,6 +44,8 @@ export default async function PaymentSuccessPage({
     } catch (error) {
       console.error("[SUCCESS_PAGE] Error in checkPaymentStatus:", error);
     }
+  } else {
+    console.log("[SUCCESS_PAGE] Skipping API check - bookingId:", !!bookingId, "booking:", !!booking, "status:", booking?.hitpay_payment_status);
   }
 
   const isPaid = booking?.hitpay_payment_status === "completed";
