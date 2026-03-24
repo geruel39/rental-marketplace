@@ -30,13 +30,18 @@ export default async function PaymentSuccessPage({
 
   if (bookingId && booking && booking.hitpay_payment_status !== "completed") {
     console.log("[SUCCESS_PAGE] Checking payment status via API");
-    const paymentStatus = await checkPaymentStatus(bookingId);
+    try {
+      const paymentStatus = await checkPaymentStatus(bookingId);
+      console.log("[SUCCESS_PAGE] checkPaymentStatus returned:", paymentStatus);
 
-    if ("status" in paymentStatus && paymentStatus.status === "completed") {
-      console.log("[SUCCESS_PAGE] Refetching booking after API check");
-      booking = await getBookingDetails(bookingId);
-    } else {
-      console.log("[SUCCESS_PAGE] API check result:", paymentStatus);
+      if ("status" in paymentStatus && paymentStatus.status === "completed") {
+        console.log("[SUCCESS_PAGE] Refetching booking after API check");
+        booking = await getBookingDetails(bookingId);
+      } else {
+        console.log("[SUCCESS_PAGE] API check result:", paymentStatus);
+      }
+    } catch (error) {
+      console.error("[SUCCESS_PAGE] Error in checkPaymentStatus:", error);
     }
   }
 
