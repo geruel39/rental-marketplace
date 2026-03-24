@@ -147,6 +147,7 @@ export async function POST(request: Request) {
     const contentType = request.headers.get("content-type") ?? "";
     const rawBody = await request.text();
     let payload: Record<string, string> = {};
+    let jsonPayload: Record<string, unknown> = {};
 
     console.log("[WEBHOOK] Signature header:", signature ? "present" : "missing");
     console.log("[WEBHOOK] Content-Type:", contentType);
@@ -156,6 +157,7 @@ export async function POST(request: Request) {
       const json = rawBody
         ? (JSON.parse(rawBody) as Record<string, unknown>)
         : {};
+      jsonPayload = json;
       payload = Object.fromEntries(
         Object.entries(json).map(([key, value]) => [key, String(value ?? "")]),
       );
@@ -174,7 +176,7 @@ export async function POST(request: Request) {
     
     const headerSignatureValid = verifyWebhookSignature(rawBody, signature);
     const fallbackSignatureValid = fallbackSignature
-      ? verifyWebhookSignature(rawBody, fallbackSignature)
+      ? verifyWebhookSignature(payload, fallbackSignature)
       : false;
     const isValidSignature = headerSignatureValid || fallbackSignatureValid;
 
@@ -187,10 +189,10 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "Invalid signature" }, { status: 401 });
     }
 
-    const jsonPayload = contentType.includes("application/json") && rawBody
-      ? (JSON.parse(rawBody) as Record<string, unknown>)
-      : {};
-    const normalized = normalizeEventPayload(jsonPayload);
+    const normalizedPayload = contentType.includes("application/json")
+      ? jsonPayload
+      : (payload as Record<string, unknown>);
+    const normalized = normalizeEventPayload(normalizedPayload);
     const isCompletedEvent =
       normalized.event?.includes("completed") ||
       normalized.event?.includes("paid") ||
