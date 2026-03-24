@@ -142,10 +142,25 @@ export async function getPaymentStatus(
   }
 
   const data = (await response.json()) as Record<string, unknown>;
+  
+  // Log the full response for debugging
+  console.log("[HITPAY_API] Full API response:", JSON.stringify(data, null, 2));
   console.log("[HITPAY_API] API response data status:", data.status);
+  console.log("[HITPAY_API] API response data keys:", Object.keys(data));
+  
+  // Check for alternative status fields that HitPay might use
+  const altStatusFields = ["status", "payment_status", "state", "payment_state"];
+  let foundStatus = "unknown";
+  for (const field of altStatusFields) {
+    if (data[field] && typeof data[field] === "string") {
+      console.log(`[HITPAY_API] Found status in field '${field}':`, data[field]);
+      foundStatus = data[field] as string;
+      break;
+    }
+  }
 
   return {
-    status: typeof data.status === "string" ? data.status : "unknown",
+    status: foundStatus,
     payments: Array.isArray(data.payments)
       ? (data.payments as Record<string, unknown>[])
       : [],
@@ -153,16 +168,30 @@ export async function getPaymentStatus(
 }
 
 export function verifyWebhookSignature(
-  payload: Record<string, string> | string,
+  rawBody: string,
   signature: string,
 ) {
-  if (!env.HITPAY_WEBHOOK_SALT || !signature) {
-    console.log("[SIGNATURE] Missing salt or signature:", {
-      hasSalt: !!env.HITPAY_WEBHOOK_SALT,
-      hasSignature: !!signature,
-    });
+  const secret = process.env.HITPAY_WEBHOOK_SECRET;
+
+  if (!secret || !signature) {
+    console.log("[SIGNATURE] Missing secret or signature");
     return false;
   }
+
+  const expected = createHmac("sha256", secret)
+    .update(rawBody)
+    .digest("hex");
+
+  const expectedBuffer = Buffer.from(expected, "hex");
+  const receivedBuffer = Buffer.from(signature, "hex");
+
+  if (expectedBuffer.length !== receivedBuffer.length) {
+    console.log("[SIGNATURE] Length mismatch");
+    return false;
+  }
+
+  return timingSafeEqual(expectedBuffer, receivedBuffer);
+}
 
   // Handle different signature formats
   let signatureBuffer: Buffer;
@@ -186,10 +215,6 @@ export function verifyWebhookSignature(
   if (typeof payload === "string") {
     payloadToVerify = payload;
   } else {
-    // For object payloads, sort keys and create string
-    const sortedKeys = Object.keys({ ...payload, hmac: undefined as unknown as string })
-      .filter((key) => key !== "hmac")
-      .sort((a, b) => a.localeCompare(b));
     payloadToVerify = sortedKeys.map((key) => `${key}${payload[key]}`).join("");
   }
 

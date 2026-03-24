@@ -200,14 +200,21 @@ export async function checkPaymentStatus(
     const payment = await getPaymentStatus(booking.hitpay_payment_request_id);
 
     console.log("[PAYMENT_STATUS] HitPay API status:", payment.status);
+    console.log("[PAYMENT_STATUS] Payment payments array:", payment.payments);
 
-    if (payment.status === "completed") {
-      console.log("[PAYMENT_STATUS] Marking booking as paid");
+    // Check for various completed status values
+    const completedStatuses = ["completed", "succeeded", "paid", "success"];
+    const isCompleted = completedStatuses.includes(payment.status.toLowerCase());
+    
+    if (isCompleted) {
+      console.log("[PAYMENT_STATUS] Payment is completed, marking booking as paid");
       const result = await markBookingPaid(booking);
       if (result.error) {
         console.log("[PAYMENT_STATUS] Error marking as paid:", result.error);
         return { error: result.error };
       }
+    } else {
+      console.log("[PAYMENT_STATUS] Payment not yet completed, status is:", payment.status);
     }
 
     return { status: payment.status };

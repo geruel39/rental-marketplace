@@ -70,6 +70,7 @@ function normalizeEventPayload(payload: Record<string, unknown>) {
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
   const debug = searchParams.get("debug");
+  const testBookingId = searchParams.get("bookingId");
   
   if (debug === "1") {
     // Return diagnostic information
@@ -82,6 +83,43 @@ export async function GET(request: Request) {
         expectedEventTypes: ["payment_request.completed", "completed", "paid"],
       },
     });
+  }
+  
+  // Test endpoint to check a specific booking's payment status
+  if (testBookingId) {
+    try {
+      const admin = createAdminClient();
+      const { data: booking, error } = await admin
+        .from("bookings")
+        .select(
+          `id, 
+           hitpay_payment_request_id, 
+           hitpay_payment_status, 
+           status as booking_status`,
+        )
+        .eq("id", testBookingId)
+        .maybeSingle();
+
+      if (error) {
+        return NextResponse.json({ error: error.message }, { status: 500 });
+      }
+
+      if (!booking) {
+        return NextResponse.json({ error: "Booking not found" }, { status: 404 });
+      }
+
+      return NextResponse.json({
+        bookingId: testBookingId,
+        hitpay_payment_request_id: booking.hitpay_payment_request_id,
+        hitpay_payment_status: booking.hitpay_payment_status,
+        booking_status: booking.booking_status,
+        note: "Use this payment_request_id to check HitPay dashboard",
+      });
+    } catch (err) {
+      return NextResponse.json({ 
+        error: err instanceof Error ? err.message : "Unknown error" 
+      }, { status: 500 });
+    }
   }
   
   return NextResponse.json({ success: true }, { status: 200 });
@@ -127,9 +165,7 @@ export async function POST(request: Request) {
     console.log("[WEBHOOK] Signature header present:", !!signature);
     console.log("[WEBHOOK] Fallback hmac present:", !!fallbackSignature);
     
-    const headerValid = signature ? verifyWebhookSignature(rawBody, signature) : false;
-    const fallbackValid = fallbackSignature ? verifyWebhookSignature(payload, fallbackSignature) : false;
-    const isValidSignature = headerValid || fallbackValid;
+    const isValidSignature = verifyWebhookSignature(rawBody, signature);
 
     console.log("[WEBHOOK] Header signature valid:", headerValid);
     console.log("[WEBHOOK] Fallback signature valid:", fallbackValid);
