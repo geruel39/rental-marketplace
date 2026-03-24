@@ -168,43 +168,39 @@ export async function getPaymentStatus(
 }
 
 export function verifyWebhookSignature(
-  rawBody: string,
+  payload: Record<string, string> | string,
   signature: string,
 ) {
-  const secret = process.env.HITPAY_WEBHOOK_SECRET;
+  const salt = env.HITPAY_WEBHOOK_SALT;
 
-  if (!secret || !signature) {
-    console.log("[SIGNATURE] Missing secret or signature");
+  if (!salt || !signature) {
+    console.log("[SIGNATURE] Missing salt or signature:", {
+      hasSalt: !!salt,
+      hasSignature: !!signature,
+    });
     return false;
   }
 
-  const expected = createHmac("sha256", secret)
-    .update(rawBody)
-    .digest("hex");
-
-  const expectedBuffer = Buffer.from(expected, "hex");
-  const receivedBuffer = Buffer.from(signature, "hex");
-
-  if (expectedBuffer.length !== receivedBuffer.length) {
-    console.log("[SIGNATURE] Length mismatch");
-    return false;
-  }
-
-  return timingSafeEqual(expectedBuffer, receivedBuffer);
-}
-
-  // Handle different signature formats
-  let signatureBuffer: Buffer;
+  // Handle different signature formats using Uint8Array
+  let signatureBytes: Uint8Array;
   try {
     // Try hex format first (most common)
     if (signature.length === 64) {
-      signatureBuffer = Buffer.from(signature, "hex");
+      signatureBytes = new Uint8Array(
+        signature.match(/.{1,2}/g)?.map((byte) => parseInt(byte, 16)) ?? []
+      );
     } else if (signature.length === 44 && signature.includes("=")) {
       // Base64 format
-      signatureBuffer = Buffer.from(signature, "base64");
+      const binary = atob(signature);
+      signatureBytes = new Uint8Array(binary.length);
+      for (let i = 0; i < binary.length; i++) {
+        signatureBytes[i] = binary.charCodeAt(i);
+      }
     } else {
       // Try as hex anyway
-      signatureBuffer = Buffer.from(signature, "hex");
+      signatureBytes = new Uint8Array(
+        signature.match(/.{1,2}/g)?.map((byte: string) => parseInt(byte, 16)) ?? []
+      );
     }
   } catch (e) {
     console.log("[SIGNATURE] Failed to parse signature:", signature.substring(0, 20));
@@ -215,27 +211,33 @@ export function verifyWebhookSignature(
   if (typeof payload === "string") {
     payloadToVerify = payload;
   } else {
+    // For object payloads, sort keys and create string (excluding hmac)
+    const sortedKeys = Object.keys({ ...payload, hmac: undefined as unknown as string })
+      .filter((key) => key !== "hmac")
+      .sort((a, b) => a.localeCompare(b));
     payloadToVerify = sortedKeys.map((key) => `${key}${payload[key]}`).join("");
   }
 
   console.log("[SIGNATURE] Payload length:", payloadToVerify.length);
-  console.log("[SIGNATURE] Signature length:", signatureBuffer.length);
+  console.log("[SIGNATURE] Signature length:", signatureBytes.length);
 
-  const generated = createHmac("sha256", env.HITPAY_WEBHOOK_SALT)
+  const generated = createHmac("sha256", salt)
     .update(payloadToVerify)
     .digest("hex");
 
-  const generatedBuffer = Buffer.from(generated, "hex");
+  const generatedBytes = new Uint8Array(
+    generated.match(/.{1,2}/g)?.map((byte: string) => parseInt(byte, 16)) ?? []
+  );
 
-  if (generatedBuffer.length !== signatureBuffer.length) {
+  if (generatedBytes.length !== signatureBytes.length) {
     console.log("[SIGNATURE] Length mismatch:", {
-      generated: generatedBuffer.length,
-      received: signatureBuffer.length,
+      generated: generatedBytes.length,
+      received: signatureBytes.length,
     });
     return false;
   }
 
-  return timingSafeEqual(generatedBuffer, signatureBuffer);
+  return timingSafeEqual(generatedBytes, signatureBytes);
 }
 
 export function calculatePricing(params: {
@@ -263,7 +265,7 @@ export function calculatePricing(params: {
     (params.listing.deposit_amount ?? 0) * params.quantity,
   );
   const deliveryFee = params.listing.delivery_available
-    ? roundMoney(params.listing.delivery_fee ?? 0)
+    ? params.listing.delivery_fee ?? 0
     : 0;
   const totalPrice = roundMoney(
     subtotal + serviceFeeRenter + depositAmount + deliveryFee,
