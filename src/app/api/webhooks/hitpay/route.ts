@@ -11,6 +11,13 @@ interface WebhookBookingRecord {
   listing: { title: string } | Array<{ title: string }> | null;
 }
 
+interface HitPayDebugBookingRecord {
+  id: string;
+  hitpay_payment_request_id: string | null;
+  hitpay_payment_status: string | null;
+  booking_status: string | null;
+}
+
 function normalizeEventPayload(payload: Record<string, unknown>) {
   // Log the raw payload structure for debugging
   console.log("[WEBHOOK] Raw payload structure:", JSON.stringify(payload, null, 2));
@@ -95,10 +102,10 @@ export async function GET(request: Request) {
           `id, 
            hitpay_payment_request_id, 
            hitpay_payment_status, 
-           status as booking_status`,
+           booking_status:status`,
         )
         .eq("id", testBookingId)
-        .maybeSingle();
+        .maybeSingle<HitPayDebugBookingRecord>();
 
       if (error) {
         return NextResponse.json({ error: error.message }, { status: 500 });
@@ -165,10 +172,14 @@ export async function POST(request: Request) {
     console.log("[WEBHOOK] Signature header present:", !!signature);
     console.log("[WEBHOOK] Fallback hmac present:", !!fallbackSignature);
     
-    const isValidSignature = verifyWebhookSignature(rawBody, signature);
+    const headerSignatureValid = verifyWebhookSignature(rawBody, signature);
+    const fallbackSignatureValid = fallbackSignature
+      ? verifyWebhookSignature(rawBody, fallbackSignature)
+      : false;
+    const isValidSignature = headerSignatureValid || fallbackSignatureValid;
 
-    console.log("[WEBHOOK] Header signature valid:", headerValid);
-    console.log("[WEBHOOK] Fallback signature valid:", fallbackValid);
+    console.log("[WEBHOOK] Header signature valid:", headerSignatureValid);
+    console.log("[WEBHOOK] Fallback signature valid:", fallbackSignatureValid);
 
     if (!isValidSignature) {
       console.log("[WEBHOOK] Invalid signature - returning 401");
