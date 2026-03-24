@@ -63,8 +63,8 @@ export function DashboardSidebar() {
   const pathname = usePathname();
 
   return (
-    <aside className="hidden w-64 shrink-0 border-r border-border/70 bg-background md:fixed md:inset-y-16 md:left-0 md:block">
-      <div className="flex h-full flex-col overflow-y-auto p-4">
+    <aside className="hidden w-64 shrink-0 border-r border-border/70 bg-background lg:fixed lg:top-16 lg:bottom-0 lg:left-0 lg:block">
+      <div className="flex h-full flex-col overflow-y-auto p-4 pb-6">
         <Button asChild className="mb-6 w-full justify-start">
           <Link href="/listings/new">
             <Plus className="size-4" />

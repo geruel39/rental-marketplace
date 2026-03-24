@@ -72,11 +72,11 @@ export async function Navbar() {
       : undefined;
 
   return (
-    <header className="sticky top-0 z-40 border-b border-border/70 bg-white">
+    <header className="sticky top-0 z-40 border-b border-border/70 bg-background/95 backdrop-blur">
       <div className="mx-auto flex h-16 max-w-7xl items-center gap-4 px-4 sm:px-6 lg:px-8">
         <div className="flex items-center gap-3">
           <Sheet>
-            <SheetTrigger className="inline-flex size-9 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring md:hidden">
+            <SheetTrigger className="inline-flex size-9 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring lg:hidden">
               <Menu className="size-5" />
               <span className="sr-only">Open navigation</span>
             </SheetTrigger>
@@ -150,11 +150,11 @@ export async function Navbar() {
           </Link>
         </div>
 
-        <div className="hidden flex-1 justify-center md:flex">
+        <div className="hidden flex-1 justify-center xl:flex">
           <SearchBar />
         </div>
 
-        <div className="ml-auto hidden items-center gap-2 md:flex">
+        <div className="ml-auto hidden items-center gap-2 lg:flex">
           {!user ? (
             <>
               <Button asChild variant="ghost">

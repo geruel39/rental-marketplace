@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useActionState, useEffect, useMemo, useState } from "react";
+import { useActionState, useEffect, useMemo, useState, useTransition } from "react";
 import {
   addDays,
   differenceInCalendarDays,
@@ -14,6 +14,7 @@ import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 
 import { createBookingRequest } from "@/actions/bookings";
+import { getOrCreateConversation } from "@/actions/messages";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Calendar } from "@/components/ui/calendar";
@@ -29,6 +30,7 @@ interface BookingWidgetProps {
   listing: Listing;
   isOwner: boolean;
   isLoggedIn: boolean;
+  currentUserId?: string;
 }
 
 const initialState: ActionResponse | null = null;
@@ -92,8 +94,10 @@ export function BookingWidget({
   listing,
   isOwner,
   isLoggedIn,
+  currentUserId,
 }: BookingWidgetProps) {
   const router = useRouter();
+  const [isMessagePending, startMessageTransition] = useTransition();
   const tomorrow = useMemo(() => addDays(new Date(), 1), []);
   const pricingOptions = useMemo(() => getAvailablePricingOptions(listing), [listing]);
   const [state, formAction, isPending] = useActionState(createBookingRequest, initialState);
@@ -148,6 +152,33 @@ export function BookingWidget({
     if (isOwner) return "This is your listing";
     if (isOutOfStock) return "Currently Unavailable";
     return listing.instant_book ? "Book Now" : "Request to Book";
+  }
+
+  function handleMessageClick() {
+    if (!isLoggedIn) {
+      router.push(`/login?redirectedFrom=/listings/${listing.id}`);
+      return;
+    }
+
+    if (isOwner) {
+      return;
+    }
+
+    startMessageTransition(async () => {
+      try {
+        const conversationId = await getOrCreateConversation(
+          listing.id,
+          listing.owner_id,
+          currentUserId ?? "",
+        );
+
+        router.push(`/dashboard/messages/${conversationId}`);
+      } catch (error) {
+        toast.error(
+          error instanceof Error ? error.message : "Could not open conversation",
+        );
+      }
+    });
   }
 
   return (
@@ -376,9 +407,22 @@ export function BookingWidget({
             <Link href={`/login?redirectedFrom=/listings/${listing.id}`}>{getSubmitLabel()}</Link>
           </Button>
         ) : (
-          <Button className="w-full" disabled={formDisabled} type="submit">
-            {isPending ? "Submitting..." : getSubmitLabel()}
-          </Button>
+          <div className="space-y-2">
+            <Button className="w-full" disabled={formDisabled} type="submit">
+              {isPending ? "Submitting..." : getSubmitLabel()}
+            </Button>
+            {!isOwner ? (
+              <Button
+                className="w-full"
+                disabled={isMessagePending || !currentUserId}
+                onClick={handleMessageClick}
+                type="button"
+                variant="outline"
+              >
+                {isMessagePending ? "Opening chat..." : "Message Lister"}
+              </Button>
+            ) : null}
+          </div>
         )}
       </form>
     </div>

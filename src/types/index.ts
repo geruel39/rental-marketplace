@@ -331,6 +331,7 @@ export type BookingWithDetails = Booking & {
 export type ConversationWithDetails = Conversation & {
   other_user: Profile;
   listing?: Listing;
+  unread_count: number;
 };
 
 export type ReviewWithUsers = Review & {

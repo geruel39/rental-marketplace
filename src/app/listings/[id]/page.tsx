@@ -214,6 +214,7 @@ export default async function ListingDetailPage({
 
         <aside className="lg:min-w-0">
           <BookingWidget
+            currentUserId={user?.id}
             isLoggedIn={isLoggedIn}
             isOwner={isOwner}
             listing={data.listing}
