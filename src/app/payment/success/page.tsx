@@ -29,6 +29,8 @@ export default async function PaymentSuccessPage({
   console.log("[SUCCESS_PAGE] Booking fetched:", booking ? "exists" : "null");
   console.log("[SUCCESS_PAGE] Initial booking status:", booking?.hitpay_payment_status);
 
+  let paymentStatusFromApi: string | null = null;
+  
   if (bookingId && booking && booking.hitpay_payment_status !== "completed") {
     console.log("[SUCCESS_PAGE] About to check payment status via API");
     try {
@@ -38,7 +40,8 @@ export default async function PaymentSuccessPage({
       if ("status" in paymentStatus && paymentStatus.status === "completed") {
         console.log("[SUCCESS_PAGE] Refetching booking after API check");
         booking = await getBookingDetails(bookingId);
-      } else {
+      } else if ("status" in paymentStatus) {
+        paymentStatusFromApi = paymentStatus.status;
         console.log("[SUCCESS_PAGE] API check result:", paymentStatus);
       }
     } catch (error) {
@@ -51,6 +54,12 @@ export default async function PaymentSuccessPage({
   const isPaid = booking?.hitpay_payment_status === "completed";
   console.log("[SUCCESS_PAGE] Final isPaid:", isPaid);
 
+  // Determine if payment is in a terminal state
+  const isTerminalState = isPaid || 
+    paymentStatusFromApi === "failed" || 
+    paymentStatusFromApi === "cancelled" || 
+    paymentStatusFromApi === "rejected";
+
   return (
     <main className="mx-auto flex min-h-[70vh] max-w-3xl items-center px-4 py-12 sm:px-6 lg:px-8">
       <PaymentStatusPoller enabled={Boolean(bookingId && !isPaid)} />
@@ -58,11 +67,18 @@ export default async function PaymentSuccessPage({
         <CardHeader className="text-center">
           {isPaid ? (
             <CheckCircle2 className="mx-auto size-12 text-emerald-600" />
+          ) : paymentStatusFromApi && !isTerminalState ? (
+            <Loader2 className="mx-auto size-12 animate-spin text-amber-500" />
           ) : (
             <Loader2 className="mx-auto size-12 animate-spin text-primary" />
           )}
           <CardTitle className="text-2xl">
-            {isPaid ? "Payment Successful!" : "Payment is being processed..."}
+            {isPaid 
+              ? "Payment Successful!" 
+              : paymentStatusFromApi && !isTerminalState 
+                ? `Payment ${paymentStatusFromApi} - Please wait...`
+                : "Payment is being processed..."
+            }
           </CardTitle>
         </CardHeader>
         <CardContent className="space-y-6">
@@ -78,6 +94,11 @@ export default async function PaymentSuccessPage({
               <p>
                 <span className="font-medium">Amount:</span> {formatCurrency(booking.total_price)}
               </p>
+            </div>
+          ) : booking && paymentStatusFromApi && !isTerminalState ? (
+            <div className="space-y-3 rounded-2xl bg-amber-50 border border-amber-200 p-5 text-sm text-amber-800">
+              <p className="font-medium">Payment status: {paymentStatusFromApi}</p>
+              <p>If you've completed payment but still see this message, please wait a moment and the page will refresh automatically. If the issue persists, go to your dashboard and try again.</p>
             </div>
           ) : (
             <p className="text-center text-sm text-muted-foreground">

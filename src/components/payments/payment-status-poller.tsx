@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 
 interface PaymentStatusPollerProps {
@@ -9,18 +9,21 @@ interface PaymentStatusPollerProps {
 
 export function PaymentStatusPoller({ enabled }: PaymentStatusPollerProps) {
   const router = useRouter();
+  const [attempts, setAttempts] = useState(0);
+  const MAX_ATTEMPTS = 10; // Stop polling after 10 attempts (30 seconds)
 
-  console.log("[POLLER] Poller enabled:", enabled);
+  console.log("[POLLER] Poller enabled:", enabled, "Attempts:", attempts);
 
   useEffect(() => {
-    if (!enabled) {
-      console.log("[POLLER] Poller disabled, not starting");
+    if (!enabled || attempts >= MAX_ATTEMPTS) {
+      console.log("[POLLER] Poller disabled or max attempts reached");
       return;
     }
 
     console.log("[POLLER] Starting refresh timeout (3s)");
     const timeout = window.setTimeout(() => {
-      console.log("[POLLER] Refreshing page");
+      console.log("[POLLER] Refreshing page, attempt:", attempts + 1);
+      setAttempts((prev) => prev + 1);
       router.refresh();
     }, 3000);
 
@@ -28,7 +31,7 @@ export function PaymentStatusPoller({ enabled }: PaymentStatusPollerProps) {
       console.log("[POLLER] Clearing timeout");
       window.clearTimeout(timeout);
     };
-  }, [enabled, router]);
+  }, [enabled, router, attempts]);
 
   return null;
 }
