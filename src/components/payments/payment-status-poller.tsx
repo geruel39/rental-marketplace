@@ -8,6 +8,8 @@ interface PaymentStatusPollerProps {
 }
 
 export function PaymentStatusPoller({ enabled }: PaymentStatusPollerProps) {
+  const router = useRouter();
+
   console.log("[POLLER] Poller enabled:", enabled);
 
   useEffect(() => {
