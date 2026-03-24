@@ -18,6 +18,34 @@ interface HitPayDebugBookingRecord {
   booking_status: string | null;
 }
 
+function getNestedRecord(
+  value: unknown,
+): Record<string, unknown> | null {
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : null;
+}
+
+function getFirstString(
+  sources: Array<Record<string, unknown> | null>,
+  keys: string[],
+) {
+  for (const source of sources) {
+    if (!source) {
+      continue;
+    }
+
+    for (const key of keys) {
+      const value = source[key];
+      if (typeof value === "string" && value.length > 0) {
+        return value;
+      }
+    }
+  }
+
+  return "";
+}
+
 function normalizeEventPayload(payload: Record<string, unknown>) {
   // Log the raw payload structure for debugging
   console.log("[WEBHOOK] Raw payload structure:", JSON.stringify(payload, null, 2));
@@ -37,38 +65,31 @@ function normalizeEventPayload(payload: Record<string, unknown>) {
   const data = payload.data && typeof payload.data === "object"
     ? (payload.data as Record<string, unknown>)
     : payload;
+  const paymentRequest = getNestedRecord(data.payment_request);
+  const order = getNestedRecord(data.order);
+  const metadata = getNestedRecord(data.metadata);
+  const relatable = getNestedRecord(data.relatable);
+  const sources = [data, paymentRequest, order, metadata, relatable];
 
   // Check various status keys that HitPay might use
   const statusKeys = ["status", "payment_status", "state"];
-  let status = "";
-  for (const key of statusKeys) {
-    if (data[key] && typeof data[key] === "string") {
-      status = data[key] as string;
-      console.log(`[WEBHOOK] Found status in key '${key}':`, status);
-      break;
-    }
+  const status = getFirstString(sources, statusKeys);
+  if (status) {
+    console.log("[WEBHOOK] Found status:", status);
   }
 
   // Reference number may be in different places
-  const refKeys = ["reference_number", "reference", "booking_id", "order_id"];
-  let bookingId = "";
-  for (const key of refKeys) {
-    if (data[key] && typeof data[key] === "string") {
-      bookingId = data[key] as string;
-      console.log(`[WEBHOOK] Found bookingId in key '${key}':`, bookingId);
-      break;
-    }
+  const refKeys = ["reference_number", "reference", "booking_id", "bookingId", "order_id"];
+  const bookingId = getFirstString(sources, refKeys);
+  if (bookingId) {
+    console.log("[WEBHOOK] Found bookingId:", bookingId);
   }
 
   // Payment ID may be in different locations
   const paymentIdKeys = ["payment_id", "paymentId", "id", "transaction_id"];
-  let paymentId = "";
-  for (const key of paymentIdKeys) {
-    if (data[key] && typeof data[key] === "string") {
-      paymentId = data[key] as string;
-      console.log(`[WEBHOOK] Found paymentId in key '${key}':`, paymentId);
-      break;
-    }
+  const paymentId = getFirstString(sources, paymentIdKeys);
+  if (paymentId) {
+    console.log("[WEBHOOK] Found paymentId:", paymentId);
   }
 
   return { event, bookingId, paymentId, status };

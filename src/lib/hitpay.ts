@@ -181,63 +181,64 @@ export function verifyWebhookSignature(
     return false;
   }
 
-  // Handle different signature formats using Uint8Array
-  let signatureBytes: Uint8Array;
+  const normalizedSignature = signature
+    .trim()
+    .replace(/^sha256=/i, "")
+    .replace(/^"+|"+$/g, "");
+
+  let signatureBytes: Buffer;
   try {
-    // Try hex format first (most common)
-    if (signature.length === 64) {
-      signatureBytes = new Uint8Array(
-        signature.match(/.{1,2}/g)?.map((byte) => parseInt(byte, 16)) ?? []
-      );
-    } else if (signature.length === 44 && signature.includes("=")) {
-      // Base64 format
-      const binary = atob(signature);
-      signatureBytes = new Uint8Array(binary.length);
-      for (let i = 0; i < binary.length; i++) {
-        signatureBytes[i] = binary.charCodeAt(i);
-      }
+    if (/^[\da-f]+$/i.test(normalizedSignature) && normalizedSignature.length % 2 === 0) {
+      signatureBytes = Buffer.from(normalizedSignature, "hex");
     } else {
-      // Try as hex anyway
-      signatureBytes = new Uint8Array(
-        signature.match(/.{1,2}/g)?.map((byte: string) => parseInt(byte, 16)) ?? []
-      );
+      const paddedBase64 = normalizedSignature
+        .replace(/-/g, "+")
+        .replace(/_/g, "/")
+        .padEnd(Math.ceil(normalizedSignature.length / 4) * 4, "=");
+      signatureBytes = Buffer.from(paddedBase64, "base64");
     }
-  } catch (e) {
-    console.log("[SIGNATURE] Failed to parse signature:", signature.substring(0, 20));
+  } catch {
+    console.log(
+      "[SIGNATURE] Failed to parse signature:",
+      normalizedSignature.substring(0, 20),
+    );
     return false;
   }
 
-  let payloadToVerify: string;
+  const payloadCandidates: string[] = [];
   if (typeof payload === "string") {
-    payloadToVerify = payload;
+    payloadCandidates.push(payload);
+
+    try {
+      payloadCandidates.push(JSON.stringify(JSON.parse(payload)));
+    } catch {
+      // Raw body is not JSON; no alternate candidate needed.
+    }
   } else {
-    // For object payloads, sort keys and create string (excluding hmac)
     const sortedKeys = Object.keys({ ...payload, hmac: undefined as unknown as string })
       .filter((key) => key !== "hmac")
       .sort((a, b) => a.localeCompare(b));
-    payloadToVerify = sortedKeys.map((key) => `${key}${payload[key]}`).join("");
+    payloadCandidates.push(sortedKeys.map((key) => `${key}${payload[key]}`).join(""));
+    payloadCandidates.push(JSON.stringify(payload));
   }
 
-  console.log("[SIGNATURE] Payload length:", payloadToVerify.length);
+  console.log("[SIGNATURE] Payload length:", payloadCandidates[0]?.length ?? 0);
   console.log("[SIGNATURE] Signature length:", signatureBytes.length);
 
-  const generated = createHmac("sha256", salt)
-    .update(payloadToVerify)
-    .digest("hex");
+  for (const payloadToVerify of payloadCandidates) {
+    const generated = createHmac("sha256", salt).update(payloadToVerify).digest();
 
-  const generatedBytes = new Uint8Array(
-    generated.match(/.{1,2}/g)?.map((byte: string) => parseInt(byte, 16)) ?? []
-  );
+    if (generated.length !== signatureBytes.length) {
+      continue;
+    }
 
-  if (generatedBytes.length !== signatureBytes.length) {
-    console.log("[SIGNATURE] Length mismatch:", {
-      generated: generatedBytes.length,
-      received: signatureBytes.length,
-    });
-    return false;
+    if (timingSafeEqual(generated, signatureBytes)) {
+      return true;
+    }
   }
 
-  return timingSafeEqual(generatedBytes, signatureBytes);
+  console.log("[SIGNATURE] No matching payload candidate for signature");
+  return false;
 }
 
 export function calculatePricing(params: {
