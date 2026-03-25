@@ -52,6 +52,14 @@ export function ProfileSettingsForm({ profile }: ProfileSettingsFormProps) {
     router.refresh();
   }, [router, state?.success]);
 
+  useEffect(() => {
+    if (!state?.error) {
+      return;
+    }
+
+    toast.error(state.error);
+  }, [state?.error]);
+
   const avatarPreview = useMemo(() => {
     if (avatarFile) {
       return URL.createObjectURL(avatarFile);
@@ -125,10 +133,20 @@ export function ProfileSettingsForm({ profile }: ProfileSettingsFormProps) {
         <div className="space-y-2">
           <Label htmlFor="full_name">Full Name</Label>
           <Input id="full_name" {...form.register("full_name")} />
+          {form.formState.errors.full_name ? (
+            <p className="text-sm text-destructive">
+              {form.formState.errors.full_name.message}
+            </p>
+          ) : null}
         </div>
         <div className="space-y-2">
           <Label htmlFor="display_name">Display Name</Label>
           <Input id="display_name" {...form.register("display_name")} />
+          {form.formState.errors.display_name ? (
+            <p className="text-sm text-destructive">
+              {form.formState.errors.display_name.message}
+            </p>
+          ) : null}
         </div>
       </div>
 
@@ -142,16 +160,27 @@ export function ProfileSettingsForm({ profile }: ProfileSettingsFormProps) {
       <div className="space-y-2">
         <Label htmlFor="bio">Bio</Label>
         <Textarea id="bio" rows={5} {...form.register("bio")} />
+        {form.formState.errors.bio ? (
+          <p className="text-sm text-destructive">{form.formState.errors.bio.message}</p>
+        ) : null}
       </div>
 
       <div className="grid gap-4 md:grid-cols-2">
         <div className="space-y-2">
           <Label htmlFor="phone">Phone</Label>
           <Input id="phone" {...form.register("phone")} />
+          {form.formState.errors.phone ? (
+            <p className="text-sm text-destructive">{form.formState.errors.phone.message}</p>
+          ) : null}
         </div>
         <div className="space-y-2">
           <Label htmlFor="website_url">Website URL</Label>
           <Input id="website_url" {...form.register("website_url")} />
+          {form.formState.errors.website_url ? (
+            <p className="text-sm text-destructive">
+              {form.formState.errors.website_url.message}
+            </p>
+          ) : null}
         </div>
       </div>
 
@@ -159,18 +188,34 @@ export function ProfileSettingsForm({ profile }: ProfileSettingsFormProps) {
         <div className="space-y-2">
           <Label htmlFor="location">Location</Label>
           <Input id="location" {...form.register("location")} />
+          {form.formState.errors.location ? (
+            <p className="text-sm text-destructive">
+              {form.formState.errors.location.message}
+            </p>
+          ) : null}
         </div>
         <div className="space-y-2">
           <Label htmlFor="city">City</Label>
           <Input id="city" {...form.register("city")} />
+          {form.formState.errors.city ? (
+            <p className="text-sm text-destructive">{form.formState.errors.city.message}</p>
+          ) : null}
         </div>
         <div className="space-y-2">
           <Label htmlFor="state">State</Label>
           <Input id="state" {...form.register("state")} />
+          {form.formState.errors.state ? (
+            <p className="text-sm text-destructive">{form.formState.errors.state.message}</p>
+          ) : null}
         </div>
         <div className="space-y-2">
           <Label htmlFor="country">Country</Label>
           <Input id="country" {...form.register("country")} />
+          {form.formState.errors.country ? (
+            <p className="text-sm text-destructive">
+              {form.formState.errors.country.message}
+            </p>
+          ) : null}
         </div>
       </div>
 

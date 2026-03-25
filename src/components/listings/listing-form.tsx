@@ -3,6 +3,7 @@
 import { useMemo, useState, useTransition } from "react";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useForm, useWatch } from "react-hook-form";
+import { toast } from "sonner";
 import { z } from "zod";
 
 import { createListing, updateListing } from "@/actions/listings";
@@ -292,7 +293,11 @@ export function ListingForm({ listing, categories }: ListingFormProps) {
         : await createListing(formData);
       if (result?.error) {
         setError(result.error);
+        toast.error(result.error);
+        return;
       }
+
+      toast.success(listing ? "Listing updated!" : "Listing created!");
     });
   });
 
@@ -692,10 +697,16 @@ export function ListingForm({ listing, categories }: ListingFormProps) {
 
           <section className="flex flex-col gap-3 border-t border-border pt-6 sm:flex-row">
             <Button disabled={isPending} type="submit" value="active">
-              {isPending ? "Saving..." : "Publish Listing"}
+              {isPending
+                ? listing
+                  ? "Saving..."
+                  : "Publishing..."
+                : listing
+                  ? "Save Changes"
+                  : "Publish Listing"}
             </Button>
             <Button disabled={isPending} type="submit" value="draft" variant="outline">
-              Save as Draft
+              {isPending ? "Saving..." : "Save as Draft"}
             </Button>
           </section>
         </form>

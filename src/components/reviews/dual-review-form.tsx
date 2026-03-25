@@ -117,6 +117,14 @@ export function DualReviewForm({
     return () => window.clearTimeout(timeoutId);
   }, [router, setOpen, state?.success]);
 
+  useEffect(() => {
+    if (!state?.error) {
+      return;
+    }
+
+    toast.error(state.error);
+  }, [state?.error]);
+
   const clientError =
     overallRating < 1 ? "Overall rating is required." : null;
 
@@ -200,7 +208,7 @@ export function DualReviewForm({
           {isPending ? (
             <>
               <Loader2 className="size-4 animate-spin" />
-              Submitting...
+              Sending...
             </>
           ) : (
             "Submit Review"

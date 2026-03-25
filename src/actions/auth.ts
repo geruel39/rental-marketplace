@@ -12,54 +12,61 @@ export async function registerWithEmail(
   formData: FormData,
 ): Promise<ActionResponse> {
   void prevState;
-  const supabase = await createClient();
 
-  const raw = {
-    email: formData.get("email"),
-    password: formData.get("password"),
-    confirmPassword: formData.get("confirmPassword"),
-    full_name: formData.get("full_name"),
-    display_name: formData.get("display_name") || undefined,
-    account_type: formData.get("account_type") || "individual",
-    business_name: formData.get("business_name") || undefined,
-    business_registration: formData.get("business_registration") || undefined,
-  };
+  try {
+    const supabase = await createClient();
 
-  const validated = registerSchema.safeParse(raw);
+    const raw = {
+      email: formData.get("email"),
+      password: formData.get("password"),
+      confirmPassword: formData.get("confirmPassword"),
+      full_name: formData.get("full_name"),
+      display_name: formData.get("display_name") || undefined,
+      account_type: formData.get("account_type") || "individual",
+      business_name: formData.get("business_name") || undefined,
+      business_registration: formData.get("business_registration") || undefined,
+    };
 
-  if (!validated.success) {
-    return { error: validated.error.issues[0]?.message ?? "Invalid input" };
-  }
+    const validated = registerSchema.safeParse(raw);
 
-  const { data, error } = await supabase.auth.signUp({
-    email: validated.data.email,
-    password: validated.data.password,
-    options: {
-      data: {
-        full_name: validated.data.full_name || "",
-        display_name:
-          validated.data.display_name || validated.data.full_name || "",
-        account_type:
-          validated.data.account_type === "business"
-            ? "business"
-            : "individual",
+    if (!validated.success) {
+      return { error: validated.error.issues[0]?.message ?? "Invalid input" };
+    }
+
+    const { data, error } = await supabase.auth.signUp({
+      email: validated.data.email,
+      password: validated.data.password,
+      options: {
+        data: {
+          full_name: validated.data.full_name || "",
+          display_name:
+            validated.data.display_name || validated.data.full_name || "",
+          account_type:
+            validated.data.account_type === "business"
+              ? "business"
+              : "individual",
+        },
       },
-    },
-  });
+    });
 
-  if (error) {
-    return { error: error.message };
+    if (error) {
+      console.error("registerWithEmail failed:", error);
+      return { error: "Could not create your account. Please try again." };
+    }
+
+    if (data.user && data.session) {
+      redirect("/dashboard");
+    }
+
+    if (data.user && !data.session) {
+      return { success: "Check your email" };
+    }
+
+    return { error: "Something went wrong. Please try again." };
+  } catch (error) {
+    console.error("registerWithEmail failed:", error);
+    return { error: "Something went wrong. Please try again." };
   }
-
-  if (data.user && data.session) {
-    redirect("/dashboard");
-  }
-
-  if (data.user && !data.session) {
-    return { success: "Check your email" };
-  }
-
-  return { error: "Something went wrong" };
 }
 
 export async function loginWithEmail(
@@ -67,55 +74,76 @@ export async function loginWithEmail(
   formData: FormData,
 ): Promise<ActionResponse> {
   void prevState;
-  const supabase = await createClient();
-  const email = formData.get("email");
-  const password = formData.get("password");
 
-  if (
-    typeof email !== "string" ||
-    email.length === 0 ||
-    typeof password !== "string" ||
-    password.length === 0
-  ) {
-    return { error: "Email and password are required" };
+  try {
+    const supabase = await createClient();
+    const email = formData.get("email");
+    const password = formData.get("password");
+
+    if (
+      typeof email !== "string" ||
+      email.length === 0 ||
+      typeof password !== "string" ||
+      password.length === 0
+    ) {
+      return { error: "Email and password are required" };
+    }
+
+    const { error } = await supabase.auth.signInWithPassword({
+      email,
+      password,
+    });
+
+    if (error) {
+      console.error("loginWithEmail failed:", error);
+      return { error: "Invalid email or password." };
+    }
+
+    redirect("/dashboard");
+  } catch (error) {
+    console.error("loginWithEmail failed:", error);
+    return { error: "Something went wrong. Please try again." };
   }
-
-  const { error } = await supabase.auth.signInWithPassword({
-    email,
-    password,
-  });
-
-  if (error) {
-    return { error: error.message };
-  }
-
-  redirect("/dashboard");
 }
 
 export async function loginWithGoogle(): Promise<ActionResponse | void> {
-  const supabase = await createClient();
+  try {
+    const supabase = await createClient();
 
-  const { data, error } = await supabase.auth.signInWithOAuth({
-    provider: "google",
-    options: {
-      redirectTo: `${getAppUrl()}/auth/callback`,
-    },
-  });
+    const { data, error } = await supabase.auth.signInWithOAuth({
+      provider: "google",
+      options: {
+        redirectTo: `${getAppUrl()}/auth/callback`,
+      },
+    });
 
-  if (error) {
-    return { error: error.message };
+    if (error) {
+      console.error("loginWithGoogle failed:", error);
+      return { error: "Could not start Google sign-in. Please try again." };
+    }
+
+    if (data.url) {
+      redirect(data.url);
+    }
+
+    return { error: "Something went wrong. Please try again." };
+  } catch (error) {
+    console.error("loginWithGoogle failed:", error);
+    return { error: "Something went wrong. Please try again." };
   }
-
-  if (data.url) {
-    redirect(data.url);
-  }
-
-  return { error: "Something went wrong" };
 }
 
 export async function logout() {
-  const supabase = await createClient();
+  try {
+    const supabase = await createClient();
+    const { error } = await supabase.auth.signOut();
 
-  await supabase.auth.signOut();
+    if (error) {
+      console.error("logout failed:", error);
+    }
+  } catch (error) {
+    console.error("logout failed:", error);
+  }
+
   redirect("/");
 }

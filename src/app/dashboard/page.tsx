@@ -1,93 +1,177 @@
 import Link from "next/link";
-import { addMonths, isAfter, startOfMonth } from "date-fns";
+import { Suspense } from "react";
+import { format } from "date-fns";
 import {
   ArrowRight,
-  Boxes,
   Clock3,
   DollarSign,
-  ListChecks,
+  Package,
   PackageCheck,
   ShoppingBag,
+  TrendingUp,
 } from "lucide-react";
 import { redirect } from "next/navigation";
 
-import { getIncomingRequests, getMyRentals } from "@/actions/bookings";
-import { getInventoryOverview, getLowStockListings } from "@/actions/inventory";
+import { getDashboardStats } from "@/actions/profile";
 import { LowStockAlert } from "@/components/inventory/low-stock-alert";
 import { StockSummaryCard } from "@/components/inventory/stock-summary-card";
+import { NotificationList } from "@/components/notifications/notification-list";
 import { EmptyState } from "@/components/shared/empty-state";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { createClient } from "@/lib/supabase/server";
-import { formatCurrency, formatDate } from "@/lib/utils";
-import type { BookingWithDetails } from "@/types";
+import { cn, formatCurrency, formatDate } from "@/lib/utils";
+import type { BookingWithDetails, DashboardStats, Profile } from "@/types";
 
-function isCancelled(status: BookingWithDetails["status"]) {
-  return status === "cancelled_by_lister" || status === "cancelled_by_renter";
+interface StatsSectionProps {
+  statsPromise: Promise<DashboardStats>;
 }
 
-function getDashboardStats(
-  inventoryListings: Awaited<ReturnType<typeof getInventoryOverview>>["listings"],
-  incomingRequests: BookingWithDetails[],
-  rentals: BookingWithDetails[],
-) {
-  const monthStart = startOfMonth(new Date());
-  const nextMonthStart = addMonths(monthStart, 1);
-
-  return {
-    lister: {
-      activeListings: inventoryListings.filter((listing) => listing.status === "active").length,
-      pendingRequests: incomingRequests.filter((booking) => booking.status === "pending").length,
-      itemsRentedOut: incomingRequests
-        .filter((booking) => booking.status === "confirmed" || booking.status === "active")
-        .reduce((sum, booking) => sum + booking.quantity, 0),
-      earningsThisMonth: incomingRequests
-        .filter((booking) => {
-          if (booking.hitpay_payment_status !== "completed") {
-            return false;
-          }
-
-          const bookingDate = new Date(booking.paid_at ?? booking.created_at);
-          return bookingDate >= monthStart && isAfter(nextMonthStart, bookingDate);
-        })
-        .reduce((sum, booking) => sum + booking.lister_payout, 0),
-    },
-    renter: {
-      activeRentals: rentals.filter(
-        (booking) => booking.status === "confirmed" || booking.status === "active",
-      ).length,
-      pendingRequests: rentals.filter((booking) => booking.status === "pending").length,
-      completedRentals: rentals.filter((booking) => booking.status === "completed").length,
-    },
-  };
-}
-
-function DashboardStatCard({
+function DashboardMetricCard({
   label,
   value,
   icon: Icon,
+  href,
+  linkLabel = "View",
 }: {
   label: string;
   value: string | number;
   icon: React.ComponentType<{ className?: string }>;
+  href?: string;
+  linkLabel?: string;
 }) {
   return (
     <Card className="border-border/70 shadow-sm">
-      <CardContent className="flex items-center justify-between p-6">
-        <div className="space-y-1">
-          <p className="text-sm text-muted-foreground">{label}</p>
-          <p className="text-2xl font-semibold tracking-tight">{value}</p>
+      <CardContent className="space-y-4 p-5">
+        <div className="flex items-start justify-between gap-3">
+          <div className="space-y-1">
+            <p className="text-sm text-muted-foreground">{label}</p>
+            <p className="text-3xl font-semibold tracking-tight">{value}</p>
+          </div>
+          <div className="rounded-2xl bg-muted p-3">
+            <Icon className="size-5 text-muted-foreground" />
+          </div>
         </div>
-        <div className="rounded-full bg-muted p-3">
-          <Icon className="size-5 text-muted-foreground" />
-        </div>
+        {href ? (
+          <Button asChild className="px-0" size="sm" variant="link">
+            <Link href={href}>
+              {linkLabel}
+              <ArrowRight className="size-4" />
+            </Link>
+          </Button>
+        ) : null}
       </CardContent>
     </Card>
   );
 }
 
-function RecentBookingList({
+function SectionSkeleton({
+  cards = 3,
+  rows = 3,
+}: {
+  cards?: number;
+  rows?: number;
+}) {
+  return (
+    <div className="space-y-4">
+      <div className="h-7 w-40 rounded-md bg-accent" />
+      <div
+        className={cn(
+          "grid gap-4 md:grid-cols-2",
+          cards === 4 ? "xl:grid-cols-4" : "xl:grid-cols-3",
+        )}
+      >
+        {Array.from({ length: cards }).map((_, index) => (
+          <div
+            key={index}
+            className="rounded-3xl border border-border/70 bg-background p-5 shadow-sm"
+          >
+            <div className="h-4 w-28 rounded-md bg-accent" />
+            <div className="mt-4 h-8 w-20 rounded-md bg-accent" />
+            <div className="mt-6 h-4 w-24 rounded-md bg-accent" />
+          </div>
+        ))}
+      </div>
+      <div className="rounded-3xl border border-border/70 bg-background p-5 shadow-sm">
+        {Array.from({ length: rows }).map((_, index) => (
+          <div key={index} className={index === 0 ? "" : "mt-4"}>
+            <div className="h-4 w-56 rounded-md bg-accent" />
+            <div className="mt-2 h-4 w-40 rounded-md bg-accent" />
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function AlertsSkeleton() {
+  return (
+    <div className="space-y-4">
+      <div className="rounded-3xl border border-border/70 bg-background p-5 shadow-sm">
+        <div className="h-5 w-52 rounded-md bg-accent" />
+        <div className="mt-3 h-4 w-72 rounded-md bg-accent" />
+      </div>
+      <div className="rounded-3xl border border-border/70 bg-background p-5 shadow-sm">
+        <div className="h-5 w-44 rounded-md bg-accent" />
+        <div className="mt-3 h-4 w-64 rounded-md bg-accent" />
+      </div>
+    </div>
+  );
+}
+
+function NotificationsSkeleton() {
+  return (
+    <div className="space-y-4">
+      <div className="h-7 w-44 rounded-md bg-accent" />
+      <div className="rounded-3xl border border-border/70 bg-background p-5 shadow-sm">
+        {Array.from({ length: 4 }).map((_, index) => (
+          <div key={index} className={index === 0 ? "" : "mt-4"}>
+            <div className="h-4 w-48 rounded-md bg-accent" />
+            <div className="mt-2 h-4 w-64 rounded-md bg-accent" />
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function QuickActionsSection() {
+  return (
+    <section className="space-y-4">
+      <div className="space-y-1">
+        <h2 className="text-lg font-semibold">Quick Actions</h2>
+        <p className="text-sm text-muted-foreground">
+          Jump into the tasks you use most often.
+        </p>
+      </div>
+      <div className="grid gap-3 sm:grid-cols-3">
+        <Button asChild>
+          <Link href="/listings/new">Create Listing</Link>
+        </Button>
+        <Button asChild variant="outline">
+          <Link href="/dashboard/inventory">Manage Inventory</Link>
+        </Button>
+        <Button asChild variant="outline">
+          <Link href="/listings">Browse Listings</Link>
+        </Button>
+      </div>
+    </section>
+  );
+}
+
+function StatusBadge({ status }: { status: BookingWithDetails["status"] }) {
+  const variant =
+    status === "pending"
+      ? "secondary"
+      : status === "completed" || status === "active" || status === "confirmed"
+        ? "default"
+        : "destructive";
+
+  return <Badge variant={variant}>{status.replaceAll("_", " ")}</Badge>;
+}
+
+function BookingList({
   bookings,
   href,
   emptyTitle,
@@ -128,34 +212,202 @@ function RecentBookingList({
                 >
                   {booking.listing.title}
                 </Link>
-                <Badge variant={isCancelled(booking.status) ? "destructive" : "secondary"}>
-                  {booking.status.replaceAll("_", " ")}
-                </Badge>
+                <StatusBadge status={booking.status} />
               </div>
               <div className="flex flex-wrap gap-x-4 gap-y-1 text-sm text-muted-foreground">
                 <span>
                   {role === "lister"
-                    ? `Renter: ${booking.renter.display_name || booking.renter.full_name}`
-                    : `Host: ${booking.lister.display_name || booking.lister.full_name}`}
+                    ? booking.renter.display_name || booking.renter.full_name
+                    : booking.lister.display_name || booking.lister.full_name}
                 </span>
-                <span>
-                  {formatDate(booking.start_date)} - {formatDate(booking.end_date)}
-                </span>
+                <span>{formatDate(booking.created_at)}</span>
                 <span>x {booking.quantity}</span>
-                <span>{formatCurrency(booking.total_price)}</span>
               </div>
             </div>
-
-            <Button asChild size="sm" variant="ghost">
-              <Link href={href}>
-                View All
-                <ArrowRight className="size-4" />
-              </Link>
-            </Button>
           </div>
         </article>
       ))}
     </div>
+  );
+}
+
+async function DashboardAlertsSection({ statsPromise }: StatsSectionProps) {
+  const stats = await statsPromise;
+
+  if (stats.lister.lowStockListings.length === 0 && stats.pendingReviewsCount === 0) {
+    return null;
+  }
+
+  return (
+    <section className="space-y-4">
+      {stats.lister.lowStockListings.length > 0 ? (
+        <LowStockAlert listings={stats.lister.lowStockListings} />
+      ) : null}
+
+      {stats.pendingReviewsCount > 0 ? (
+        <Card className="border-border/70 shadow-sm">
+          <CardContent className="flex flex-col gap-4 p-5 sm:flex-row sm:items-center sm:justify-between">
+            <div className="space-y-1">
+              <p className="font-semibold">
+                You have {stats.pendingReviewsCount} booking
+                {stats.pendingReviewsCount === 1 ? "" : "s"} to review
+              </p>
+              <p className="text-sm text-muted-foreground">
+                Leave reviews to build trust on both sides of the marketplace.
+              </p>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              {stats.pendingReviewsAsRenter > 0 ? (
+                <Button asChild>
+                  <Link href="/dashboard/my-rentals">Open My Rentals</Link>
+                </Button>
+              ) : null}
+              {stats.pendingReviewsAsLister > 0 ? (
+                <Button asChild variant="outline">
+                  <Link href="/dashboard/requests">Open Requests</Link>
+                </Button>
+              ) : null}
+            </div>
+          </CardContent>
+        </Card>
+      ) : null}
+    </section>
+  );
+}
+
+async function ListerSection({ statsPromise }: StatsSectionProps) {
+  const stats = await statsPromise;
+
+  return (
+    <section className="space-y-4">
+      <div className="flex items-center justify-between gap-3">
+        <div className="space-y-1">
+          <h2 className="text-lg font-semibold">As Lister</h2>
+          <p className="text-sm text-muted-foreground">
+            Monitor listing health, requests, and earnings at a glance.
+          </p>
+        </div>
+      </div>
+
+      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+        <DashboardMetricCard
+          href="/dashboard/my-listings"
+          icon={Package}
+          label="Active Listings"
+          linkLabel="View All"
+          value={stats.lister.activeListings}
+        />
+        <DashboardMetricCard
+          href="/dashboard/requests"
+          icon={Clock3}
+          label="Pending Requests"
+          value={stats.lister.pendingRequests}
+        />
+        <DashboardMetricCard
+          icon={TrendingUp}
+          label="Items Rented Out"
+          value={stats.lister.itemsRentedOut}
+        />
+        <DashboardMetricCard
+          icon={DollarSign}
+          label="Earnings This Month"
+          value={formatCurrency(stats.lister.earningsThisMonth)}
+        />
+      </div>
+
+      <StockSummaryCard summary={stats.lister.inventorySummary} />
+
+      <Card className="border-border/70 shadow-sm">
+        <CardHeader className="flex flex-row items-center justify-between gap-4">
+          <CardTitle>Recent Booking Requests</CardTitle>
+          <Button asChild size="sm" variant="outline">
+            <Link href="/dashboard/requests">View All Requests</Link>
+          </Button>
+        </CardHeader>
+        <CardContent>
+          <BookingList
+            bookings={stats.lister.recentIncomingRequests.slice(0, 3)}
+            emptyDescription="New renter requests will appear here as soon as they come in."
+            emptyTitle="No recent booking requests"
+            href="/dashboard/requests"
+            role="lister"
+          />
+        </CardContent>
+      </Card>
+    </section>
+  );
+}
+
+async function RenterSection({ statsPromise }: StatsSectionProps) {
+  const stats = await statsPromise;
+
+  return (
+    <section className="space-y-4">
+      <div className="space-y-1">
+        <h2 className="text-lg font-semibold">As Renter</h2>
+        <p className="text-sm text-muted-foreground">
+          Track your outgoing requests, active rentals, and completed bookings.
+        </p>
+      </div>
+
+      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+        <DashboardMetricCard
+          icon={ShoppingBag}
+          label="Active Rentals"
+          value={stats.renter.activeRentals}
+        />
+        <DashboardMetricCard
+          icon={Clock3}
+          label="Pending Requests"
+          value={stats.renter.pendingRequests}
+        />
+        <DashboardMetricCard
+          icon={PackageCheck}
+          label="Completed Rentals"
+          value={stats.renter.completedRentals}
+        />
+      </div>
+
+      <Card className="border-border/70 shadow-sm">
+        <CardHeader className="flex flex-row items-center justify-between gap-4">
+          <CardTitle>Recent Rentals</CardTitle>
+          <Button asChild size="sm" variant="outline">
+            <Link href="/dashboard/my-rentals">View All Rentals</Link>
+          </Button>
+        </CardHeader>
+        <CardContent>
+          <BookingList
+            bookings={stats.renter.recentRentals.slice(0, 3)}
+            emptyDescription="Your latest booking activity will show up here."
+            emptyTitle="No recent rentals"
+            href="/dashboard/my-rentals"
+            role="renter"
+          />
+        </CardContent>
+      </Card>
+    </section>
+  );
+}
+
+async function NotificationsSection({ statsPromise }: StatsSectionProps) {
+  const stats = await statsPromise;
+
+  return (
+    <section className="space-y-4">
+      <div className="flex items-center justify-between gap-3">
+        <div className="space-y-1">
+          <h2 className="text-lg font-semibold">Recent Notifications</h2>
+          <p className="text-sm text-muted-foreground">
+            Your latest activity and important updates across the platform.
+          </p>
+        </div>
+        <Button asChild size="sm" variant="outline">
+          <Link href="/dashboard/notifications">View All</Link>
+        </Button>
+      </div>
+
+      <NotificationList compact notifications={stats.notifications} />
+    </section>
   );
 }
 
@@ -169,147 +421,45 @@ export default async function DashboardPage() {
     redirect("/login");
   }
 
-  const [inventoryOverview, lowStockListings, incomingRequests, rentals] =
-    await Promise.all([
-      getInventoryOverview(user.id),
-      getLowStockListings(user.id),
-      getIncomingRequests(user.id),
-      getMyRentals(user.id),
-    ]);
+  const { data: profile } = await supabase
+    .from("profiles")
+    .select("*")
+    .eq("id", user.id)
+    .maybeSingle<Profile>();
 
-  const stats = getDashboardStats(
-    inventoryOverview.listings,
-    incomingRequests,
-    rentals,
-  );
+  const statsPromise = getDashboardStats(user.id);
+  const displayName =
+    profile?.display_name || profile?.full_name || user.email || "there";
 
   return (
     <div className="space-y-8">
-      <div className="space-y-2">
-        <h1 className="text-2xl font-semibold tracking-tight">Dashboard Overview</h1>
+      <section className="space-y-2">
+        <p className="text-sm text-muted-foreground">{format(new Date(), "PPPP")}</p>
+        <h1 className="text-3xl font-semibold tracking-tight">
+          Welcome back, {displayName}!
+        </h1>
         <p className="text-sm text-muted-foreground">
-          Keep an eye on your listings, inventory, booking requests, and active rentals.
+          Here&apos;s a quick look at your marketplace activity today.
         </p>
-      </div>
-
-      <section className="space-y-4">
-        <div className="flex items-center justify-between">
-          <h2 className="text-lg font-semibold">As Lister</h2>
-          <Button asChild size="sm" variant="ghost">
-            <Link href="/dashboard/requests">
-              View Requests
-              <ArrowRight className="size-4" />
-            </Link>
-          </Button>
-        </div>
-
-        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-          <DashboardStatCard
-            icon={ListChecks}
-            label="Active Listings"
-            value={stats.lister.activeListings}
-          />
-          <DashboardStatCard
-            icon={Clock3}
-            label="Pending Requests"
-            value={stats.lister.pendingRequests}
-          />
-          <DashboardStatCard
-            icon={Boxes}
-            label="Items Rented Out"
-            value={stats.lister.itemsRentedOut}
-          />
-          <DashboardStatCard
-            icon={DollarSign}
-            label="Earnings This Month"
-            value={formatCurrency(stats.lister.earningsThisMonth)}
-          />
-        </div>
-
-        <StockSummaryCard summary={inventoryOverview.summary} />
-        <LowStockAlert listings={lowStockListings} />
-
-        <Card className="border-border/70 shadow-sm">
-          <CardHeader className="flex flex-row items-center justify-between gap-4">
-            <CardTitle>Recent Booking Requests</CardTitle>
-            <Button asChild size="sm" variant="outline">
-              <Link href="/dashboard/requests">Manage Requests</Link>
-            </Button>
-          </CardHeader>
-          <CardContent>
-            <RecentBookingList
-              bookings={incomingRequests.slice(0, 3)}
-              emptyDescription="New requests will show up here as renters discover your listings."
-              emptyTitle="No recent booking requests"
-              href="/dashboard/requests"
-              role="lister"
-            />
-          </CardContent>
-        </Card>
       </section>
 
-      <section className="space-y-4">
-        <div className="flex items-center justify-between">
-          <h2 className="text-lg font-semibold">As Renter</h2>
-          <Button asChild size="sm" variant="ghost">
-            <Link href="/dashboard/my-rentals">
-              View Rentals
-              <ArrowRight className="size-4" />
-            </Link>
-          </Button>
-        </div>
+      <Suspense fallback={<AlertsSkeleton />}>
+        <DashboardAlertsSection statsPromise={statsPromise} />
+      </Suspense>
 
-        <div className="grid gap-4 md:grid-cols-3">
-          <DashboardStatCard
-            icon={ShoppingBag}
-            label="Active Rentals"
-            value={stats.renter.activeRentals}
-          />
-          <DashboardStatCard
-            icon={Clock3}
-            label="Pending Requests"
-            value={stats.renter.pendingRequests}
-          />
-          <DashboardStatCard
-            icon={PackageCheck}
-            label="Completed Rentals"
-            value={stats.renter.completedRentals}
-          />
-        </div>
+      <Suspense fallback={<SectionSkeleton cards={4} rows={3} />}>
+        <ListerSection statsPromise={statsPromise} />
+      </Suspense>
 
-        <Card className="border-border/70 shadow-sm">
-          <CardHeader className="flex flex-row items-center justify-between gap-4">
-            <CardTitle>Recent Rental Bookings</CardTitle>
-            <Button asChild size="sm" variant="outline">
-              <Link href="/dashboard/my-rentals">Manage Rentals</Link>
-            </Button>
-          </CardHeader>
-          <CardContent>
-            <RecentBookingList
-              bookings={rentals.slice(0, 3)}
-              emptyDescription="Booked rentals, payment progress, and completed orders will appear here."
-              emptyTitle="No recent rental bookings"
-              href="/dashboard/my-rentals"
-              role="renter"
-            />
-          </CardContent>
-        </Card>
-      </section>
+      <Suspense fallback={<SectionSkeleton cards={3} rows={3} />}>
+        <RenterSection statsPromise={statsPromise} />
+      </Suspense>
 
-      <section className="space-y-4">
-        <h2 className="text-lg font-semibold">Quick Actions</h2>
-        <div className="flex flex-wrap gap-3">
-          <Button asChild>
-            <Link href="/listings/new">Create Listing</Link>
-          </Button>
-          <Button asChild variant="outline">
-            <Link href="/dashboard/inventory">View Inventory</Link>
-          </Button>
-          <Button asChild variant="outline">
-            <Link href="/listings">Browse Listings</Link>
-          </Button>
-        </div>
-      </section>
+      <QuickActionsSection />
+
+      <Suspense fallback={<NotificationsSkeleton />}>
+        <NotificationsSection statsPromise={statsPromise} />
+      </Suspense>
     </div>
   );
 }

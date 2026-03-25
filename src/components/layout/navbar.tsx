@@ -1,6 +1,5 @@
 import Link from "next/link";
 import {
-  Bell,
   LayoutDashboard,
   LogOut,
   Menu,
@@ -9,6 +8,8 @@ import {
   User as UserIcon,
 } from "lucide-react";
 
+import { getNotifications, getUnreadCount } from "@/actions/notifications";
+import { NotificationBell } from "@/components/layout/notification-bell";
 import { SearchBar } from "@/components/shared/search-bar";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
@@ -29,7 +30,7 @@ import {
 import { hasSupabaseEnv } from "@/lib/env";
 import { createClient } from "@/lib/supabase/server";
 import { getInitials } from "@/lib/utils";
-import type { Profile } from "@/types";
+import type { Notification, Profile } from "@/types";
 
 const publicNavItems = [
   { href: "/login", label: "Login" },
@@ -50,6 +51,8 @@ export async function Navbar() {
       }
     | null = null;
   let profile: Pick<Profile, "avatar_url" | "display_name" | "full_name"> | null = null;
+  let latestNotifications: Notification[] = [];
+  let unreadNotifications = 0;
 
   if (hasSupabaseEnv()) {
     const supabase = await createClient();
@@ -66,6 +69,14 @@ export async function Navbar() {
         .maybeSingle<Pick<Profile, "avatar_url" | "display_name" | "full_name">>();
 
       profile = userProfile ?? null;
+
+      const [notifications, unreadCount] = await Promise.all([
+        getNotifications(sessionUser.id, 1),
+        getUnreadCount(sessionUser.id),
+      ]);
+
+      latestNotifications = notifications.data.slice(0, 5);
+      unreadNotifications = unreadCount;
     }
   }
 
@@ -186,10 +197,11 @@ export async function Navbar() {
               <Button asChild>
                 <Link href="/listings/new">List an Item</Link>
               </Button>
-              <Button size="icon" variant="ghost">
-                <Bell className="size-5" />
-                <span className="sr-only">Notifications</span>
-              </Button>
+              <NotificationBell
+                initialNotifications={latestNotifications}
+                initialUnreadCount={unreadNotifications}
+                userId={user.id}
+              />
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
                   <Button className="rounded-full p-0" size="icon" variant="ghost">

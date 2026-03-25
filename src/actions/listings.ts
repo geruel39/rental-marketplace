@@ -184,9 +184,8 @@ export async function createListing(formData: FormData): Promise<ActionResponse>
       }
     }
   } catch (error) {
-    return {
-      error: error instanceof Error ? error.message : "Failed to create listing",
-    };
+    console.error("createListing failed:", error);
+    return { error: "Something went wrong. Please try again." };
   }
 
   redirect("/dashboard/my-listings");
@@ -252,9 +251,8 @@ export async function updateListing(
       return { error: updateError.message };
     }
   } catch (error) {
-    return {
-      error: error instanceof Error ? error.message : "Failed to update listing",
-    };
+    console.error("updateListing failed:", error);
+    return { error: "Something went wrong. Please try again." };
   }
 
   redirect("/dashboard/my-listings");
@@ -285,9 +283,8 @@ export async function deleteListing(listingId: string): Promise<ActionResponse> 
       return { error: updateError.message };
     }
   } catch (error) {
-    return {
-      error: error instanceof Error ? error.message : "Failed to delete listing",
-    };
+    console.error("deleteListing failed:", error);
+    return { error: "Something went wrong. Please try again." };
   }
 
   redirect("/dashboard/my-listings");
@@ -321,37 +318,53 @@ export async function setListingStatus(
       return { error: updateError.message };
     }
   } catch (error) {
-    return {
-      error:
-        error instanceof Error ? error.message : "Failed to update listing status",
-    };
+    console.error("setListingStatus failed:", error);
+    return { error: "Something went wrong. Please try again." };
   }
 
   return { success: "Listing updated" };
 }
 
 export async function getMyListings(userId: string): Promise<Listing[]> {
-  const supabase = await createClient();
-  const { data } = await supabase
-    .from("listings")
-    .select("*")
-    .eq("owner_id", userId)
-    .order("created_at", { ascending: false });
+  try {
+    const supabase = await createClient();
+    const { data, error } = await supabase
+      .from("listings")
+      .select("*")
+      .eq("owner_id", userId)
+      .order("created_at", { ascending: false });
 
-  return (data ?? []) as Listing[];
+    if (error) {
+      throw error;
+    }
+
+    return (data ?? []) as Listing[];
+  } catch (error) {
+    console.error("getMyListings failed:", error);
+    return [];
+  }
 }
 
 export async function getListing(
   listingId: string,
 ): Promise<ListingWithOwner | null> {
-  const supabase = await createClient();
-  const { data } = await supabase
-    .from("listings")
-    .select("*, owner:profiles!listings_owner_id_fkey(*)")
-    .eq("id", listingId)
-    .maybeSingle();
+  try {
+    const supabase = await createClient();
+    const { data, error } = await supabase
+      .from("listings")
+      .select("*, owner:profiles!listings_owner_id_fkey(*)")
+      .eq("id", listingId)
+      .maybeSingle();
 
-  return (data as ListingWithOwner | null) ?? null;
+    if (error) {
+      throw error;
+    }
+
+    return (data as ListingWithOwner | null) ?? null;
+  } catch (error) {
+    console.error("getListing failed:", error);
+    return null;
+  }
 }
 
 export async function getListingWithDetails(listingId: string): Promise<{
@@ -360,56 +373,61 @@ export async function getListingWithDetails(listingId: string): Promise<{
   reviews: ReviewWithUsers[];
   similarListings: Listing[];
 } | null> {
-  const supabase = await createClient();
+  try {
+    const supabase = await createClient();
 
-  const { data: listingRow, error: listingError } = await supabase
-    .from("listings")
-    .select("*, owner:profiles!listings_owner_id_fkey(*)")
-    .eq("id", listingId)
-    .maybeSingle();
+    const { data: listingRow, error: listingError } = await supabase
+      .from("listings")
+      .select("*, owner:profiles!listings_owner_id_fkey(*)")
+      .eq("id", listingId)
+      .maybeSingle();
 
-  if (listingError || !listingRow) {
+    if (listingError || !listingRow) {
+      return null;
+    }
+
+    const listingWithOwner = listingRow as ListingWithOwner;
+
+    const [{ data: reviewsData }, { data: similarListingsData }] = await Promise.all([
+      supabase
+        .from("reviews")
+        .select(
+          `
+            *,
+            reviewer:profiles!reviews_reviewer_id_fkey(*),
+            reviewee:profiles!reviews_reviewee_id_fkey(*)
+          `,
+        )
+        .eq("listing_id", listingId)
+        .order("created_at", { ascending: false })
+        .limit(5),
+      supabase
+        .from("listings")
+        .select("*")
+        .eq("status", "active")
+        .eq("category_id", listingWithOwner.category_id)
+        .neq("id", listingId)
+        .limit(4),
+    ]);
+
+    const { error: incrementViewsError } = await supabase.rpc("increment_views", {
+      p_listing_id: listingId,
+    });
+
+    if (incrementViewsError) {
+      console.error("Failed to increment listing views:", incrementViewsError.message);
+    }
+
+    return {
+      listing: listingWithOwner,
+      owner: listingWithOwner.owner,
+      reviews: (reviewsData ?? []) as ReviewWithUsers[],
+      similarListings: (similarListingsData ?? []) as Listing[],
+    };
+  } catch (error) {
+    console.error("getListingWithDetails failed:", error);
     return null;
   }
-
-  const listingWithOwner = listingRow as ListingWithOwner;
-
-  const [{ data: reviewsData }, { data: similarListingsData }] = await Promise.all([
-    supabase
-      .from("reviews")
-      .select(
-        `
-          *,
-          reviewer:profiles!reviews_reviewer_id_fkey(*),
-          reviewee:profiles!reviews_reviewee_id_fkey(*)
-        `,
-      )
-      .eq("listing_id", listingId)
-      .order("created_at", { ascending: false })
-      .limit(5),
-    supabase
-      .from("listings")
-      .select("*")
-      .eq("status", "active")
-      .eq("category_id", listingWithOwner.category_id)
-      .neq("id", listingId)
-      .limit(4),
-  ]);
-
-  const { error: incrementViewsError } = await supabase.rpc("increment_views", {
-    p_listing_id: listingId,
-  });
-
-  if (incrementViewsError) {
-    console.error("Failed to increment listing views:", incrementViewsError.message);
-  }
-
-  return {
-    listing: listingWithOwner,
-    owner: listingWithOwner.owner,
-    reviews: (reviewsData ?? []) as ReviewWithUsers[],
-    similarListings: (similarListingsData ?? []) as Listing[],
-  };
 }
 
 export async function getCategories(): Promise<Category[]> {
@@ -417,14 +435,23 @@ export async function getCategories(): Promise<Category[]> {
     return [];
   }
 
-  const supabase = await createClient();
-  const { data } = await supabase
-    .from("categories")
-    .select("*")
-    .eq("is_active", true)
-    .order("sort_order", { ascending: true });
+  try {
+    const supabase = await createClient();
+    const { data, error } = await supabase
+      .from("categories")
+      .select("*")
+      .eq("is_active", true)
+      .order("sort_order", { ascending: true });
 
-  return (data ?? []) as Category[];
+    if (error) {
+      throw error;
+    }
+
+    return (data ?? []) as Category[];
+  } catch (error) {
+    console.error("getCategories failed:", error);
+    return [];
+  }
 }
 
 interface SearchListingsParams {
@@ -461,101 +488,120 @@ export async function searchListings({
     };
   }
 
-  const supabase = await createClient();
   const currentPage = Math.max(1, page);
   const pageSize = Math.max(1, perPage);
   const from = (currentPage - 1) * pageSize;
   const to = currentPage * pageSize - 1;
 
-  let categoryId: string | undefined;
-  if (category) {
-    const { data: categoryRow } = await supabase
-      .from("categories")
-      .select("id")
-      .eq("slug", category)
-      .eq("is_active", true)
-      .maybeSingle<{ id: string }>();
+  try {
+    const supabase = await createClient();
+    let categoryId: string | undefined;
+    if (category) {
+      const { data: categoryRow, error: categoryError } = await supabase
+        .from("categories")
+        .select("id")
+        .eq("slug", category)
+        .eq("is_active", true)
+        .maybeSingle<{ id: string }>();
 
-    categoryId = categoryRow?.id;
+      if (categoryError) {
+        throw categoryError;
+      }
 
-    if (!categoryId) {
-      return {
-        data: [],
-        totalCount: 0,
-        totalPages: 0,
-        currentPage,
-      };
+      categoryId = categoryRow?.id;
+
+      if (!categoryId) {
+        return {
+          data: [],
+          totalCount: 0,
+          totalPages: 0,
+          currentPage,
+        };
+      }
     }
-  }
 
-  let listingsQuery = supabase
-    .from("listings")
-    .select(
-      "*, owner:profiles!listings_owner_id_fkey(id, display_name, avatar_url, rating_as_lister, total_reviews_as_lister)",
-      { count: "exact" },
-    )
-    .eq("status", "active");
+    let listingsQuery = supabase
+      .from("listings")
+      .select(
+        "*, owner:profiles!listings_owner_id_fkey(id, display_name, avatar_url, rating_as_lister, total_reviews_as_lister)",
+        { count: "exact" },
+      )
+      .eq("status", "active");
 
-  if (query) {
-    listingsQuery = listingsQuery.textSearch("search_vector", query, {
-      type: "websearch",
-    });
-  }
-
-  if (categoryId) {
-    listingsQuery = listingsQuery.eq("category_id", categoryId);
-  }
-
-  if (typeof minPrice === "number" && Number.isFinite(minPrice)) {
-    listingsQuery = listingsQuery.gte("price_per_day", minPrice);
-  }
-
-  if (typeof maxPrice === "number" && Number.isFinite(maxPrice)) {
-    listingsQuery = listingsQuery.lte("price_per_day", maxPrice);
-  }
-
-  if (city) {
-    listingsQuery = listingsQuery.ilike("city", `%${city}%`);
-  }
-
-  if (condition) {
-    listingsQuery = listingsQuery.eq("condition", condition);
-  }
-
-  if (inStockOnly) {
-    listingsQuery = listingsQuery.or("track_inventory.eq.false,quantity_available.gt.0");
-  }
-
-  switch (sortBy) {
-    case "price_asc":
-      listingsQuery = listingsQuery.order("price_per_day", {
-        ascending: true,
-        nullsFirst: false,
+    if (query) {
+      listingsQuery = listingsQuery.textSearch("search_vector", query, {
+        type: "websearch",
       });
-      break;
-    case "price_desc":
-      listingsQuery = listingsQuery.order("price_per_day", {
-        ascending: false,
-        nullsFirst: false,
-      });
-      break;
-    case "rating":
-      listingsQuery = listingsQuery.order("views_count", { ascending: false });
-      break;
-    case "newest":
-    default:
-      listingsQuery = listingsQuery.order("created_at", { ascending: false });
-      break;
+    }
+
+    if (categoryId) {
+      listingsQuery = listingsQuery.eq("category_id", categoryId);
+    }
+
+    if (typeof minPrice === "number" && Number.isFinite(minPrice)) {
+      listingsQuery = listingsQuery.gte("price_per_day", minPrice);
+    }
+
+    if (typeof maxPrice === "number" && Number.isFinite(maxPrice)) {
+      listingsQuery = listingsQuery.lte("price_per_day", maxPrice);
+    }
+
+    if (city) {
+      listingsQuery = listingsQuery.ilike("city", `%${city}%`);
+    }
+
+    if (condition) {
+      listingsQuery = listingsQuery.eq("condition", condition);
+    }
+
+    if (inStockOnly) {
+      listingsQuery = listingsQuery.or("track_inventory.eq.false,quantity_available.gt.0");
+    }
+
+    switch (sortBy) {
+      case "price_asc":
+        listingsQuery = listingsQuery.order("price_per_day", {
+          ascending: true,
+          nullsFirst: false,
+        });
+        break;
+      case "price_desc":
+        listingsQuery = listingsQuery.order("price_per_day", {
+          ascending: false,
+          nullsFirst: false,
+        });
+        break;
+      case "rating":
+        listingsQuery = listingsQuery.order("views_count", { ascending: false });
+        break;
+      case "newest":
+      default:
+        listingsQuery = listingsQuery.order("created_at", { ascending: false });
+        break;
+    }
+
+    const { data, count, error } = await listingsQuery.range(from, to);
+
+    if (error) {
+      throw error;
+    }
+
+    const totalCount = count ?? 0;
+    const totalPages = totalCount > 0 ? Math.ceil(totalCount / pageSize) : 0;
+
+    return {
+      data: (data ?? []) as Listing[],
+      totalCount,
+      totalPages,
+      currentPage,
+    };
+  } catch (error) {
+    console.error("searchListings failed:", error);
+    return {
+      data: [],
+      totalCount: 0,
+      totalPages: 0,
+      currentPage,
+    };
   }
-
-  const { data, count } = await listingsQuery.range(from, to);
-  const totalCount = count ?? 0;
-  const totalPages = totalCount > 0 ? Math.ceil(totalCount / pageSize) : 0;
-
-  return {
-    data: (data ?? []) as Listing[],
-    totalCount,
-    totalPages,
-    currentPage,
-  };
 }

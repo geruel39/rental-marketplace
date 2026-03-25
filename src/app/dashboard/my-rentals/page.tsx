@@ -166,7 +166,12 @@ export default async function MyRentalsPage({ searchParams }: MyRentalsPageProps
                     </div>
 
                     <div className="flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
-                      <span>{booking.lister.display_name || booking.lister.full_name}</span>
+                      <Link
+                        className="font-medium text-foreground transition-colors hover:text-primary hover:underline"
+                        href={`/users/${booking.lister.id}`}
+                      >
+                        {booking.lister.display_name || booking.lister.full_name}
+                      </Link>
                       <span className="flex items-center gap-1">
                         <Star className="size-4 fill-current text-amber-500" />
                         {booking.lister.rating_as_lister.toFixed(1)}

@@ -119,9 +119,9 @@ export default async function RequestsPage({ searchParams }: RequestsPageProps) 
         <EmptyState
           actionHref="/dashboard/my-listings"
           actionLabel="View My Listings"
-          description={`You do not have any ${activeTab} booking requests right now.`}
+          description={`You have no ${activeTab} booking requests right now.`}
           icon={Receipt}
-          title="No requests in this view"
+          title="No booking requests"
         />
       ) : (
         <div className="space-y-4">
@@ -162,20 +162,30 @@ export default async function RequestsPage({ searchParams }: RequestsPageProps) 
                     </div>
 
                     <div className="flex flex-wrap items-center gap-3">
-                      <Avatar size="lg">
-                        <AvatarImage
-                          alt={booking.renter.display_name || booking.renter.full_name}
-                          src={booking.renter.avatar_url ?? undefined}
-                        />
-                        <AvatarFallback>
-                          {getInitials(
-                            booking.renter.display_name || booking.renter.full_name,
-                          )}
-                        </AvatarFallback>
-                      </Avatar>
+                      <Link
+                        className="transition-opacity hover:opacity-90"
+                        href={`/users/${booking.renter.id}`}
+                      >
+                        <Avatar size="lg">
+                          <AvatarImage
+                            alt={booking.renter.display_name || booking.renter.full_name}
+                            src={booking.renter.avatar_url ?? undefined}
+                          />
+                          <AvatarFallback>
+                            {getInitials(
+                              booking.renter.display_name || booking.renter.full_name,
+                            )}
+                          </AvatarFallback>
+                        </Avatar>
+                      </Link>
                       <div className="space-y-1">
                         <p className="font-medium">
-                          {booking.renter.display_name || booking.renter.full_name}
+                          <Link
+                            className="transition-colors hover:text-primary hover:underline"
+                            href={`/users/${booking.renter.id}`}
+                          >
+                            {booking.renter.display_name || booking.renter.full_name}
+                          </Link>
                         </p>
                         <p className="flex items-center gap-1 text-sm text-muted-foreground">
                           <Star className="size-4 fill-current text-amber-500" />

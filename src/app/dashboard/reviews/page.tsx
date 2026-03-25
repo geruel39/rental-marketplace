@@ -1,4 +1,4 @@
-import { Star } from "lucide-react";
+import Link from "next/link";
 import { redirect } from "next/navigation";
 
 import {
@@ -6,8 +6,8 @@ import {
   getPendingReviews,
   getReviewsForUser,
 } from "@/actions/reviews";
-import { DualReviewForm } from "@/components/reviews/dual-review-form";
 import { ReviewList } from "@/components/reviews/review-list";
+import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { createClient } from "@/lib/supabase/server";
 
@@ -28,6 +28,14 @@ export default async function ReviewsPage() {
       getMyWrittenReviews(user.id),
       getPendingReviews(user.id),
     ]);
+  const writtenAsLister = writtenReviews.filter(
+    (review) => review.review_role === "as_lister",
+  );
+  const writtenAsRenter = writtenReviews.filter(
+    (review) => review.review_role === "as_renter",
+  );
+  const pendingAsRenter = pendingReviews.filter((booking) => booking.renter_id === user.id);
+  const pendingAsLister = pendingReviews.filter((booking) => booking.lister_id === user.id);
 
   return (
     <div className="space-y-6">
@@ -46,26 +54,24 @@ export default async function ReviewsPage() {
               {pendingReviews.length === 1 ? "" : "s"} to review
             </p>
             <p className="text-sm text-amber-900/80">
-              Leaving feedback helps build trust for future renters and listers.
+              Open the relevant booking page to leave your review from the booking card.
             </p>
           </div>
           <div className="flex flex-wrap gap-2">
-            {pendingReviews.map((booking) => (
-              <DualReviewForm
-                key={booking.id}
-                booking={booking}
-                currentUserId={user.id}
-                trigger={
-                  <button
-                    className="inline-flex items-center gap-2 rounded-full border border-amber-300 bg-white px-4 py-2 text-sm font-medium text-amber-950 transition-colors hover:bg-amber-100"
-                    type="button"
-                  >
-                    <Star className="size-4" />
-                    Review {booking.listing.title}
-                  </button>
-                }
-              />
-            ))}
+            {pendingAsRenter.length > 0 ? (
+              <Button asChild className="bg-amber-950 text-white hover:bg-amber-900">
+                <Link href="/dashboard/my-rentals">
+                  Open My Rentals ({pendingAsRenter.length})
+                </Link>
+              </Button>
+            ) : null}
+            {pendingAsLister.length > 0 ? (
+              <Button asChild variant="outline">
+                <Link href="/dashboard/requests">
+                  Open Requests ({pendingAsLister.length})
+                </Link>
+              </Button>
+            ) : null}
           </div>
         </div>
       ) : null}
@@ -74,7 +80,8 @@ export default async function ReviewsPage() {
         <TabsList>
           <TabsTrigger value="lister">Received as Lister</TabsTrigger>
           <TabsTrigger value="renter">Received as Renter</TabsTrigger>
-          <TabsTrigger value="written">My Reviews</TabsTrigger>
+          <TabsTrigger value="written-lister">Written as Lister</TabsTrigger>
+          <TabsTrigger value="written-renter">Written as Renter</TabsTrigger>
         </TabsList>
 
         <TabsContent value="lister">
@@ -95,8 +102,12 @@ export default async function ReviewsPage() {
           />
         </TabsContent>
 
-        <TabsContent value="written">
-          <ReviewList reviews={writtenReviews} showSummary />
+        <TabsContent value="written-lister">
+          <ReviewList reviews={writtenAsLister} showSummary />
+        </TabsContent>
+
+        <TabsContent value="written-renter">
+          <ReviewList reviews={writtenAsRenter} showSummary />
         </TabsContent>
       </Tabs>
     </div>

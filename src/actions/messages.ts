@@ -1,6 +1,6 @@
 "use server";
 
-import { createAdminClient } from "@/lib/supabase/admin";
+import { createNotification } from "@/actions/notifications";
 import { createClient } from "@/lib/supabase/server";
 import { messageSchema } from "@/lib/validations";
 import type {
@@ -15,10 +15,6 @@ import type {
 const MESSAGES_PER_PAGE = 20;
 
 type SupabaseClient = Awaited<ReturnType<typeof createClient>>;
-
-function getErrorMessage(error: unknown, fallback: string) {
-  return error instanceof Error ? error.message : fallback;
-}
 
 function getPage(page?: number) {
   return Math.max(1, page ?? 1);
@@ -110,96 +106,125 @@ async function getConversationForUser(
   return data;
 }
 
-async function createMessageNotification(
-  {
-    userId,
-    senderName,
-    conversationId,
-    listingId,
-  }: {
-    userId: string;
-    senderName: string;
-    conversationId: string;
-    listingId?: string | null;
-  },
-) {
-  const admin = createAdminClient();
-  const { error } = await admin.from("notifications").insert({
-    user_id: userId,
-    type: "new_message",
-    title: `New message from ${senderName}`,
-    listing_id: listingId ?? null,
-    action_url: `/dashboard/messages/${conversationId}`,
-  });
-
-  if (error) {
-    throw new Error(error.message);
-  }
-}
-
 async function findExistingConversation(
   supabase: SupabaseClient,
-  listingId: string | null,
   currentUserId: string,
   otherUserId: string,
 ) {
-  let query = supabase
+  const { data, error } = await supabase
     .from("conversations")
     .select("*")
     .or(
       `and(participant_1.eq.${currentUserId},participant_2.eq.${otherUserId}),and(participant_1.eq.${otherUserId},participant_2.eq.${currentUserId})`,
-    );
-
-  query =
-    listingId === null ? query.is("listing_id", null) : query.eq("listing_id", listingId);
-
-  const { data, error } = await query.maybeSingle<Conversation>();
+    )
+    .order("last_message_at", { ascending: false })
+    .limit(1);
 
   if (error) {
     throw new Error(error.message);
   }
 
-  return data;
+  return ((data ?? [])[0] as Conversation | undefined) ?? null;
 }
 
-export async function getConversations(
-  userId: string,
-): Promise<ConversationWithDetails[]> {
-  const supabase = await createClient();
+async function getRelatedConversations(
+  supabase: SupabaseClient,
+  currentUserId: string,
+  otherUserId: string,
+) {
   const { data, error } = await supabase
     .from("conversations")
     .select("*")
-    .or(`participant_1.eq.${userId},participant_2.eq.${userId}`)
+    .or(
+      `and(participant_1.eq.${currentUserId},participant_2.eq.${otherUserId}),and(participant_1.eq.${otherUserId},participant_2.eq.${currentUserId})`,
+    )
     .order("last_message_at", { ascending: false });
 
   if (error) {
     throw new Error(error.message);
   }
 
-  const conversations = (data ?? []) as Conversation[];
-  const otherUserIds = Array.from(
-    new Set(
-      conversations.map((conversation) =>
-        conversation.participant_1 === userId
-          ? conversation.participant_2
-          : conversation.participant_1,
+  return (data ?? []) as Conversation[];
+}
+
+export async function getConversations(
+  userId: string,
+): Promise<ConversationWithDetails[]> {
+  try {
+    const supabase = await createClient();
+    const { data, error } = await supabase
+      .from("conversations")
+      .select("*")
+      .or(`participant_1.eq.${userId},participant_2.eq.${userId}`)
+      .order("last_message_at", { ascending: false });
+
+    if (error) {
+      throw error;
+    }
+
+    const allConversations = (data ?? []) as Conversation[];
+    const conversations = Array.from(
+      allConversations
+        .reduce((map, conversation) => {
+          const otherUserId =
+            conversation.participant_1 === userId
+              ? conversation.participant_2
+              : conversation.participant_1;
+          const existingConversation = map.get(otherUserId);
+
+          if (!existingConversation) {
+            map.set(otherUserId, conversation);
+            return map;
+          }
+
+          const existingDate = new Date(existingConversation.last_message_at).getTime();
+          const nextDate = new Date(conversation.last_message_at).getTime();
+
+          if (nextDate >= existingDate) {
+            map.set(otherUserId, {
+              ...conversation,
+              unread_count_1:
+                conversation.unread_count_1 + existingConversation.unread_count_1,
+              unread_count_2:
+                conversation.unread_count_2 + existingConversation.unread_count_2,
+            });
+          } else {
+            map.set(otherUserId, {
+              ...existingConversation,
+              unread_count_1:
+                conversation.unread_count_1 + existingConversation.unread_count_1,
+              unread_count_2:
+                conversation.unread_count_2 + existingConversation.unread_count_2,
+            });
+          }
+
+          return map;
+        }, new Map<string, Conversation>())
+        .values(),
+    );
+    const otherUserIds = Array.from(
+      new Set(
+        conversations.map((conversation) =>
+          conversation.participant_1 === userId
+            ? conversation.participant_2
+            : conversation.participant_1,
+        ),
       ),
-    ),
-  );
-  const listingIds = Array.from(
-    new Set(
-      conversations
-        .map((conversation) => conversation.listing_id)
-        .filter((listingId): listingId is string => Boolean(listingId)),
-    ),
-  );
+    );
+    const listingIds = Array.from(
+      new Set(
+        conversations
+          .map((conversation) => conversation.listing_id)
+          .filter((listingId): listingId is string => Boolean(listingId)),
+      ),
+    );
 
-  const [profileMap, listingMap] = await Promise.all([
-    getProfileMap(supabase, otherUserIds),
-    getListingMap(supabase, listingIds),
-  ]);
+    const [profileMap, listingMap] = await Promise.all([
+      getProfileMap(supabase, otherUserIds),
+      getListingMap(supabase, listingIds),
+    ]);
 
-  return conversations.reduce<ConversationWithDetails[]>((acc, conversation) => {
+    return conversations.reduce<ConversationWithDetails[]>((acc, conversation) => {
       const { otherUserId } = getConversationParticipants(conversation, userId);
       const otherUser = profileMap.get(otherUserId);
 
@@ -221,6 +246,10 @@ export async function getConversations(
 
       return acc;
     }, []);
+  } catch (error) {
+    console.error("getConversations failed:", error);
+    return [];
+  }
 }
 
 export async function getMessages(
@@ -228,60 +257,71 @@ export async function getMessages(
   userId: string,
   page?: number,
 ): Promise<{ messages: Message[]; hasMore: boolean }> {
-  const supabase = await createClient();
-  const conversation = await getConversationForUser(supabase, conversationId, userId);
+  try {
+    const supabase = await createClient();
+    const conversation = await getConversationForUser(supabase, conversationId, userId);
 
-  if (!conversation) {
-    throw new Error("Conversation not found");
+    if (!conversation) {
+      return { messages: [], hasMore: false };
+    }
+
+    const currentPage = getPage(page);
+    const from = (currentPage - 1) * MESSAGES_PER_PAGE;
+    const to = from + MESSAGES_PER_PAGE - 1;
+    const { otherUserId, isParticipantOne } = getConversationParticipants(
+      conversation,
+      userId,
+    );
+    const relatedConversations = await getRelatedConversations(
+      supabase,
+      userId,
+      otherUserId,
+    );
+    const conversationIds = relatedConversations.map((item) => item.id);
+
+    const [{ data, error, count }, unreadUpdate] = await Promise.all([
+      supabase
+        .from("messages")
+        .select("*", { count: "exact" })
+        .in("conversation_id", conversationIds)
+        .order("created_at", { ascending: false })
+        .range(from, to),
+      supabase
+        .from("messages")
+        .update({ is_read: true })
+        .in("conversation_id", conversationIds)
+        .eq("sender_id", otherUserId)
+        .eq("is_read", false),
+    ]);
+
+    if (error) {
+      throw error;
+    }
+
+    if (unreadUpdate.error) {
+      throw unreadUpdate.error;
+    }
+
+    const unreadField = isParticipantOne ? "unread_count_1" : "unread_count_2";
+    const { error: conversationUpdateError } = await supabase
+      .from("conversations")
+      .update({ [unreadField]: 0 })
+      .in("id", conversationIds);
+
+    if (conversationUpdateError) {
+      throw conversationUpdateError;
+    }
+
+    const messages = ((data ?? []) as Message[]).reverse();
+
+    return {
+      messages,
+      hasMore: (count ?? 0) > to + 1,
+    };
+  } catch (error) {
+    console.error("getMessages failed:", error);
+    return { messages: [], hasMore: false };
   }
-
-  const currentPage = getPage(page);
-  const from = (currentPage - 1) * MESSAGES_PER_PAGE;
-  const to = from + MESSAGES_PER_PAGE - 1;
-  const { otherUserId, isParticipantOne } = getConversationParticipants(
-    conversation,
-    userId,
-  );
-
-  const [{ data, error, count }, unreadUpdate] = await Promise.all([
-    supabase
-      .from("messages")
-      .select("*", { count: "exact" })
-      .eq("conversation_id", conversationId)
-      .order("created_at", { ascending: false })
-      .range(from, to),
-    supabase
-      .from("messages")
-      .update({ is_read: true })
-      .eq("conversation_id", conversationId)
-      .eq("sender_id", otherUserId)
-      .eq("is_read", false),
-  ]);
-
-  if (error) {
-    throw new Error(error.message);
-  }
-
-  if (unreadUpdate.error) {
-    throw new Error(unreadUpdate.error.message);
-  }
-
-  const unreadField = isParticipantOne ? "unread_count_1" : "unread_count_2";
-  const { error: conversationUpdateError } = await supabase
-    .from("conversations")
-    .update({ [unreadField]: 0 })
-    .eq("id", conversationId);
-
-  if (conversationUpdateError) {
-    throw new Error(conversationUpdateError.message);
-  }
-
-  const messages = ((data ?? []) as Message[]).reverse();
-
-  return {
-    messages,
-    hasMore: (count ?? 0) > to + 1,
-  };
 }
 
 export async function sendMessage(
@@ -310,20 +350,21 @@ export async function sendMessage(
     let recipientId = parsed.data.recipient_id ?? null;
 
     if (parsed.data.conversation_id) {
-      conversation = await getConversationForUser(
+      const requestedConversation = await getConversationForUser(
         supabase,
         parsed.data.conversation_id,
         user.id,
       );
 
-      if (!conversation) {
+      if (!requestedConversation) {
         return { error: "Conversation not found" };
       }
 
       recipientId =
-        conversation.participant_1 === user.id
-          ? conversation.participant_2
-          : conversation.participant_1;
+        requestedConversation.participant_1 === user.id
+          ? requestedConversation.participant_2
+          : requestedConversation.participant_1;
+      conversation = await findExistingConversation(supabase, user.id, recipientId);
     } else {
       if (parsed.data.recipient_id === user.id) {
         return { error: "You cannot message yourself" };
@@ -331,7 +372,6 @@ export async function sendMessage(
 
       conversation = await findExistingConversation(
         supabase,
-        parsed.data.listing_id!,
         user.id,
         parsed.data.recipient_id!,
       );
@@ -411,11 +451,14 @@ export async function sendMessage(
     const senderName =
       senderProfile?.display_name || senderProfile?.full_name || "Someone";
 
-    await createMessageNotification({
+    await createNotification({
       userId: recipientId,
-      senderName,
-      conversationId: conversation.id,
-      listingId: conversation.listing_id,
+      type: "new_message",
+      title: `New message from ${senderName}`,
+      body: parsed.data.content.slice(0, 140),
+      listingId: conversation.listing_id ?? undefined,
+      fromUserId: user.id,
+      actionUrl: `/dashboard/messages/${conversation.id}`,
     });
 
     return {
@@ -424,7 +467,8 @@ export async function sendMessage(
       message,
     };
   } catch (error) {
-    return { error: getErrorMessage(error, "Failed to send message") };
+    console.error("sendMessage failed:", error);
+    return { error: "Something went wrong. Please try again." };
   }
 }
 
@@ -433,72 +477,80 @@ export async function getOrCreateConversation(
   otherUserId: string,
   currentUserId: string,
 ): Promise<string> {
-  const supabase = await createClient();
-  const existingConversation = await findExistingConversation(
-    supabase,
-    listingId,
-    currentUserId,
-    otherUserId,
-  );
+  try {
+    const supabase = await createClient();
+    const existingConversation = await findExistingConversation(
+      supabase,
+      currentUserId,
+      otherUserId,
+    );
 
-  if (existingConversation) {
-    return existingConversation.id;
+    if (existingConversation) {
+      return existingConversation.id;
+    }
+
+    const { data, error } = await supabase
+      .from("conversations")
+      .insert({
+        listing_id: listingId,
+        participant_1: currentUserId,
+        participant_2: otherUserId,
+        last_message_at: new Date().toISOString(),
+        last_message_preview: "",
+        unread_count_1: 0,
+        unread_count_2: 0,
+      })
+      .select("id")
+      .single<{ id: string }>();
+
+    if (error || !data) {
+      throw error ?? new Error("Missing conversation");
+    }
+
+    return data.id;
+  } catch (error) {
+    console.error("getOrCreateConversation failed:", error);
+    throw new Error("Could not open this conversation. Please try again.");
   }
-
-  const { data, error } = await supabase
-    .from("conversations")
-    .insert({
-      listing_id: listingId,
-      participant_1: currentUserId,
-      participant_2: otherUserId,
-      last_message_at: new Date().toISOString(),
-      last_message_preview: "",
-      unread_count_1: 0,
-      unread_count_2: 0,
-    })
-    .select("id")
-    .single<{ id: string }>();
-
-  if (error || !data) {
-    throw new Error(error?.message ?? "Could not create conversation");
-  }
-
-  return data.id;
 }
 
 export async function getOrCreateDirectConversation(
   otherUserId: string,
   currentUserId: string,
 ): Promise<string> {
-  const supabase = await createClient();
-  const existingConversation = await findExistingConversation(
-    supabase,
-    null,
-    currentUserId,
-    otherUserId,
-  );
+  try {
+    const supabase = await createClient();
+    const existingConversation = await findExistingConversation(
+      supabase,
+      currentUserId,
+      otherUserId,
+    );
 
-  if (existingConversation) {
-    return existingConversation.id;
+    if (existingConversation) {
+      return existingConversation.id;
+    }
+
+    const { data, error } = await supabase
+      .from("conversations")
+      .insert({
+        listing_id: null,
+        participant_1: currentUserId,
+        participant_2: otherUserId,
+        last_message_at: new Date().toISOString(),
+        last_message_preview: "",
+        unread_count_1: 0,
+        unread_count_2: 0,
+      })
+      .select("id")
+      .single<{ id: string }>();
+
+    if (error || !data) {
+      throw error ?? new Error("Missing conversation");
+    }
+
+    return data.id;
+  } catch (error) {
+    console.error("getOrCreateDirectConversation failed:", error);
+    throw new Error("Could not open this conversation. Please try again.");
   }
-
-  const { data, error } = await supabase
-    .from("conversations")
-    .insert({
-      listing_id: null,
-      participant_1: currentUserId,
-      participant_2: otherUserId,
-      last_message_at: new Date().toISOString(),
-      last_message_preview: "",
-      unread_count_1: 0,
-      unread_count_2: 0,
-    })
-    .select("id")
-    .single<{ id: string }>();
-
-  if (error || !data) {
-    throw new Error(error?.message ?? "Could not create conversation");
-  }
-
-  return data.id;
 }

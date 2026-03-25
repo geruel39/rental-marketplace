@@ -5,6 +5,7 @@ import { redirect } from "next/navigation";
 import { format } from "date-fns";
 
 import { createPaymentForBooking } from "@/actions/hitpay";
+import { createNotification } from "@/actions/notifications";
 import { calculateNumUnits } from "@/lib/bookings";
 import { createClient } from "@/lib/supabase/server";
 import { bookingRequestSchema } from "@/lib/validations";
@@ -46,10 +47,6 @@ type BookingActionResponse = ActionResponse & {
 
 function roundMoney(value: number) {
   return Math.round(value * 100) / 100;
-}
-
-function getErrorMessage(error: unknown, fallback: string) {
-  return error instanceof Error ? error.message : fallback;
 }
 
 function normalizeText(value: string | null | undefined) {
@@ -291,44 +288,6 @@ async function returnStock(
   ]);
 }
 
-async function createNotification(
-  supabase: SupabaseClient,
-  {
-    userId,
-    type,
-    title,
-    body,
-    listingId,
-    bookingId,
-    fromUserId,
-    actionUrl,
-  }: {
-    userId: string;
-    type: string;
-    title: string;
-    body?: string | null;
-    listingId?: string | null;
-    bookingId?: string | null;
-    fromUserId?: string | null;
-    actionUrl?: string | null;
-  },
-) {
-  const { error } = await supabase.from("notifications").insert({
-    user_id: userId,
-    type,
-    title,
-    body: body ?? null,
-    listing_id: listingId ?? null,
-    booking_id: bookingId ?? null,
-    from_user_id: fromUserId ?? null,
-    action_url: actionUrl ?? null,
-  });
-
-  if (error) {
-    throw new Error(error.message);
-  }
-}
-
 async function getBookingForUpdate(
   supabase: SupabaseClient,
   bookingId: string,
@@ -470,7 +429,7 @@ export async function createBookingRequest(
       return { error: insertError.message };
     }
 
-    await createNotification(supabase, {
+    await createNotification({
       userId: listing.owner_id,
       type: "booking_request",
       title: `New booking request for ${listing.title}`,
@@ -512,7 +471,7 @@ export async function createBookingRequest(
       }
       paymentUrl = paymentResult.paymentUrl;
 
-      await createNotification(supabase, {
+      await createNotification({
         userId: user.id,
         type: "booking_confirmed",
         title: "Booking confirmed — please complete payment",
@@ -534,7 +493,8 @@ export async function createBookingRequest(
       paymentUrl,
     };
   } catch (error) {
-    return { error: getErrorMessage(error, "Failed to create booking request") };
+    console.error("createBookingRequest failed:", error);
+    return { error: "Something went wrong. Please try again." };
   }
 }
 
@@ -584,7 +544,7 @@ export async function acceptBookingRequest(
     }
     const paymentUrl = paymentResult.paymentUrl;
 
-    await createNotification(supabase, {
+    await createNotification({
       userId: booking.renter_id,
       type: "booking_confirmed",
       title: "Booking accepted",
@@ -604,7 +564,8 @@ export async function acceptBookingRequest(
       paymentUrl,
     };
   } catch (error) {
-    return { error: getErrorMessage(error, "Failed to accept booking") };
+    console.error("acceptBookingRequest failed:", error);
+    return { error: "Something went wrong. Please try again." };
   }
 }
 
@@ -640,7 +601,7 @@ export async function declineBookingRequest(
       return { error: error.message };
     }
 
-    await createNotification(supabase, {
+    await createNotification({
       userId: booking.renter_id,
       type: "booking_declined",
       title: "Booking declined",
@@ -655,7 +616,8 @@ export async function declineBookingRequest(
 
     return { success: "Booking declined" };
   } catch (error) {
-    return { error: getErrorMessage(error, "Failed to decline booking") };
+    console.error("declineBookingRequest failed:", error);
+    return { error: "Something went wrong. Please try again." };
   }
 }
 
@@ -704,7 +666,7 @@ export async function cancelBooking(
       return { error: error.message };
     }
 
-    await createNotification(supabase, {
+    await createNotification({
       userId: isRenter ? booking.lister_id : booking.renter_id,
       type: "booking_cancelled",
       title: "Booking cancelled",
@@ -723,7 +685,8 @@ export async function cancelBooking(
         : "Booking cancelled",
     };
   } catch (error) {
-    return { error: getErrorMessage(error, "Failed to cancel booking") };
+    console.error("cancelBooking failed:", error);
+    return { error: "Something went wrong. Please try again." };
   }
 }
 
@@ -772,7 +735,7 @@ export async function completeBooking(
     }
 
     await Promise.all([
-      createNotification(supabase, {
+      createNotification({
         userId: booking.renter_id,
         type: "booking_completed",
         title: "Rental completed",
@@ -782,7 +745,7 @@ export async function completeBooking(
         fromUserId: user.id,
         actionUrl: "/dashboard/reviews",
       }),
-      createNotification(supabase, {
+      createNotification({
         userId: booking.lister_id,
         type: "booking_completed",
         title: "Rental completed",
@@ -798,78 +761,94 @@ export async function completeBooking(
 
     return { success: "Booking completed" };
   } catch (error) {
-    return { error: getErrorMessage(error, "Failed to complete booking") };
+    console.error("completeBooking failed:", error);
+    return { error: "Something went wrong. Please try again." };
   }
 }
 
 export async function getIncomingRequests(
   listerId: string,
 ): Promise<BookingWithDetails[]> {
-  const supabase = await createClient();
-  const { data, error } = await supabase
-    .from("bookings")
-    .select(
-      `
-        *,
-        listing:listings!bookings_listing_id_fkey(*),
-        renter:profiles!bookings_renter_id_fkey(*),
-        lister:profiles!bookings_lister_id_fkey(*)
-      `,
-    )
-    .eq("lister_id", listerId)
-    .order("created_at", { ascending: false });
+  try {
+    const supabase = await createClient();
+    const { data, error } = await supabase
+      .from("bookings")
+      .select(
+        `
+          *,
+          listing:listings!bookings_listing_id_fkey(*),
+          renter:profiles!bookings_renter_id_fkey(*),
+          lister:profiles!bookings_lister_id_fkey(*)
+        `,
+      )
+      .eq("lister_id", listerId)
+      .order("created_at", { ascending: false });
 
-  if (error) {
-    throw new Error(error.message);
+    if (error) {
+      throw error;
+    }
+
+    return (data ?? []) as BookingWithDetails[];
+  } catch (error) {
+    console.error("getIncomingRequests failed:", error);
+    return [];
   }
-
-  return (data ?? []) as BookingWithDetails[];
 }
 
 export async function getMyRentals(
   renterId: string,
 ): Promise<BookingWithDetails[]> {
-  const supabase = await createClient();
-  const { data, error } = await supabase
-    .from("bookings")
-    .select(
-      `
-        *,
-        listing:listings!bookings_listing_id_fkey(*),
-        renter:profiles!bookings_renter_id_fkey(*),
-        lister:profiles!bookings_lister_id_fkey(*)
-      `,
-    )
-    .eq("renter_id", renterId)
-    .order("created_at", { ascending: false });
+  try {
+    const supabase = await createClient();
+    const { data, error } = await supabase
+      .from("bookings")
+      .select(
+        `
+          *,
+          listing:listings!bookings_listing_id_fkey(*),
+          renter:profiles!bookings_renter_id_fkey(*),
+          lister:profiles!bookings_lister_id_fkey(*)
+        `,
+      )
+      .eq("renter_id", renterId)
+      .order("created_at", { ascending: false });
 
-  if (error) {
-    throw new Error(error.message);
+    if (error) {
+      throw error;
+    }
+
+    return (data ?? []) as BookingWithDetails[];
+  } catch (error) {
+    console.error("getMyRentals failed:", error);
+    return [];
   }
-
-  return (data ?? []) as BookingWithDetails[];
 }
 
 export async function getBookingDetails(
   bookingId: string,
 ): Promise<BookingWithDetails | null> {
-  const supabase = await createClient();
-  const { data, error } = await supabase
-    .from("bookings")
-    .select(
-      `
-        *,
-        listing:listings!bookings_listing_id_fkey(*),
-        renter:profiles!bookings_renter_id_fkey(*),
-        lister:profiles!bookings_lister_id_fkey(*)
-      `,
-    )
-    .eq("id", bookingId)
-    .maybeSingle();
+  try {
+    const supabase = await createClient();
+    const { data, error } = await supabase
+      .from("bookings")
+      .select(
+        `
+          *,
+          listing:listings!bookings_listing_id_fkey(*),
+          renter:profiles!bookings_renter_id_fkey(*),
+          lister:profiles!bookings_lister_id_fkey(*)
+        `,
+      )
+      .eq("id", bookingId)
+      .maybeSingle();
 
-  if (error) {
-    throw new Error(error.message);
+    if (error) {
+      throw error;
+    }
+
+    return (data as BookingWithDetails | null) ?? null;
+  } catch (error) {
+    console.error("getBookingDetails failed:", error);
+    return null;
   }
-
-  return (data as BookingWithDetails | null) ?? null;
 }

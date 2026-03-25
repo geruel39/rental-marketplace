@@ -34,6 +34,14 @@ export function PayoutSettingsForm({ profile }: PayoutSettingsFormProps) {
     router.refresh();
   }, [router, state?.success]);
 
+  useEffect(() => {
+    if (!state?.error) {
+      return;
+    }
+
+    toast.error(state.error);
+  }, [state?.error]);
+
   return (
     <form
       className="space-y-4"

@@ -1,5 +1,11 @@
 "use server";
 
+import { startOfMonth } from "date-fns";
+
+import { getIncomingRequests, getMyRentals } from "@/actions/bookings";
+import { getInventoryOverview, getLowStockListings } from "@/actions/inventory";
+import { getNotifications } from "@/actions/notifications";
+import { getPendingReviews } from "@/actions/reviews";
 import { createClient } from "@/lib/supabase/server";
 import {
   payoutSettingsSchema,
@@ -7,6 +13,7 @@ import {
 } from "@/lib/validations";
 import type {
   ActionResponse,
+  DashboardStats,
   Listing,
   PaginatedResponse,
   Payout,
@@ -15,10 +22,6 @@ import type {
 
 const USER_LISTINGS_PER_PAGE = 8;
 const AVATARS_BUCKET = "avatars";
-
-function getErrorMessage(error: unknown, fallback: string) {
-  return error instanceof Error ? error.message : fallback;
-}
 
 function getPagination(page?: number, perPage = USER_LISTINGS_PER_PAGE) {
   const currentPage = Math.max(1, page ?? 1);
@@ -58,85 +61,95 @@ export async function getPublicProfile(userId: string): Promise<{
   reviewsAsListerCount: number;
   reviewsAsRenterCount: number;
 } | null> {
-  const supabase = await createClient();
-  const { data: profile, error: profileError } = await supabase
-    .from("profiles")
-    .select("*")
-    .eq("id", userId)
-    .maybeSingle<Profile>();
+  try {
+    const supabase = await createClient();
+    const { data: profile, error: profileError } = await supabase
+      .from("profiles")
+      .select("*")
+      .eq("id", userId)
+      .maybeSingle<Profile>();
 
-  if (profileError) {
-    throw new Error(profileError.message);
-  }
+    if (profileError) {
+      throw profileError;
+    }
 
-  if (!profile) {
+    if (!profile) {
+      return null;
+    }
+
+    const [
+      { count: listingsCount, error: listingsError },
+      { count: reviewsAsListerCount, error: listerReviewsError },
+      { count: reviewsAsRenterCount, error: renterReviewsError },
+    ] = await Promise.all([
+      supabase
+        .from("listings")
+        .select("id", { count: "exact", head: true })
+        .eq("owner_id", userId)
+        .eq("status", "active"),
+      supabase
+        .from("reviews")
+        .select("id", { count: "exact", head: true })
+        .eq("reviewee_id", userId)
+        .eq("review_role", "as_renter"),
+      supabase
+        .from("reviews")
+        .select("id", { count: "exact", head: true })
+        .eq("reviewee_id", userId)
+        .eq("review_role", "as_lister"),
+    ]);
+
+    if (listingsError || listerReviewsError || renterReviewsError) {
+      throw listingsError || listerReviewsError || renterReviewsError;
+    }
+
+    return {
+      profile,
+      listingsCount: listingsCount ?? 0,
+      reviewsAsListerCount: reviewsAsListerCount ?? 0,
+      reviewsAsRenterCount: reviewsAsRenterCount ?? 0,
+    };
+  } catch (error) {
+    console.error("getPublicProfile failed:", error);
     return null;
   }
-
-  const [
-    { count: listingsCount, error: listingsError },
-    { count: reviewsAsListerCount, error: listerReviewsError },
-    { count: reviewsAsRenterCount, error: renterReviewsError },
-  ] = await Promise.all([
-    supabase
-      .from("listings")
-      .select("id", { count: "exact", head: true })
-      .eq("owner_id", userId)
-      .eq("status", "active"),
-    supabase
-      .from("reviews")
-      .select("id", { count: "exact", head: true })
-      .eq("reviewee_id", userId)
-      .eq("review_role", "as_renter"),
-    supabase
-      .from("reviews")
-      .select("id", { count: "exact", head: true })
-      .eq("reviewee_id", userId)
-      .eq("review_role", "as_lister"),
-  ]);
-
-  if (listingsError || listerReviewsError || renterReviewsError) {
-    throw new Error(
-      listingsError?.message ||
-        listerReviewsError?.message ||
-        renterReviewsError?.message ||
-        "Failed to load public profile stats",
-    );
-  }
-
-  return {
-    profile,
-    listingsCount: listingsCount ?? 0,
-    reviewsAsListerCount: reviewsAsListerCount ?? 0,
-    reviewsAsRenterCount: reviewsAsRenterCount ?? 0,
-  };
 }
 
 export async function getUserListings(
   userId: string,
   page?: number,
 ): Promise<PaginatedResponse<Listing>> {
-  const supabase = await createClient();
-  const { currentPage, from, to, perPage } = getPagination(page);
+  try {
+    const supabase = await createClient();
+    const { currentPage, from, to, perPage } = getPagination(page);
 
-  const { data, error, count } = await supabase
-    .from("listings")
-    .select("*", { count: "exact" })
-    .eq("owner_id", userId)
-    .eq("status", "active")
-    .order("created_at", { ascending: false })
-    .range(from, to);
+    const { data, error, count } = await supabase
+      .from("listings")
+      .select("*", { count: "exact" })
+      .eq("owner_id", userId)
+      .eq("status", "active")
+      .order("created_at", { ascending: false })
+      .range(from, to);
 
-  if (error) {
-    throw new Error(error.message);
+    if (error) {
+      throw error;
+    }
+
+    return {
+      data: (data ?? []) as Listing[],
+      totalCount: count ?? 0,
+      totalPages: Math.max(1, Math.ceil((count ?? 0) / perPage)),
+      currentPage,
+    };
+  } catch (error) {
+    console.error("getUserListings failed:", error);
+    return {
+      data: [],
+      totalCount: 0,
+      totalPages: 0,
+      currentPage: Math.max(1, page ?? 1),
+    };
   }
-
-  return {
-    data: (data ?? []) as Listing[],
-    totalCount: count ?? 0,
-    totalPages: Math.max(1, Math.ceil((count ?? 0) / perPage)),
-    currentPage,
-  };
 }
 
 export async function updateProfile(
@@ -197,7 +210,8 @@ export async function updateProfile(
       .eq("id", user.id);
 
     if (error) {
-      return { error: error.message };
+      console.error("updateProfile profile update failed:", error);
+      return { error: "Could not save your profile. Please try again." };
     }
 
     const { error: authUpdateError } = await supabase.auth.updateUser({
@@ -210,12 +224,14 @@ export async function updateProfile(
     });
 
     if (authUpdateError) {
-      return { error: authUpdateError.message };
+      console.error("updateProfile auth sync failed:", authUpdateError);
+      return { error: "Could not save your profile. Please try again." };
     }
 
     return { success: "Profile updated" };
   } catch (error) {
-    return { error: getErrorMessage(error, "Failed to update profile") };
+    console.error("updateProfile failed:", error);
+    return { error: "Something went wrong. Please try again." };
   }
 }
 
@@ -272,12 +288,14 @@ export async function updatePayoutSettings(
       .eq("id", user.id);
 
     if (error) {
-      return { error: error.message };
+      console.error("updatePayoutSettings update failed:", error);
+      return { error: "Could not save payout settings. Please try again." };
     }
 
     return { success: "Payout settings saved" };
   } catch (error) {
-    return { error: getErrorMessage(error, "Failed to save payout settings") };
+    console.error("updatePayoutSettings failed:", error);
+    return { error: "Something went wrong. Please try again." };
   }
 }
 
@@ -298,26 +316,206 @@ export async function sendVerificationEmail(): Promise<ActionResponse> {
     });
 
     if (error) {
-      return { error: error.message };
+      console.error("sendVerificationEmail failed:", error);
+      return { error: "Could not send the verification email. Please try again." };
     }
 
     return { success: "Verification email sent" };
   } catch (error) {
-    return { error: getErrorMessage(error, "Failed to send verification email") };
+    console.error("sendVerificationEmail failed:", error);
+    return { error: "Something went wrong. Please try again." };
   }
 }
 
 export async function getPayoutsForUser(userId: string): Promise<Payout[]> {
-  const supabase = await createClient();
-  const { data, error } = await supabase
-    .from("payouts")
-    .select("*")
-    .eq("lister_id", userId)
-    .order("created_at", { ascending: false });
+  try {
+    const supabase = await createClient();
+    const { data, error } = await supabase
+      .from("payouts")
+      .select("*")
+      .eq("lister_id", userId)
+      .order("created_at", { ascending: false });
 
-  if (error) {
-    throw new Error(error.message);
+    if (error) {
+      throw error;
+    }
+
+    return (data ?? []) as Payout[];
+  } catch (error) {
+    console.error("getPayoutsForUser failed:", error);
+    return [];
   }
+}
 
-  return (data ?? []) as Payout[];
+export async function getDashboardStats(userId: string): Promise<DashboardStats> {
+  const monthStart = startOfMonth(new Date()).toISOString();
+
+  try {
+    const supabase = await createClient();
+
+    const [
+    { count: activeListingsCount, error: activeListingsError },
+    { count: pendingListerRequestsCount, error: pendingListerRequestsError },
+    { data: reservedItemsData, error: reservedItemsError },
+    { data: earningsData, error: earningsError },
+    inventoryOverview,
+    lowStockListings,
+    { count: activeRentalsCount, error: activeRentalsError },
+    { count: pendingRenterRequestsCount, error: pendingRenterRequestsError },
+    { count: completedRentalsCount, error: completedRentalsError },
+    incomingRequests,
+    outgoingRentals,
+    latestNotifications,
+    pendingReviews,
+    ] = await Promise.all([
+    supabase
+      .from("listings")
+      .select("id", { count: "exact", head: true })
+      .eq("owner_id", userId)
+      .eq("status", "active"),
+    supabase
+      .from("bookings")
+      .select("id", { count: "exact", head: true })
+      .eq("lister_id", userId)
+      .eq("status", "pending"),
+    supabase
+      .from("listings")
+      .select("quantity_reserved")
+      .eq("owner_id", userId),
+    supabase
+      .from("bookings")
+      .select("lister_payout")
+      .eq("lister_id", userId)
+      .eq("status", "completed")
+      .gte("payout_at", monthStart),
+    getInventoryOverview(userId),
+    getLowStockListings(userId),
+    supabase
+      .from("bookings")
+      .select("id", { count: "exact", head: true })
+      .eq("renter_id", userId)
+      .in("status", ["confirmed", "active"]),
+    supabase
+      .from("bookings")
+      .select("id", { count: "exact", head: true })
+      .eq("renter_id", userId)
+      .eq("status", "pending"),
+    supabase
+      .from("bookings")
+      .select("id", { count: "exact", head: true })
+      .eq("renter_id", userId)
+      .eq("status", "completed"),
+    getIncomingRequests(userId),
+    getMyRentals(userId),
+    getNotifications(userId, 1),
+    getPendingReviews(userId),
+  ]);
+
+    const queryError =
+      activeListingsError ||
+      pendingListerRequestsError ||
+      reservedItemsError ||
+      earningsError ||
+      activeRentalsError ||
+      pendingRenterRequestsError ||
+      completedRentalsError;
+
+    if (queryError) {
+      throw queryError;
+    }
+
+  const itemsRentedOut = (reservedItemsData ?? []).reduce(
+    (sum, listing) => sum + (listing.quantity_reserved ?? 0),
+    0,
+  );
+  const earningsThisMonth = (earningsData ?? []).reduce(
+    (sum, booking) => sum + (booking.lister_payout ?? 0),
+    0,
+  );
+  const pendingReviewsAsRenter = pendingReviews.filter(
+    (booking) => booking.renter_id === userId,
+  ).length;
+  const pendingReviewsAsLister = pendingReviews.filter(
+    (booking) => booking.lister_id === userId,
+  ).length;
+
+    return {
+    lister: {
+      totalListings: inventoryOverview.summary.totalListings,
+      activeListings: activeListingsCount ?? 0,
+      totalBookings: incomingRequests.length,
+      pendingRequests: pendingListerRequestsCount ?? 0,
+      activeRentals: incomingRequests.filter(
+        (booking) => booking.status === "confirmed" || booking.status === "active",
+      ).length,
+      completedBookings: incomingRequests.filter((booking) => booking.status === "completed")
+        .length,
+      totalEarnings: earningsThisMonth,
+      averageRating: 0,
+      itemsRentedOut,
+      earningsThisMonth,
+      inventorySummary: inventoryOverview.summary,
+      lowStockListings,
+      recentIncomingRequests: incomingRequests.slice(0, 5),
+    },
+    renter: {
+      totalBookings: outgoingRentals.length,
+      pendingBookings: pendingRenterRequestsCount ?? 0,
+      activeRentals: activeRentalsCount ?? 0,
+      completedRentals: completedRentalsCount ?? 0,
+      totalSpent: outgoingRentals
+        .filter((booking) => booking.hitpay_payment_status === "completed")
+        .reduce((sum, booking) => sum + booking.total_price, 0),
+      favoritesCount: 0,
+      averageRating: 0,
+      pendingRequests: pendingRenterRequestsCount ?? 0,
+      recentRentals: outgoingRentals.slice(0, 5),
+    },
+    notifications: latestNotifications.data.slice(0, 5),
+    pendingReviewsCount: pendingReviews.length,
+    pendingReviewsAsLister,
+    pendingReviewsAsRenter,
+    };
+  } catch (error) {
+    console.error("getDashboardStats failed:", error);
+    return {
+      lister: {
+        totalListings: 0,
+        activeListings: 0,
+        totalBookings: 0,
+        pendingRequests: 0,
+        activeRentals: 0,
+        completedBookings: 0,
+        totalEarnings: 0,
+        averageRating: 0,
+        itemsRentedOut: 0,
+        earningsThisMonth: 0,
+        inventorySummary: {
+          totalListings: 0,
+          inStockCount: 0,
+          lowStockCount: 0,
+          outOfStockCount: 0,
+          totalItemsAvailable: 0,
+          totalItemsReserved: 0,
+        },
+        lowStockListings: [],
+        recentIncomingRequests: [],
+      },
+      renter: {
+        totalBookings: 0,
+        pendingBookings: 0,
+        activeRentals: 0,
+        completedRentals: 0,
+        totalSpent: 0,
+        favoritesCount: 0,
+        averageRating: 0,
+        pendingRequests: 0,
+        recentRentals: [],
+      },
+      notifications: [],
+      pendingReviewsCount: 0,
+      pendingReviewsAsLister: 0,
+      pendingReviewsAsRenter: 0,
+    };
+  }
 }

@@ -358,6 +358,11 @@ export interface ListerDashboardStats {
   completedBookings: number;
   totalEarnings: number;
   averageRating: number;
+  itemsRentedOut: number;
+  earningsThisMonth: number;
+  inventorySummary: InventorySummary;
+  lowStockListings: Listing[];
+  recentIncomingRequests: BookingWithDetails[];
 }
 
 export interface RenterDashboardStats {
@@ -368,11 +373,17 @@ export interface RenterDashboardStats {
   totalSpent: number;
   favoritesCount: number;
   averageRating: number;
+  pendingRequests: number;
+  recentRentals: BookingWithDetails[];
 }
 
 export interface DashboardStats {
   lister: ListerDashboardStats;
   renter: RenterDashboardStats;
+  notifications: Notification[];
+  pendingReviewsCount: number;
+  pendingReviewsAsLister: number;
+  pendingReviewsAsRenter: number;
 }
 
 export interface PaginatedResponse<T> {

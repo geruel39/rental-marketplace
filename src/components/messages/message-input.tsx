@@ -73,7 +73,7 @@ export function MessageInput({
       <div className="mt-3 flex items-center justify-end">
         <Button disabled={isPending || content.trim().length === 0} onClick={handleSubmit} type="button">
           <SendHorizonal className="size-4" />
-          Send
+          {isPending ? "Sending..." : "Send"}
         </Button>
       </div>
     </div>

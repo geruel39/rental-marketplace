@@ -23,7 +23,7 @@ export default async function MessagesPage() {
       <EmptyState
         description="Start a conversation from a listing page and your inbox will appear here."
         icon={MessageSquareMore}
-        title="No messages yet"
+        title="No conversations yet"
       />
     );
   }

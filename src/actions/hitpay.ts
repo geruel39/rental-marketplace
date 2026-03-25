@@ -148,13 +148,15 @@ export async function createPaymentForBooking(
       .eq("id", bookingId);
 
     if (updateError) {
-      return { error: updateError.message };
+      console.error("createPaymentForBooking booking update failed:", updateError);
+      return { error: "Could not create the payment link. Please try again." };
     }
 
     return { paymentUrl: payment.url };
   } catch (error) {
+    console.error("createPaymentForBooking failed:", error);
     return {
-      error: error instanceof Error ? error.message : "Failed to create payment",
+      error: "Something went wrong. Please try again.",
     };
   }
 }
@@ -221,7 +223,7 @@ export async function checkPaymentStatus(
   } catch (error) {
     console.error("[PAYMENT_STATUS] Error checking payment status:", error);
     return {
-      error: error instanceof Error ? error.message : "Failed to check payment status",
+      error: "Could not verify payment status. Please try again.",
     };
   }
 }

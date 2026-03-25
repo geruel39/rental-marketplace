@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 
+import { createNotification } from "@/actions/notifications";
 import { verifyWebhookSignature } from "@/lib/hitpay";
 import { createAdminClient } from "@/lib/supabase/admin";
 
@@ -269,27 +270,27 @@ export async function POST(request: Request) {
 
       console.log("[WEBHOOK] Sending notifications");
 
-      await admin.from("notifications").insert([
-        {
-          user_id: booking.lister_id,
+      await Promise.all([
+        createNotification({
+          userId: booking.lister_id,
           type: "payment_received",
-          title: `Payment received`,
-          booking_id: bookingId,
-          listing_id: booking.listing_id,
-          from_user_id: booking.renter_id,
+          title: "Payment received",
+          bookingId,
+          listingId: booking.listing_id,
+          fromUserId: booking.renter_id,
           body: "The renter has completed payment.",
-          action_url: "/dashboard/requests?status=active",
-        },
-        {
-          user_id: booking.renter_id,
+          actionUrl: "/dashboard/requests?status=active",
+        }),
+        createNotification({
+          userId: booking.renter_id,
           type: "payment_confirmed",
           title: "Payment confirmed",
-          booking_id: bookingId,
-          listing_id: booking.listing_id,
-          from_user_id: booking.lister_id,
-          body: `Your payment has been confirmed.`,
-          action_url: "/dashboard/my-rentals?status=active",
-        },
+          bookingId,
+          listingId: booking.listing_id,
+          fromUserId: booking.lister_id,
+          body: "Your payment has been confirmed.",
+          actionUrl: "/dashboard/my-rentals?status=active",
+        }),
       ]);
 
       console.log("[WEBHOOK] Webhook processing completed successfully");

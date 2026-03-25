@@ -156,7 +156,15 @@ export function StockAdjustmentForm({
       return;
     }
 
-    toast.success(state.success);
+    const parsedQuantity = Number(quantity);
+    const changeLabel =
+      adjustmentType === "adjustment_add"
+        ? `+${parsedQuantity}`
+        : adjustmentType === "adjustment_set"
+          ? `${parsedQuantity} total`
+          : `-${parsedQuantity}`;
+
+    toast.success(`Stock adjusted: ${changeLabel} items`);
     const timeoutId = window.setTimeout(() => {
       router.refresh();
       setOpen(false);
@@ -167,7 +175,15 @@ export function StockAdjustmentForm({
     }, 0);
 
     return () => window.clearTimeout(timeoutId);
-  }, [onSuccess, router, setOpen, state?.success]);
+  }, [adjustmentType, onSuccess, quantity, router, setOpen, state?.success]);
+
+  useEffect(() => {
+    if (!state?.error) {
+      return;
+    }
+
+    toast.error(state.error);
+  }, [state?.error]);
 
   const handleSubmit = (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();

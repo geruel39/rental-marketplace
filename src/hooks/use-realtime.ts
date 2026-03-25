@@ -41,6 +41,7 @@ export function useRealtimeMessages(conversationId: string) {
 
 export function useRealtimeNotifications(userId: string) {
   const [newNotification, setNewNotification] = useState<Notification | null>(null);
+  const [newNotifications, setNewNotifications] = useState<Notification[]>([]);
   const [unreadCount, setUnreadCount] = useState(0);
 
   useEffect(() => {
@@ -63,6 +64,7 @@ export function useRealtimeNotifications(userId: string) {
         (payload) => {
           const notification = payload.new as Notification;
           setNewNotification(notification);
+          setNewNotifications((current) => [...current, notification]);
           setUnreadCount((current) => current + 1);
         },
       )
@@ -73,5 +75,5 @@ export function useRealtimeNotifications(userId: string) {
     };
   }, [userId]);
 
-  return { newNotification, unreadCount };
+  return { newNotification, newNotifications, unreadCount };
 }

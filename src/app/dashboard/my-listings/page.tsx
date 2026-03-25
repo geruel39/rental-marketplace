@@ -80,7 +80,7 @@ export default async function MyListingsPage() {
           actionLabel="Create Listing"
           description="Publish your first rentable item to start receiving requests."
           icon={PackagePlus}
-          title="You haven't listed anything yet"
+          title="No listings yet"
         />
       ) : (
         <div className="rounded-2xl border border-border bg-background">

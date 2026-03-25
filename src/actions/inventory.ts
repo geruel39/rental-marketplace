@@ -26,10 +26,6 @@ type InventoryMovementRow = InventoryMovement & {
   } | null;
 };
 
-function getErrorMessage(error: unknown, fallback: string) {
-  return error instanceof Error ? error.message : fallback;
-}
-
 function getStockStatus(listing: Listing): StockStatus {
   if (!listing.track_inventory) {
     return "not_tracked";
@@ -65,56 +61,71 @@ export async function getInventoryOverview(userId: string): Promise<{
   listings: ListingWithStockStatus[];
   summary: InventorySummary;
 }> {
-  const supabase = await createClient();
-  const { data, error } = await supabase
-    .from("listings")
-    .select("*")
-    .eq("owner_id", userId)
-    .neq("status", "archived")
-    .order("updated_at", { ascending: false });
+  try {
+    const supabase = await createClient();
+    const { data, error } = await supabase
+      .from("listings")
+      .select("*")
+      .eq("owner_id", userId)
+      .neq("status", "archived")
+      .order("updated_at", { ascending: false });
 
-  if (error) {
-    throw new Error(error.message);
+    if (error) {
+      throw error;
+    }
+
+    const listings = ((data ?? []) as Listing[]).map((listing) => ({
+      ...listing,
+      stockStatus: getStockStatus(listing),
+    }));
+
+    const summary = listings.reduce<InventorySummary>(
+      (acc, listing) => {
+        acc.totalListings += 1;
+        acc.totalItemsAvailable += listing.quantity_available;
+        acc.totalItemsReserved += listing.quantity_reserved;
+
+        switch (listing.stockStatus) {
+          case "in_stock":
+            acc.inStockCount += 1;
+            break;
+          case "low_stock":
+            acc.lowStockCount += 1;
+            break;
+          case "out_of_stock":
+            acc.outOfStockCount += 1;
+            break;
+          default:
+            break;
+        }
+
+        return acc;
+      },
+      {
+        totalListings: 0,
+        inStockCount: 0,
+        lowStockCount: 0,
+        outOfStockCount: 0,
+        totalItemsAvailable: 0,
+        totalItemsReserved: 0,
+      },
+    );
+
+    return { listings, summary };
+  } catch (error) {
+    console.error("getInventoryOverview failed:", error);
+    return {
+      listings: [],
+      summary: {
+        totalListings: 0,
+        inStockCount: 0,
+        lowStockCount: 0,
+        outOfStockCount: 0,
+        totalItemsAvailable: 0,
+        totalItemsReserved: 0,
+      },
+    };
   }
-
-  const listings = ((data ?? []) as Listing[]).map((listing) => ({
-    ...listing,
-    stockStatus: getStockStatus(listing),
-  }));
-
-  const summary = listings.reduce<InventorySummary>(
-    (acc, listing) => {
-      acc.totalListings += 1;
-      acc.totalItemsAvailable += listing.quantity_available;
-      acc.totalItemsReserved += listing.quantity_reserved;
-
-      switch (listing.stockStatus) {
-        case "in_stock":
-          acc.inStockCount += 1;
-          break;
-        case "low_stock":
-          acc.lowStockCount += 1;
-          break;
-        case "out_of_stock":
-          acc.outOfStockCount += 1;
-          break;
-        default:
-          break;
-      }
-
-      return acc;
-    },
-    {
-      totalListings: 0,
-      inStockCount: 0,
-      lowStockCount: 0,
-      outOfStockCount: 0,
-      totalItemsAvailable: 0,
-      totalItemsReserved: 0,
-    },
-  );
-
-  return { listings, summary };
 }
 
 export async function getListingStock(
@@ -125,47 +136,52 @@ export async function getListingStock(
   movements: InventoryMovement[];
   totalMovements: number;
 } | null> {
-  const supabase = await createClient();
-  const { data: listing, error: listingError } = await supabase
-    .from("listings")
-    .select("*")
-    .eq("id", listingId)
-    .eq("owner_id", userId)
-    .neq("status", "archived")
-    .maybeSingle<Listing>();
+  try {
+    const supabase = await createClient();
+    const { data: listing, error: listingError } = await supabase
+      .from("listings")
+      .select("*")
+      .eq("id", listingId)
+      .eq("owner_id", userId)
+      .neq("status", "archived")
+      .maybeSingle<Listing>();
 
-  if (listingError) {
-    throw new Error(listingError.message);
-  }
+    if (listingError) {
+      throw listingError;
+    }
 
-  if (!listing) {
+    if (!listing) {
+      return null;
+    }
+
+    const { data: movements, error: movementError, count } = await supabase
+      .from("inventory_movements")
+      .select(
+        `
+          *,
+          booking:bookings (
+            id
+          )
+        `,
+        { count: "exact" },
+      )
+      .eq("listing_id", listingId)
+      .order("created_at", { ascending: false })
+      .range(0, 19);
+
+    if (movementError) {
+      throw movementError;
+    }
+
+    return {
+      listing,
+      movements: (movements ?? []) as InventoryMovement[],
+      totalMovements: count ?? 0,
+    };
+  } catch (error) {
+    console.error("getListingStock failed:", error);
     return null;
   }
-
-  const { data: movements, error: movementError, count } = await supabase
-    .from("inventory_movements")
-    .select(
-      `
-        *,
-        booking:bookings (
-          id
-        )
-      `,
-      { count: "exact" },
-    )
-    .eq("listing_id", listingId)
-    .order("created_at", { ascending: false })
-    .range(0, 19);
-
-  if (movementError) {
-    throw new Error(movementError.message);
-  }
-
-  return {
-    listing,
-    movements: (movements ?? []) as InventoryMovement[],
-    totalMovements: count ?? 0,
-  };
 }
 
 export async function adjustStock(
@@ -205,7 +221,8 @@ export async function adjustStock(
       .maybeSingle<{ id: string }>();
 
     if (listingError) {
-      return { error: listingError.message };
+      console.error("adjustStock listing lookup failed:", listingError);
+      return { error: "Could not adjust stock. Please try again." };
     }
 
     if (!listing) {
@@ -221,7 +238,8 @@ export async function adjustStock(
     });
 
     if (rpcError) {
-      return { error: rpcError.message };
+      console.error("adjustStock rpc failed:", rpcError);
+      return { error: "Could not adjust stock. Please try again." };
     }
 
     revalidateInventoryViews();
@@ -229,7 +247,8 @@ export async function adjustStock(
 
     return { success: "Stock adjusted successfully" };
   } catch (error) {
-    return { error: getErrorMessage(error, "Failed to adjust stock") };
+    console.error("adjustStock failed:", error);
+    return { error: "Something went wrong. Please try again." };
   }
 }
 
@@ -246,68 +265,83 @@ export async function getStockMovements({
   page?: number;
   perPage?: number;
 }): Promise<PaginatedResponse<InventoryMovement & { listing_title: string }>> {
-  const supabase = await createClient();
-  const { currentPage, pageSize, from, to } = getPagination(page, perPage);
+  try {
+    const supabase = await createClient();
+    const { currentPage, pageSize, from, to } = getPagination(page, perPage);
 
-  let query = supabase
-    .from("inventory_movements")
-    .select(
-      `
-        *,
-        listings!inner (
-          title,
-          owner_id
-        )
-      `,
-      { count: "exact" },
-    )
-    .eq("listings.owner_id", userId)
-    .order("created_at", { ascending: false });
+    let query = supabase
+      .from("inventory_movements")
+      .select(
+        `
+          *,
+          listings!inner (
+            title,
+            owner_id
+          )
+        `,
+        { count: "exact" },
+      )
+      .eq("listings.owner_id", userId)
+      .order("created_at", { ascending: false });
 
-  if (listingId) {
-    query = query.eq("listing_id", listingId);
+    if (listingId) {
+      query = query.eq("listing_id", listingId);
+    }
+
+    if (movementType) {
+      query = query.eq("movement_type", movementType as StockMovementType);
+    }
+
+    const { data, error, count } = await query.range(from, to);
+
+    if (error) {
+      throw error;
+    }
+
+    const totalCount = count ?? 0;
+    const totalPages = totalCount === 0 ? 0 : Math.ceil(totalCount / pageSize);
+    const rows = (data ?? []) as InventoryMovementRow[];
+
+    return {
+      data: rows.map((row) => ({
+        ...row,
+        listing_title: row.listings?.title ?? "Untitled listing",
+      })),
+      totalCount,
+      totalPages,
+      currentPage,
+    };
+  } catch (error) {
+    console.error("getStockMovements failed:", error);
+    return {
+      data: [],
+      totalCount: 0,
+      totalPages: 0,
+      currentPage: Math.max(1, page ?? 1),
+    };
   }
-
-  if (movementType) {
-    query = query.eq("movement_type", movementType as StockMovementType);
-  }
-
-  const { data, error, count } = await query.range(from, to);
-
-  if (error) {
-    throw new Error(error.message);
-  }
-
-  const totalCount = count ?? 0;
-  const totalPages = totalCount === 0 ? 0 : Math.ceil(totalCount / pageSize);
-  const rows = (data ?? []) as InventoryMovementRow[];
-
-  return {
-    data: rows.map((row) => ({
-      ...row,
-      listing_title: row.listings?.title ?? "Untitled listing",
-    })),
-    totalCount,
-    totalPages,
-    currentPage,
-  };
 }
 
 export async function getLowStockListings(userId: string): Promise<Listing[]> {
-  const supabase = await createClient();
-  const { data, error } = await supabase
-    .from("listings")
-    .select("*")
-    .eq("owner_id", userId)
-    .eq("track_inventory", true)
-    .neq("status", "archived")
-    .order("quantity_available", { ascending: true });
+  try {
+    const supabase = await createClient();
+    const { data, error } = await supabase
+      .from("listings")
+      .select("*")
+      .eq("owner_id", userId)
+      .eq("track_inventory", true)
+      .neq("status", "archived")
+      .order("quantity_available", { ascending: true });
 
-  if (error) {
-    throw new Error(error.message);
+    if (error) {
+      throw error;
+    }
+
+    return ((data ?? []) as Listing[]).filter(
+      (listing) => listing.quantity_available <= (listing.low_stock_threshold ?? 1),
+    );
+  } catch (error) {
+    console.error("getLowStockListings failed:", error);
+    return [];
   }
-
-  return ((data ?? []) as Listing[]).filter(
-    (listing) => listing.quantity_available <= (listing.low_stock_threshold ?? 1),
-  );
 }

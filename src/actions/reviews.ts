@@ -1,6 +1,6 @@
 "use server";
 
-import { createAdminClient } from "@/lib/supabase/admin";
+import { createNotification } from "@/actions/notifications";
 import { createClient } from "@/lib/supabase/server";
 import { reviewSchema } from "@/lib/validations";
 import type {
@@ -13,10 +13,6 @@ import type {
 } from "@/types";
 
 const REVIEWS_PER_PAGE = 10;
-
-function getErrorMessage(error: unknown, fallback: string) {
-  return error instanceof Error ? error.message : fallback;
-}
 
 function getPagination(page?: number) {
   const currentPage = Math.max(1, page ?? 1);
@@ -37,30 +33,6 @@ async function getCurrentUserContext() {
   }
 
   return { supabase, user };
-}
-
-async function createReviewNotification({
-  userId,
-  bookingId,
-  listingId,
-}: {
-  userId: string;
-  bookingId: string;
-  listingId: string;
-}) {
-  const admin = createAdminClient();
-  const { error } = await admin.from("notifications").insert({
-    user_id: userId,
-    type: "new_review",
-    title: "You received a new review",
-    booking_id: bookingId,
-    listing_id: listingId,
-    action_url: "/dashboard/reviews",
-  });
-
-  if (error) {
-    throw new Error(error.message);
-  }
 }
 
 export async function submitReview(
@@ -124,7 +96,8 @@ export async function submitReview(
       .maybeSingle<{ id: string }>();
 
     if (existingReviewError) {
-      return { error: existingReviewError.message };
+      console.error("submitReview duplicate check failed:", existingReviewError);
+      return { error: "Could not submit your review. Please try again." };
     }
 
     if (existingReview) {
@@ -146,7 +119,8 @@ export async function submitReview(
     });
 
     if (insertError) {
-      return { error: insertError.message };
+      console.error("submitReview insert failed:", insertError);
+      return { error: "Could not submit your review. Please try again." };
     }
 
     const { error: bookingUpdateError } = await supabase
@@ -155,18 +129,24 @@ export async function submitReview(
       .eq("id", booking.id);
 
     if (bookingUpdateError) {
-      return { error: bookingUpdateError.message };
+      console.error("submitReview booking update failed:", bookingUpdateError);
+      return { error: "Could not submit your review. Please try again." };
     }
 
-    await createReviewNotification({
+    await createNotification({
       userId: revieweeId,
+      type: "review_received",
+      title: "You received a new review",
       bookingId: booking.id,
       listingId: booking.listing_id,
+      fromUserId: user.id,
+      actionUrl: "/dashboard/reviews",
     });
 
     return { success: "Review submitted!" };
   } catch (error) {
-    return { error: getErrorMessage(error, "Failed to submit review") };
+    console.error("submitReview failed:", error);
+    return { error: "Something went wrong. Please try again." };
   }
 }
 
@@ -175,95 +155,120 @@ export async function getReviewsForUser(
   role?: ReviewRole,
   page?: number,
 ): Promise<PaginatedResponse<ReviewWithUsers>> {
-  const supabase = await createClient();
-  const { currentPage, from, to } = getPagination(page);
+  try {
+    const supabase = await createClient();
+    const { currentPage, from, to } = getPagination(page);
 
-  let query = supabase
-    .from("reviews")
-    .select(
-      `
-        *,
-        reviewer:profiles!reviews_reviewer_id_fkey(*),
-        reviewee:profiles!reviews_reviewee_id_fkey(*),
-        listing:listings(*)
-      `,
-      { count: "exact" },
-    )
-    .eq("reviewee_id", userId)
-    .order("created_at", { ascending: false });
+    let query = supabase
+      .from("reviews")
+      .select(
+        `
+          *,
+          reviewer:profiles!reviews_reviewer_id_fkey(*),
+          reviewee:profiles!reviews_reviewee_id_fkey(*),
+          listing:listings(*)
+        `,
+        { count: "exact" },
+      )
+      .eq("reviewee_id", userId)
+      .order("created_at", { ascending: false });
 
-  if (role) {
-    query = query.eq("review_role", role);
+    if (role) {
+      query = query.eq("review_role", role);
+    }
+
+    const { data, error, count } = await query.range(from, to);
+
+    if (error) {
+      throw error;
+    }
+
+    return {
+      data: (data ?? []) as ReviewWithUsers[],
+      totalCount: count ?? 0,
+      totalPages: Math.max(1, Math.ceil((count ?? 0) / REVIEWS_PER_PAGE)),
+      currentPage,
+    };
+  } catch (error) {
+    console.error("getReviewsForUser failed:", error);
+    return {
+      data: [],
+      totalCount: 0,
+      totalPages: 0,
+      currentPage: Math.max(1, page ?? 1),
+    };
   }
-
-  const { data, error, count } = await query.range(from, to);
-
-  if (error) {
-    throw new Error(error.message);
-  }
-
-  return {
-    data: (data ?? []) as ReviewWithUsers[],
-    totalCount: count ?? 0,
-    totalPages: Math.max(1, Math.ceil((count ?? 0) / REVIEWS_PER_PAGE)),
-    currentPage,
-  };
 }
 
 export async function getReviewsForListing(
   listingId: string,
   page?: number,
 ): Promise<PaginatedResponse<ReviewWithUsers>> {
-  const supabase = await createClient();
-  const { currentPage, from, to } = getPagination(page);
+  try {
+    const supabase = await createClient();
+    const { currentPage, from, to } = getPagination(page);
 
-  const { data, error, count } = await supabase
-    .from("reviews")
-    .select(
-      `
-        *,
-        reviewer:profiles!reviews_reviewer_id_fkey(*),
-        reviewee:profiles!reviews_reviewee_id_fkey(*),
-        listing:listings(*)
-      `,
-      { count: "exact" },
-    )
-    .eq("listing_id", listingId)
-    .order("created_at", { ascending: false })
-    .range(from, to);
+    const { data, error, count } = await supabase
+      .from("reviews")
+      .select(
+        `
+          *,
+          reviewer:profiles!reviews_reviewer_id_fkey(*),
+          reviewee:profiles!reviews_reviewee_id_fkey(*),
+          listing:listings(*)
+        `,
+        { count: "exact" },
+      )
+      .eq("listing_id", listingId)
+      .order("created_at", { ascending: false })
+      .range(from, to);
 
-  if (error) {
-    throw new Error(error.message);
+    if (error) {
+      throw error;
+    }
+
+    return {
+      data: (data ?? []) as ReviewWithUsers[],
+      totalCount: count ?? 0,
+      totalPages: Math.max(1, Math.ceil((count ?? 0) / REVIEWS_PER_PAGE)),
+      currentPage,
+    };
+  } catch (error) {
+    console.error("getReviewsForListing failed:", error);
+    return {
+      data: [],
+      totalCount: 0,
+      totalPages: 0,
+      currentPage: Math.max(1, page ?? 1),
+    };
   }
-
-  return {
-    data: (data ?? []) as ReviewWithUsers[],
-    totalCount: count ?? 0,
-    totalPages: Math.max(1, Math.ceil((count ?? 0) / REVIEWS_PER_PAGE)),
-    currentPage,
-  };
 }
 
 export async function getMyWrittenReviews(userId: string): Promise<ReviewWithUsers[]> {
-  const supabase = await createClient();
-  const { data, error } = await supabase
-    .from("reviews")
-    .select(
-      `
-        *,
-        reviewer:profiles!reviews_reviewer_id_fkey(*),
-        reviewee:profiles!reviews_reviewee_id_fkey(*),
-        listing:listings(*)
-      `,
-    )
-    .eq("reviewer_id", userId)
-    .order("created_at", { ascending: false });
+  try {
+    const supabase = await createClient();
+    const { data, error } = await supabase
+      .from("reviews")
+      .select(
+        `
+          *,
+          reviewer:profiles!reviews_reviewer_id_fkey(*),
+          reviewee:profiles!reviews_reviewee_id_fkey(*),
+          listing:listings(*)
+        `,
+      )
+      .eq("reviewer_id", userId)
+      .order("created_at", { ascending: false });
 
-  if (error) {
-    throw new Error(error.message);
+    if (error) {
+      throw error;
+    }
+
+    return (data ?? []) as ReviewWithUsers[];
+  } catch (error) {
+    console.error("getMyWrittenReviews failed:", error);
+    return [];
   }
-
-  return (data ?? []) as ReviewWithUsers[];
 }
 
 export async function respondToReview(
@@ -301,38 +306,45 @@ export async function respondToReview(
       .eq("id", reviewId);
 
     if (updateError) {
-      return { error: updateError.message };
+      console.error("respondToReview update failed:", updateError);
+      return { error: "Could not save your response. Please try again." };
     }
 
     return { success: "Response added" };
   } catch (error) {
-    return { error: getErrorMessage(error, "Failed to add response") };
+    console.error("respondToReview failed:", error);
+    return { error: "Something went wrong. Please try again." };
   }
 }
 
 export async function getPendingReviews(
   userId: string,
 ): Promise<BookingWithDetails[]> {
-  const supabase = await createClient();
-  const { data, error } = await supabase
-    .from("bookings")
-    .select(
-      `
-        *,
-        listing:listings!bookings_listing_id_fkey(*),
-        renter:profiles!bookings_renter_id_fkey(*),
-        lister:profiles!bookings_lister_id_fkey(*)
-      `,
-    )
-    .eq("status", "completed")
-    .or(
-      `and(renter_id.eq.${userId},renter_reviewed.eq.false),and(lister_id.eq.${userId},lister_reviewed.eq.false)`,
-    )
-    .order("updated_at", { ascending: false });
+  try {
+    const supabase = await createClient();
+    const { data, error } = await supabase
+      .from("bookings")
+      .select(
+        `
+          *,
+          listing:listings!bookings_listing_id_fkey(*),
+          renter:profiles!bookings_renter_id_fkey(*),
+          lister:profiles!bookings_lister_id_fkey(*)
+        `,
+      )
+      .eq("status", "completed")
+      .or(
+        `and(renter_id.eq.${userId},renter_reviewed.eq.false),and(lister_id.eq.${userId},lister_reviewed.eq.false)`,
+      )
+      .order("updated_at", { ascending: false });
 
-  if (error) {
-    throw new Error(error.message);
+    if (error) {
+      throw error;
+    }
+
+    return (data ?? []) as BookingWithDetails[];
+  } catch (error) {
+    console.error("getPendingReviews failed:", error);
+    return [];
   }
-
-  return (data ?? []) as BookingWithDetails[];
 }
