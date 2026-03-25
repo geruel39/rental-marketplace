@@ -1,7 +1,9 @@
+import Link from "next/link";
 import { MapPin, Star, Truck } from "lucide-react";
 import { notFound } from "next/navigation";
 
 import { getListingWithDetails } from "@/actions/listings";
+import { getReviewsForListing } from "@/actions/reviews";
 import { BookingWidget } from "@/components/listings/booking-widget";
 import { ImageGallery } from "@/components/listings/image-gallery";
 import { ListingGrid } from "@/components/listings/listing-grid";
@@ -9,18 +11,22 @@ import { StockLevelBadge } from "@/components/inventory/stock-level-badge";
 import { ProfileCard } from "@/components/profile/profile-card";
 import { ReviewCard } from "@/components/reviews/review-card";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
 import { createClient } from "@/lib/supabase/server";
 import { formatCurrency } from "@/lib/utils";
 
 interface ListingDetailPageProps {
   params: Promise<{ id: string }>;
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
 }
 
 export default async function ListingDetailPage({
   params,
+  searchParams,
 }: ListingDetailPageProps) {
   const { id } = await params;
+  const resolvedSearchParams = await searchParams;
   const data = await getListingWithDetails(id);
 
   if (!data) {
@@ -42,11 +48,16 @@ export default async function ListingDetailPage({
 
   const isLoggedIn = Boolean(user);
   const isOwner = user?.id === data.listing.owner_id;
-  const reviewCount = data.reviews.length;
+  const showAllReviews =
+    (Array.isArray(resolvedSearchParams.reviews)
+      ? resolvedSearchParams.reviews[0]
+      : resolvedSearchParams.reviews) === "all";
+  const listingReviews = await getReviewsForListing(id, 1);
+  const reviewCount = listingReviews.totalCount;
   const averageRating =
-    reviewCount > 0
+    data.reviews.length > 0
       ? data.reviews.reduce((sum, review) => sum + review.overall_rating, 0) /
-        reviewCount
+        data.reviews.length
       : 0;
   const location = [
     data.listing.city,
@@ -70,6 +81,9 @@ export default async function ListingDetailPage({
     { label: "Weekly", value: data.listing.price_per_week },
     { label: "Monthly", value: data.listing.price_per_month },
   ].filter((row) => typeof row.value === "number");
+  const displayedReviews = showAllReviews
+    ? listingReviews.data
+    : listingReviews.data.slice(0, 5);
 
   return (
     <main className="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
@@ -77,7 +91,7 @@ export default async function ListingDetailPage({
         <div className="space-y-8">
           <ImageGallery images={data.listing.images} />
 
-          <section className="space-y-4">
+          <section className="space-y-4" id="reviews">
             <div className="flex flex-wrap items-center gap-2">
               {category?.name ? <Badge variant="secondary">{category.name}</Badge> : null}
               <Badge variant={data.listing.status === "active" ? "default" : "secondary"}>
@@ -197,9 +211,16 @@ export default async function ListingDetailPage({
               </div>
             ) : (
               <div className="space-y-4">
-                {data.reviews.map((review) => (
+                {displayedReviews.map((review) => (
                   <ReviewCard key={review.id} review={review} />
                 ))}
+                {listingReviews.totalCount > 5 && !showAllReviews ? (
+                  <Button asChild variant="outline">
+                    <Link href={`/listings/${id}?reviews=all#reviews`}>
+                      View All Reviews
+                    </Link>
+                  </Button>
+                ) : null}
               </div>
             )}
           </section>

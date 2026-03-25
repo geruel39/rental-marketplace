@@ -10,6 +10,7 @@ import {
   completeBooking,
   declineBookingRequest,
 } from "@/actions/bookings";
+import { DualReviewForm } from "@/components/reviews/dual-review-form";
 import { ConfirmDialog } from "@/components/shared/confirm-dialog";
 import { Button } from "@/components/ui/button";
 import type { BookingWithDetails } from "@/types";
@@ -113,6 +114,20 @@ export function RequestActions({ booking }: RequestActionsProps) {
           variant="destructive"
         />
       </div>
+    );
+  }
+
+  if (booking.status === "completed" && !booking.lister_reviewed) {
+    return (
+      <DualReviewForm
+        booking={booking}
+        currentUserId={booking.lister_id}
+        trigger={
+          <Button type="button" variant="outline">
+            Leave Review
+          </Button>
+        }
+      />
     );
   }
 

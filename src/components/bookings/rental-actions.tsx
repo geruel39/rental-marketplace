@@ -6,6 +6,7 @@ import { CreditCard, Loader2, Star } from "lucide-react";
 import { toast } from "sonner";
 
 import { cancelBooking } from "@/actions/bookings";
+import { DualReviewForm } from "@/components/reviews/dual-review-form";
 import { ConfirmDialog } from "@/components/shared/confirm-dialog";
 import { Button } from "@/components/ui/button";
 import type { BookingWithDetails } from "@/types";
@@ -62,12 +63,16 @@ export function RentalActions({ booking }: RentalActionsProps) {
 
   if (booking.status === "completed" && !booking.renter_reviewed) {
     return (
-      <Button asChild variant="outline">
-        <Link href={`/dashboard/reviews?booking=${booking.id}`}>
-          <Star className="size-4" />
-          Leave Review
-        </Link>
-      </Button>
+      <DualReviewForm
+        booking={booking}
+        currentUserId={booking.renter_id}
+        trigger={
+          <Button type="button" variant="outline">
+            <Star className="size-4" />
+            Leave Review
+          </Button>
+        }
+      />
     );
   }
 

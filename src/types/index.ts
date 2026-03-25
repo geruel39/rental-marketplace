@@ -337,6 +337,7 @@ export type ConversationWithDetails = Conversation & {
 export type ReviewWithUsers = Review & {
   reviewer: Profile;
   reviewee: Profile;
+  listing?: Listing;
 };
 
 export interface InventorySummary {
