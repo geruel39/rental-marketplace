@@ -139,18 +139,21 @@ async function createMessageNotification(
 
 async function findExistingConversation(
   supabase: SupabaseClient,
-  listingId: string,
+  listingId: string | null,
   currentUserId: string,
   otherUserId: string,
 ) {
-  const { data, error } = await supabase
+  let query = supabase
     .from("conversations")
     .select("*")
-    .eq("listing_id", listingId)
     .or(
       `and(participant_1.eq.${currentUserId},participant_2.eq.${otherUserId}),and(participant_1.eq.${otherUserId},participant_2.eq.${currentUserId})`,
-    )
-    .maybeSingle<Conversation>();
+    );
+
+  query =
+    listingId === null ? query.is("listing_id", null) : query.eq("listing_id", listingId);
+
+  const { data, error } = await query.maybeSingle<Conversation>();
 
   if (error) {
     throw new Error(error.message);
@@ -446,6 +449,43 @@ export async function getOrCreateConversation(
     .from("conversations")
     .insert({
       listing_id: listingId,
+      participant_1: currentUserId,
+      participant_2: otherUserId,
+      last_message_at: new Date().toISOString(),
+      last_message_preview: "",
+      unread_count_1: 0,
+      unread_count_2: 0,
+    })
+    .select("id")
+    .single<{ id: string }>();
+
+  if (error || !data) {
+    throw new Error(error?.message ?? "Could not create conversation");
+  }
+
+  return data.id;
+}
+
+export async function getOrCreateDirectConversation(
+  otherUserId: string,
+  currentUserId: string,
+): Promise<string> {
+  const supabase = await createClient();
+  const existingConversation = await findExistingConversation(
+    supabase,
+    null,
+    currentUserId,
+    otherUserId,
+  );
+
+  if (existingConversation) {
+    return existingConversation.id;
+  }
+
+  const { data, error } = await supabase
+    .from("conversations")
+    .insert({
+      listing_id: null,
       participant_1: currentUserId,
       participant_2: otherUserId,
       last_message_at: new Date().toISOString(),

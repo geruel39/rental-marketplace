@@ -1,11 +1,13 @@
 import { Suspense } from "react";
 
+import { checkFavorites } from "@/actions/favorites";
 import { getCategories, searchListings } from "@/actions/listings";
 import { ListingFilters } from "@/components/listings/listing-filters";
 import { ListingGrid } from "@/components/listings/listing-grid";
 import { ListingSort } from "@/components/listings/listing-sort";
 import { ListingGridSkeleton } from "@/components/shared/loading-skeleton";
 import { Pagination } from "@/components/shared/pagination";
+import { createClient } from "@/lib/supabase/server";
 
 type SearchParams = Record<string, string | string[] | undefined>;
 
@@ -38,6 +40,7 @@ function parseBoolean(value: string | undefined) {
 async function ListingsContent({
   searchParams,
 }: ListingsPageProps) {
+  const supabase = await createClient();
   const resolvedParams = await searchParams;
   const query = getSingleValue(resolvedParams.q);
   const category = getSingleValue(resolvedParams.category);
@@ -48,6 +51,10 @@ async function ListingsContent({
   const inStockOnly = parseBoolean(getSingleValue(resolvedParams.inStockOnly));
   const sort = getSingleValue(resolvedParams.sort) ?? "newest";
   const page = parsePage(getSingleValue(resolvedParams.page));
+
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
 
   const [categories, results] = await Promise.all([
     getCategories(),
@@ -64,6 +71,12 @@ async function ListingsContent({
       perPage: 12,
     }),
   ]);
+  const favoriteIds = user
+    ? await checkFavorites(
+        results.data.map((listing) => listing.id),
+        user.id,
+      )
+    : new Set<string>();
 
   return (
     <main className="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
@@ -102,7 +115,9 @@ async function ListingsContent({
           </div>
 
           <ListingGrid
+            currentUserId={user?.id}
             emptyMessage="Try adjusting your filters or search terms to find more listings."
+            favoritedIds={Array.from(favoriteIds)}
             listings={results.data}
           />
 

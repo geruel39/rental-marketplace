@@ -11,11 +11,17 @@ type ListingGridItem = Listing & {
 interface ListingGridProps {
   listings: Array<ListingGridItem | ListingWithOwner>;
   emptyMessage?: string;
+  favoritedIds?: string[];
+  currentUserId?: string;
+  hideUnfavoritedCards?: boolean;
 }
 
 export function ListingGrid({
   listings,
   emptyMessage = "No listings found yet.",
+  favoritedIds = [],
+  currentUserId,
+  hideUnfavoritedCards = false,
 }: ListingGridProps) {
   if (listings.length === 0) {
     return (
@@ -32,7 +38,13 @@ export function ListingGrid({
   return (
     <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
       {listings.map((listing) => (
-        <ListingCard key={listing.id} listing={listing} />
+        <ListingCard
+          key={listing.id}
+          currentUserId={currentUserId}
+          hideWhenUnfavorited={hideUnfavoritedCards}
+          isFavorited={favoritedIds.includes(listing.id)}
+          listing={listing}
+        />
       ))}
     </div>
   );

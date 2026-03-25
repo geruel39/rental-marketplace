@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { DollarSign, PackagePlus, Search } from "lucide-react";
 
+import { checkFavorites } from "@/actions/favorites";
 import { ListingGrid } from "@/components/listings/listing-grid";
 import { SearchBar } from "@/components/shared/search-bar";
 import { Button } from "@/components/ui/button";
@@ -32,7 +33,9 @@ const steps = [
 export default async function Home() {
   let categories: Category[] = [];
   let listings: ListingWithOwner[] = [];
+  let favoritedIds: string[] = [];
   let isLoggedIn = false;
+  let currentUserId: string | undefined;
 
   if (hasSupabaseEnv()) {
     const supabase = await createClient();
@@ -59,8 +62,18 @@ export default async function Home() {
     ]);
 
     isLoggedIn = Boolean(user);
+    currentUserId = user?.id;
     categories = (categoryData ?? []) as Category[];
     listings = (listingData ?? []) as ListingWithOwner[];
+
+    if (user && listings.length > 0) {
+      favoritedIds = Array.from(
+        await checkFavorites(
+          listings.map((listing) => listing.id),
+          user.id,
+        ),
+      );
+    }
   }
 
   return (
@@ -133,7 +146,9 @@ export default async function Home() {
         </div>
 
         <ListingGrid
+          currentUserId={currentUserId}
           emptyMessage="Once listings go live, they will show up here automatically."
+          favoritedIds={favoritedIds}
           listings={listings}
         />
       </section>

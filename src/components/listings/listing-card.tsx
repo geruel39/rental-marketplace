@@ -1,10 +1,11 @@
 "use client";
 
 import Link from "next/link";
-import { Heart, MapPin, Package, Star } from "lucide-react";
+import { useState } from "react";
+import { MapPin, Package, Star } from "lucide-react";
 
+import { FavoriteButton } from "@/components/listings/favorite-button";
 import { StockLevelBadge } from "@/components/inventory/stock-level-badge";
-import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { formatCurrency } from "@/lib/utils";
 import type { Listing, ListingWithOwner, Profile } from "@/types";
@@ -16,6 +17,10 @@ type ListingCardData = Listing & {
 interface ListingCardProps {
   listing: ListingCardData | ListingWithOwner;
   showFavorite?: boolean;
+  isFavorited?: boolean;
+  currentUserId?: string;
+  onToggleFavorite?: () => void;
+  hideWhenUnfavorited?: boolean;
 }
 
 function getPrimaryPrice(listing: Listing) {
@@ -35,7 +40,13 @@ function getPrimaryPrice(listing: Listing) {
 export function ListingCard({
   listing,
   showFavorite = true,
+  isFavorited = false,
+  currentUserId,
+  onToggleFavorite,
+  hideWhenUnfavorited = false,
 }: ListingCardProps) {
+  const [isVisible, setIsVisible] = useState(true);
+
   const image = listing.images[0];
   const primaryPrice = getPrimaryPrice(listing);
   const rating = listing.owner?.rating_as_lister ?? 0;
@@ -43,6 +54,10 @@ export function ListingCard({
   const location = [listing.city, listing.state, listing.location]
     .filter(Boolean)
     .join(", ");
+
+  if (!isVisible) {
+    return null;
+  }
 
   return (
     <div className="group relative">
@@ -106,15 +121,21 @@ export function ListingCard({
 
       {showFavorite ? (
         <div className="absolute right-3 top-3 z-20">
-          <Button
-            aria-label="Add to favorites"
-            className="rounded-full bg-white/90 shadow-sm hover:bg-white"
+          <FavoriteButton
+            className="rounded-full bg-white/90 shadow-sm backdrop-blur hover:bg-white"
+            currentUserId={currentUserId}
+            isFavorited={isFavorited}
+            listingId={listing.id}
+            onToggleFavorite={(nextValue) => {
+              if (hideWhenUnfavorited && !nextValue) {
+                setIsVisible(false);
+              }
+
+              onToggleFavorite?.();
+            }}
             size="icon"
-            type="button"
             variant="outline"
-          >
-            <Heart className="size-4" />
-          </Button>
+          />
         </div>
       ) : null}
     </div>

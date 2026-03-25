@@ -2,9 +2,11 @@ import Link from "next/link";
 import { MapPin, Star, Truck } from "lucide-react";
 import { notFound } from "next/navigation";
 
+import { checkFavorites } from "@/actions/favorites";
 import { getListingWithDetails } from "@/actions/listings";
 import { getReviewsForListing } from "@/actions/reviews";
 import { BookingWidget } from "@/components/listings/booking-widget";
+import { FavoriteButton } from "@/components/listings/favorite-button";
 import { ImageGallery } from "@/components/listings/image-gallery";
 import { ListingGrid } from "@/components/listings/listing-grid";
 import { StockLevelBadge } from "@/components/inventory/stock-level-badge";
@@ -48,6 +50,9 @@ export default async function ListingDetailPage({
 
   const isLoggedIn = Boolean(user);
   const isOwner = user?.id === data.listing.owner_id;
+  const isFavorited = user
+    ? (await checkFavorites([data.listing.id], user.id)).has(data.listing.id)
+    : false;
   const showAllReviews =
     (Array.isArray(resolvedSearchParams.reviews)
       ? resolvedSearchParams.reviews[0]
@@ -100,9 +105,26 @@ export default async function ListingDetailPage({
             </div>
 
             <div className="space-y-3">
-              <h1 className="text-3xl font-semibold tracking-tight sm:text-4xl">
-                {data.listing.title}
-              </h1>
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div className="space-y-2">
+                  <h1 className="text-3xl font-semibold tracking-tight sm:text-4xl">
+                    {data.listing.title}
+                  </h1>
+                  <p className="text-sm text-muted-foreground">
+                    {data.listing.favorites_count}{" "}
+                    {data.listing.favorites_count === 1 ? "person" : "people"} saved this
+                  </p>
+                </div>
+                <FavoriteButton
+                  className="shrink-0"
+                  currentUserId={user?.id}
+                  isFavorited={isFavorited}
+                  listingId={data.listing.id}
+                  refreshOnSuccess
+                  size="sm"
+                  variant="outline"
+                />
+              </div>
               <div className="flex flex-wrap items-center gap-3 text-muted-foreground">
                 <span className="flex items-center gap-2">
                   <MapPin className="size-4" />

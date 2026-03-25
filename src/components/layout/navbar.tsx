@@ -29,6 +29,7 @@ import {
 import { hasSupabaseEnv } from "@/lib/env";
 import { createClient } from "@/lib/supabase/server";
 import { getInitials } from "@/lib/utils";
+import type { Profile } from "@/types";
 
 const publicNavItems = [
   { href: "/login", label: "Login" },
@@ -48,6 +49,7 @@ export async function Navbar() {
         user_metadata?: Record<string, unknown>;
       }
     | null = null;
+  let profile: Pick<Profile, "avatar_url" | "display_name" | "full_name"> | null = null;
 
   if (hasSupabaseEnv()) {
     const supabase = await createClient();
@@ -55,9 +57,21 @@ export async function Navbar() {
       data: { user: sessionUser },
     } = await supabase.auth.getUser();
     user = sessionUser;
+
+    if (sessionUser) {
+      const { data: userProfile } = await supabase
+        .from("profiles")
+        .select("avatar_url, display_name, full_name")
+        .eq("id", sessionUser.id)
+        .maybeSingle<Pick<Profile, "avatar_url" | "display_name" | "full_name">>();
+
+      profile = userProfile ?? null;
+    }
   }
 
   const displayName =
+    profile?.display_name ??
+    profile?.full_name ??
     (typeof user?.user_metadata?.display_name === "string"
       ? user.user_metadata.display_name
       : null) ??
@@ -66,10 +80,10 @@ export async function Navbar() {
       : null) ??
     user?.email ??
     "User";
-  const avatarUrl =
-    typeof user?.user_metadata?.avatar_url === "string"
+  const avatarUrl = profile?.avatar_url ??
+    (typeof user?.user_metadata?.avatar_url === "string"
       ? user.user_metadata.avatar_url
-      : undefined;
+      : undefined);
 
   return (
     <header className="sticky top-0 z-40 border-b border-border/70 bg-background/95 backdrop-blur">
