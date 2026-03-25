@@ -1,3 +1,4 @@
+import type { Metadata } from "next";
 import Link from "next/link";
 import { Building2, MapPin, UserRound } from "lucide-react";
 import { notFound } from "next/navigation";
@@ -25,6 +26,23 @@ function getSingleValue(value: string | string[] | undefined) {
 function getPage(value: string | undefined) {
   const parsed = Number(value);
   return Number.isFinite(parsed) && parsed > 0 ? parsed : 1;
+}
+
+export async function generateMetadata({
+  params,
+}: {
+  params: Promise<{ id: string }>;
+}): Promise<Metadata> {
+  const { id } = await params;
+  const publicProfile = await getPublicProfile(id);
+  const name =
+    publicProfile?.profile.display_name ||
+    publicProfile?.profile.full_name ||
+    "User";
+
+  return {
+    title: `${name} — RentHub`,
+  };
 }
 
 export default async function PublicProfilePage({

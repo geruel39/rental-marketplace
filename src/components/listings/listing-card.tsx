@@ -63,7 +63,7 @@ export function ListingCard({
     <div className="group relative">
       <Link
         aria-label={listing.title}
-        className="block rounded-xl"
+        className="block rounded-xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
         href={`/listings/${listing.id}`}
       >
         <Card className="overflow-hidden border-border/70 transition-all duration-200 group-hover:-translate-y-0.5 group-hover:shadow-lg">

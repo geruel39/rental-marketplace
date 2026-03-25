@@ -71,7 +71,7 @@ export function ConversationList({
               <Link
                 key={conversation.id}
                 className={cn(
-                  "flex items-start gap-3 rounded-2xl px-3 py-3 transition-colors",
+                  "flex items-start gap-3 rounded-2xl px-3 py-3 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
                   isActive ? "bg-primary/8" : "hover:bg-muted/60",
                 )}
                 href={`/dashboard/messages/${conversation.id}`}

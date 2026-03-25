@@ -96,7 +96,7 @@ export function NotificationBell({
   return (
     <Popover>
       <PopoverTrigger asChild>
-        <Button className="relative" size="icon" variant="ghost">
+        <Button aria-label="Open notifications" className="relative" size="icon" variant="ghost">
           <Bell
             key={newNotification?.id ?? "bell"}
             className={cn(

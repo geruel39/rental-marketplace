@@ -38,7 +38,7 @@ export function Footer() {
   return (
     <footer className="bg-muted/60">
       <div className="mx-auto max-w-7xl px-4 py-12 sm:px-6 lg:px-8">
-        <div className="grid gap-8 sm:grid-cols-2 lg:grid-cols-4">
+        <div className="grid grid-cols-1 gap-8 sm:grid-cols-2 lg:grid-cols-4">
           {footerColumns.map((column) => (
             <div key={column.title} className="space-y-4">
               <h3 className="text-sm font-semibold uppercase tracking-wide text-foreground">
@@ -48,7 +48,7 @@ export function Footer() {
                 {column.links.map((link) => (
                   <Link
                     key={link.label}
-                    className="block text-sm text-muted-foreground transition-colors hover:text-foreground"
+                    className="block rounded-sm text-sm text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                     href={link.href}
                   >
                     {link.label}

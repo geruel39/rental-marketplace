@@ -309,6 +309,7 @@ export function BookingWidget({
           <Label htmlFor="booking-quantity">Quantity</Label>
           <div className="flex items-center gap-2">
             <Button
+              aria-label="Decrease quantity"
               disabled={formDisabled || quantity <= 1}
               onClick={() => updateQuantity(quantity - 1)}
               size="icon"
@@ -328,6 +329,7 @@ export function BookingWidget({
               value={quantity}
             />
             <Button
+              aria-label="Increase quantity"
               disabled={formDisabled || (maxQuantity !== null && quantity >= maxQuantity)}
               onClick={() => updateQuantity(quantity + 1)}
               size="icon"

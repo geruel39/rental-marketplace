@@ -1,23 +1,15 @@
 import Link from "next/link";
-import { MoreHorizontal, PackagePlus, Plus } from "lucide-react";
+import { PackagePlus, Plus } from "lucide-react";
 import { redirect } from "next/navigation";
 
 import {
-  deleteListing,
   getMyListings,
-  setListingStatus,
 } from "@/actions/listings";
 import { StockLevelBadge } from "@/components/inventory/stock-level-badge";
+import { MyListingActions } from "@/components/listings/my-listing-actions";
 import { EmptyState } from "@/components/shared/empty-state";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
 import {
   Table,
   TableBody,
@@ -148,49 +140,7 @@ export default async function MyListingsPage() {
                   </TableCell>
                   <TableCell>{listing.views_count}</TableCell>
                   <TableCell>
-                    <DropdownMenu>
-                      <DropdownMenuTrigger asChild>
-                        <Button size="icon" variant="ghost">
-                          <MoreHorizontal className="size-4" />
-                          <span className="sr-only">Open listing actions</span>
-                        </Button>
-                      </DropdownMenuTrigger>
-                      <DropdownMenuContent align="end">
-                        <DropdownMenuItem asChild>
-                          <Link href={`/dashboard/my-listings/${listing.id}/edit`}>
-                            Edit
-                          </Link>
-                        </DropdownMenuItem>
-                        <DropdownMenuItem asChild>
-                          <form
-                            action={async () => {
-                              "use server";
-                              await setListingStatus(
-                                listing.id,
-                                listing.status === "active" ? "paused" : "active",
-                              );
-                            }}
-                          >
-                            <button className="w-full text-left" type="submit">
-                              {listing.status === "active" ? "Pause" : "Activate"}
-                            </button>
-                          </form>
-                        </DropdownMenuItem>
-                        <DropdownMenuSeparator />
-                        <DropdownMenuItem asChild>
-                          <form
-                            action={async () => {
-                              "use server";
-                              await deleteListing(listing.id);
-                            }}
-                          >
-                            <button className="w-full text-left" type="submit">
-                              Delete
-                            </button>
-                          </form>
-                        </DropdownMenuItem>
-                      </DropdownMenuContent>
-                    </DropdownMenu>
+                    <MyListingActions listing={listing} />
                   </TableCell>
                 </TableRow>
               ))}

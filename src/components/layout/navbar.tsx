@@ -1,11 +1,20 @@
 import Link from "next/link";
 import {
+  Bell,
+  CreditCard,
+  Heart,
   LayoutDashboard,
   LogOut,
   Menu,
+  MessageSquare,
+  Package,
   Plus,
+  Receipt,
   Settings,
+  ShieldCheck,
+  Star,
   User as UserIcon,
+  Wallet,
 } from "lucide-react";
 
 import { getNotifications, getUnreadCount } from "@/actions/notifications";
@@ -21,6 +30,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import {
+  SheetClose,
   Sheet,
   SheetContent,
   SheetHeader,
@@ -37,10 +47,44 @@ const publicNavItems = [
   { href: "/register", label: "Sign Up" },
 ];
 
-const loggedInNavItems = [
-  { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
-  { href: "/dashboard/settings", label: "Settings", icon: Settings },
-];
+const mobileDashboardSections = [
+  {
+    title: "Overview",
+    items: [
+      { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
+      { href: "/dashboard/notifications", label: "Notifications", icon: Bell },
+      { href: "/dashboard/messages", label: "Messages", icon: MessageSquare },
+    ],
+  },
+  {
+    title: "As Lister",
+    items: [
+      { href: "/dashboard/my-listings", label: "My Listings", icon: Package },
+      { href: "/dashboard/inventory", label: "Inventory", icon: ShieldCheck },
+      { href: "/dashboard/requests", label: "Booking Requests", icon: Receipt },
+      { href: "/dashboard/earnings", label: "Earnings", icon: Wallet },
+    ],
+  },
+  {
+    title: "As Renter",
+    items: [
+      { href: "/dashboard/my-rentals", label: "My Rentals", icon: CreditCard },
+      { href: "/dashboard/favorites", label: "Favorites", icon: Heart },
+    ],
+  },
+  {
+    title: "Account",
+    items: [
+      { href: "/dashboard/settings", label: "Settings", icon: Settings },
+      {
+        href: "/dashboard/settings/payments",
+        label: "Payments",
+        icon: Wallet,
+      },
+      { href: "/dashboard/reviews", label: "Reviews", icon: Star },
+    ],
+  },
+] as const;
 
 export async function Navbar() {
   let user:
@@ -101,7 +145,10 @@ export async function Navbar() {
       <div className="mx-auto flex h-16 max-w-7xl items-center gap-4 px-4 sm:px-6 lg:px-8">
         <div className="flex items-center gap-3">
           <Sheet>
-            <SheetTrigger className="inline-flex size-9 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring lg:hidden">
+            <SheetTrigger
+              aria-label="Open navigation menu"
+              className="inline-flex size-9 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring lg:hidden"
+            >
               <Menu className="size-5" />
               <span className="sr-only">Open navigation</span>
             </SheetTrigger>
@@ -112,57 +159,86 @@ export async function Navbar() {
               <div className="space-y-6 px-4 pb-6">
                 <SearchBar />
                 <div className="space-y-3">
-                  <Button asChild className="w-full justify-start">
-                    <Link href="/listings/new">
-                      <Plus className="size-4" />
-                      List an Item
-                    </Link>
-                  </Button>
+                  <div className="grid gap-2">
+                    <SheetClose asChild>
+                      <Button asChild className="justify-start" variant="ghost">
+                        <Link href="/">Home</Link>
+                      </Button>
+                    </SheetClose>
+                    <SheetClose asChild>
+                      <Button asChild className="justify-start" variant="ghost">
+                        <Link href="/listings">Browse Listings</Link>
+                      </Button>
+                    </SheetClose>
+                  </div>
+                  <SheetClose asChild>
+                    <Button asChild className="w-full justify-start">
+                      <Link href="/listings/new">
+                        <Plus className="size-4" />
+                        List an Item
+                      </Link>
+                    </Button>
+                  </SheetClose>
 
                   {!user ? (
                     <div className="grid gap-2">
                       {publicNavItems.map((item) => (
-                        <Button
-                          key={item.href}
-                          asChild
-                          className="justify-start"
-                          variant={item.href === "/register" ? "default" : "ghost"}
-                        >
-                          <Link href={item.href}>{item.label}</Link>
-                        </Button>
+                        <SheetClose key={item.href} asChild>
+                          <Button
+                            asChild
+                            className="justify-start"
+                            variant={item.href === "/register" ? "default" : "ghost"}
+                          >
+                            <Link href={item.href}>{item.label}</Link>
+                          </Button>
+                        </SheetClose>
                       ))}
                     </div>
                   ) : (
                     <div className="grid gap-2">
-                      {loggedInNavItems.map((item) => {
-                        const Icon = item.icon;
+                      {mobileDashboardSections.map((section) => (
+                        <div key={section.title} className="space-y-2">
+                          <p className="px-1 text-xs font-semibold uppercase tracking-[0.18em] text-muted-foreground">
+                            {section.title}
+                          </p>
+                          <div className="grid gap-1">
+                            {section.items.map((item) => {
+                              const Icon = item.icon;
 
-                        return (
-                          <Button
-                            key={item.href}
-                            asChild
-                            className="justify-start"
-                            variant="ghost"
-                          >
-                            <Link href={item.href}>
-                              <Icon className="size-4" />
-                              {item.label}
-                            </Link>
-                          </Button>
-                        );
-                      })}
-                      <Button asChild className="justify-start" variant="ghost">
-                        <Link href={`/users/${user.id}`}>
-                          <UserIcon className="size-4" />
-                          My Profile
-                        </Link>
-                      </Button>
-                      <Button asChild className="justify-start" variant="ghost">
-                        <a href="/auth/logout">
-                          <LogOut className="size-4" />
-                          Logout
-                        </a>
-                      </Button>
+                              return (
+                                <SheetClose key={item.href} asChild>
+                                  <Button
+                                    asChild
+                                    className="justify-start"
+                                    variant="ghost"
+                                  >
+                                    <Link href={item.href}>
+                                      <Icon className="size-4" />
+                                      {item.label}
+                                    </Link>
+                                  </Button>
+                                </SheetClose>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      ))}
+                      <SheetClose asChild>
+                        <Button asChild className="justify-start" variant="ghost">
+                          <Link href={`/users/${user.id}`}>
+                            <UserIcon className="size-4" />
+                            My Profile
+                          </Link>
+                        </Button>
+                      </SheetClose>
+                      <SheetClose asChild>
+                        <Button asChild className="justify-start" variant="ghost">
+                          <a href="/auth/logout">
+                            <LogOut className="size-4" />
+                            Logout
+                          </a>
+                        </Button>
+                      </SheetClose>
                     </div>
                   )}
                 </div>
@@ -170,7 +246,10 @@ export async function Navbar() {
             </SheetContent>
           </Sheet>
 
-          <Link className="text-xl font-semibold tracking-tight" href="/">
+          <Link
+            className="rounded-sm text-xl font-semibold tracking-tight focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            href="/"
+          >
             RentHub
           </Link>
         </div>
@@ -204,7 +283,12 @@ export async function Navbar() {
               />
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
-                  <Button className="rounded-full p-0" size="icon" variant="ghost">
+                  <Button
+                    aria-label="Open account menu"
+                    className="rounded-full p-0"
+                    size="icon"
+                    variant="ghost"
+                  >
                     <Avatar>
                       {avatarUrl ? <AvatarImage alt={displayName} src={avatarUrl} /> : null}
                       <AvatarFallback>{getInitials(displayName)}</AvatarFallback>

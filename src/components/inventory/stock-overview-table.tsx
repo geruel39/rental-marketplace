@@ -144,7 +144,7 @@ export function StockOverviewTable({ listings }: StockOverviewTableProps) {
           title="No listings match this view"
         />
       ) : (
-        <div className="rounded-2xl border border-border bg-background">
+        <div className="overflow-x-auto rounded-2xl border border-border bg-background">
           <Table>
             <TableHeader>
               <TableRow>
@@ -202,7 +202,7 @@ export function StockOverviewTable({ listings }: StockOverviewTableProps) {
                   <TableCell>
                     <DropdownMenu>
                       <DropdownMenuTrigger asChild>
-                        <Button size="icon-sm" variant="ghost">
+                        <Button aria-label="Open inventory actions" size="icon-sm" variant="ghost">
                           <MoreHorizontal className="size-4" />
                           <span className="sr-only">Open inventory actions</span>
                         </Button>

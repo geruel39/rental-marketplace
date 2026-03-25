@@ -20,7 +20,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
-const sections = [
+export const dashboardSections = [
   {
     title: "Overview",
     items: [
@@ -73,7 +73,7 @@ export function DashboardSidebar() {
         </Button>
 
         <nav className="space-y-6">
-          {sections.map((section) => (
+          {dashboardSections.map((section) => (
             <div key={section.title} className="space-y-2">
               <h2 className="px-3 text-xs font-semibold uppercase tracking-[0.18em] text-muted-foreground">
                 {section.title}

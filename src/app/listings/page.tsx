@@ -1,3 +1,4 @@
+import type { Metadata } from "next";
 import { Suspense } from "react";
 
 import { checkFavorites } from "@/actions/favorites";
@@ -14,6 +15,17 @@ type SearchParams = Record<string, string | string[] | undefined>;
 interface ListingsPageProps {
   searchParams: Promise<SearchParams>;
 }
+
+export const metadata: Metadata = {
+  title: "Browse Listings — RentHub",
+  description:
+    "Search rental listings by category, price, stock availability, and location on RentHub.",
+  openGraph: {
+    title: "Browse Listings — RentHub",
+    description:
+      "Search rental listings by category, price, stock availability, and location on RentHub.",
+  },
+};
 
 function getSingleValue(value: string | string[] | undefined) {
   return Array.isArray(value) ? value[0] : value;

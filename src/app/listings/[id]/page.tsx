@@ -1,3 +1,4 @@
+import type { Metadata } from "next";
 import Link from "next/link";
 import { MapPin, Star, Truck } from "lucide-react";
 import { notFound } from "next/navigation";
@@ -21,6 +22,37 @@ import { formatCurrency } from "@/lib/utils";
 interface ListingDetailPageProps {
   params: Promise<{ id: string }>;
   searchParams: Promise<Record<string, string | string[] | undefined>>;
+}
+
+export async function generateMetadata({
+  params,
+}: {
+  params: Promise<{ id: string }>;
+}): Promise<Metadata> {
+  const { id } = await params;
+  const supabase = await createClient();
+  const { data } = await supabase
+    .from("listings")
+    .select("title, description, images")
+    .eq("id", id)
+    .maybeSingle<{ title: string; description: string; images: string[] }>();
+
+  if (!data) {
+    return {
+      title: "Listing Not Found — RentHub",
+      description: "This listing is no longer available on RentHub.",
+    };
+  }
+
+  return {
+    title: `${data.title} — RentHub`,
+    description: data.description.slice(0, 160),
+    openGraph: {
+      title: `${data.title} — RentHub`,
+      description: data.description.slice(0, 160),
+      images: data.images[0] ? [data.images[0]] : [],
+    },
+  };
 }
 
 export default async function ListingDetailPage({
@@ -264,7 +296,7 @@ export default async function ListingDetailPage({
           />
 
           {pricingRows.length > 1 ? (
-            <div className="mt-4 rounded-3xl border border-border/70 bg-card p-5 shadow-sm">
+            <div className="mt-4 hidden rounded-3xl border border-border/70 bg-card p-5 shadow-sm lg:block">
               <h3 className="mb-3 font-semibold">More Pricing</h3>
               <div className="space-y-2 text-sm text-muted-foreground">
                 {pricingRows.map((row) => (

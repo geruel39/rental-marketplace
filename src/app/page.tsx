@@ -1,3 +1,4 @@
+import type { Metadata } from "next";
 import Link from "next/link";
 import { DollarSign, PackagePlus, Search } from "lucide-react";
 
@@ -29,6 +30,17 @@ const steps = [
     icon: DollarSign,
   },
 ];
+
+export const metadata: Metadata = {
+  title: "RentHub — Rent Anything From Anyone",
+  description:
+    "Browse peer-to-peer rentals, manage bookings, and earn from items you already own with RentHub.",
+  openGraph: {
+    title: "RentHub — Rent Anything From Anyone",
+    description:
+      "Browse peer-to-peer rentals, manage bookings, and earn from items you already own with RentHub.",
+  },
+};
 
 export default async function Home() {
   let categories: Category[] = [];
