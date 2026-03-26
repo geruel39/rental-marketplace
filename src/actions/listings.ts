@@ -91,6 +91,8 @@ function buildListingInput(formData: FormData, images: string[]) {
     minimum_rental_period:
       toOptionalString(formData.get("minimum_rental_period")) ?? 1,
     location: formData.get("location"),
+    latitude: toOptionalString(formData.get("latitude")),
+    longitude: toOptionalString(formData.get("longitude")),
     city: toOptionalString(formData.get("city")),
     state: toOptionalString(formData.get("state")),
     delivery_available: toBoolean(formData.get("delivery_available")),
@@ -102,7 +104,7 @@ function buildListingInput(formData: FormData, images: string[]) {
     model: toOptionalString(formData.get("model")),
     condition: toOptionalString(formData.get("condition")),
     quantity_total: toOptionalString(formData.get("quantity_total")) ?? 1,
-    track_inventory: toBoolean(formData.get("track_inventory")),
+    track_inventory: true,
     low_stock_threshold:
       toOptionalString(formData.get("low_stock_threshold")) ?? 1,
     sku: toOptionalString(formData.get("sku")),
@@ -166,22 +168,20 @@ export async function createListing(formData: FormData): Promise<ActionResponse>
       return { error: insertError.message };
     }
 
-    if (validated.data.track_inventory) {
-      const { error: movementError } = await supabase
-        .from("inventory_movements")
-        .insert({
-          listing_id: listing.id,
-          user_id: user.id,
-          movement_type: "initial",
-          quantity_change: quantityTotal,
-          quantity_before: 0,
-          quantity_after: quantityTotal,
-          reason: "Initial stock",
-        });
+    const { error: movementError } = await supabase
+      .from("inventory_movements")
+      .insert({
+        listing_id: listing.id,
+        user_id: user.id,
+        movement_type: "initial",
+        quantity_change: quantityTotal,
+        quantity_before: 0,
+        quantity_after: quantityTotal,
+        reason: "Initial stock",
+      });
 
-      if (movementError) {
-        return { error: movementError.message };
-      }
+    if (movementError) {
+      return { error: movementError.message };
     }
   } catch (error) {
     console.error("createListing failed:", error);

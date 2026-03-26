@@ -67,6 +67,8 @@ export const listingSchema = z
     deposit_amount: z.coerce.number().min(0).default(0),
     minimum_rental_period: z.coerce.number().int().min(1).default(1),
     location: z.string().min(2),
+    latitude: z.coerce.number().min(-90).max(90).optional(),
+    longitude: z.coerce.number().min(-180).max(180).optional(),
     city: z.string().optional(),
     state: z.string().optional(),
     delivery_available: z.boolean().default(false),
