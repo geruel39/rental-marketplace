@@ -3,10 +3,14 @@
 import Link from "next/link";
 import { startTransition, useActionState, useState, useTransition } from "react";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { Chrome } from "lucide-react";
+import { Chrome, KeyRound } from "lucide-react";
 import { useForm } from "react-hook-form";
 
-import { loginWithEmail, loginWithGoogle } from "@/actions/auth";
+import {
+  loginWithEmail,
+  loginWithGoogle,
+  sendPasswordResetEmail,
+} from "@/actions/auth";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -25,11 +29,17 @@ import type { ActionResponse } from "@/types";
 const initialState: ActionResponse | null = null;
 
 export function LoginForm() {
-  const [state, formAction, isPending] = useActionState(
+  const [loginState, loginAction, isPending] = useActionState(
     loginWithEmail,
     initialState,
   );
+  const [resetState, resetAction, isResetPending] = useActionState(
+    sendPasswordResetEmail,
+    initialState,
+  );
   const [googleError, setGoogleError] = useState<string | null>(null);
+  const [showForgotPassword, setShowForgotPassword] = useState(false);
+  const [resetEmail, setResetEmail] = useState("");
   const [isGooglePending, startGoogleTransition] = useTransition();
   const form = useForm<LoginInput>({
     resolver: zodResolver(loginSchema),
@@ -44,7 +54,7 @@ export function LoginForm() {
     formData.set("email", values.email);
     formData.set("password", values.password);
     startTransition(() => {
-      formAction(formData);
+      loginAction(formData);
     });
   });
 
@@ -67,9 +77,9 @@ export function LoginForm() {
         </p>
       </CardHeader>
       <CardContent className="space-y-6">
-        {state?.error ? (
+        {loginState?.error ? (
           <Alert variant="destructive">
-            <AlertDescription>{state.error}</AlertDescription>
+            <AlertDescription>{loginState.error}</AlertDescription>
           </Alert>
         ) : null}
 
@@ -118,6 +128,71 @@ export function LoginForm() {
                 </FormItem>
               )}
             />
+
+            <div className="flex justify-end">
+              <button
+                className="text-sm font-medium text-primary underline-offset-4 hover:underline"
+                onClick={() => {
+                  setShowForgotPassword((current) => !current);
+                  setResetEmail(form.getValues("email"));
+                }}
+                type="button"
+              >
+                Forgot password?
+              </button>
+            </div>
+
+            {showForgotPassword ? (
+              <div className="space-y-3 rounded-2xl border border-border/70 bg-muted/30 p-4">
+                <div className="space-y-1">
+                  <p className="flex items-center gap-2 text-sm font-medium">
+                    <KeyRound className="size-4 text-primary" />
+                    Reset your password
+                  </p>
+                  <p className="text-sm text-muted-foreground">
+                    Enter your email and we&apos;ll send you a password reset link.
+                  </p>
+                </div>
+
+                {resetState?.error ? (
+                  <Alert variant="destructive">
+                    <AlertDescription>{resetState.error}</AlertDescription>
+                  </Alert>
+                ) : null}
+
+                {resetState?.success ? (
+                  <Alert>
+                    <AlertDescription>{resetState.success}</AlertDescription>
+                  </Alert>
+                ) : null}
+
+                <div className="space-y-3">
+                  <Input
+                    autoComplete="email"
+                    name="email"
+                    onChange={(event) => setResetEmail(event.target.value)}
+                    placeholder="you@example.com"
+                    type="email"
+                    value={resetEmail}
+                  />
+                  <Button
+                    className="w-full"
+                    disabled={isResetPending}
+                    onClick={() => {
+                      const formData = new FormData();
+                      formData.set("email", resetEmail || form.getValues("email"));
+                      startTransition(() => {
+                        resetAction(formData);
+                      });
+                    }}
+                    type="button"
+                    variant="outline"
+                  >
+                    {isResetPending ? "Sending..." : "Send Reset Link"}
+                  </Button>
+                </div>
+              </div>
+            ) : null}
 
             <Button className="w-full" disabled={isPending} type="submit">
               {isPending ? "Signing In..." : "Sign In"}

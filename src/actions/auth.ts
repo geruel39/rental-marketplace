@@ -4,7 +4,7 @@ import { redirect } from "next/navigation";
 
 import { getAppUrl } from "@/lib/env";
 import { createClient } from "@/lib/supabase/server";
-import { registerSchema } from "@/lib/validations";
+import { forgotPasswordSchema, registerSchema } from "@/lib/validations";
 import type { ActionResponse } from "@/types";
 
 export async function registerWithEmail(
@@ -129,6 +129,38 @@ export async function loginWithGoogle(): Promise<ActionResponse | void> {
     return { error: "Something went wrong. Please try again." };
   } catch (error) {
     console.error("loginWithGoogle failed:", error);
+    return { error: "Something went wrong. Please try again." };
+  }
+}
+
+export async function sendPasswordResetEmail(
+  prevState: ActionResponse | null,
+  formData: FormData,
+): Promise<ActionResponse> {
+  void prevState;
+
+  try {
+    const supabase = await createClient();
+    const parsed = forgotPasswordSchema.safeParse({
+      email: formData.get("email"),
+    });
+
+    if (!parsed.success) {
+      return { error: parsed.error.issues[0]?.message ?? "Invalid email" };
+    }
+
+    const { error } = await supabase.auth.resetPasswordForEmail(parsed.data.email, {
+      redirectTo: `${getAppUrl()}/reset-password`,
+    });
+
+    if (error) {
+      console.error("sendPasswordResetEmail failed:", error);
+      return { error: "Could not send the reset email. Please try again." };
+    }
+
+    return { success: "Password reset link sent. Check your email." };
+  } catch (error) {
+    console.error("sendPasswordResetEmail failed:", error);
     return { error: "Something went wrong. Please try again." };
   }
 }
