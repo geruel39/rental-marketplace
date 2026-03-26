@@ -4,14 +4,33 @@ import {
   useMemo,
   useState,
   useTransition,
-  type KeyboardEvent,
-  type MouseEvent,
 } from "react";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { Check, Info, MapPin } from "lucide-react";
+import { Check, Info } from "lucide-react";
+import dynamic from "next/dynamic";
 import { useForm, useWatch } from "react-hook-form";
 import { toast } from "sonner";
 import { z } from "zod";
+
+// FIX: MapPinPicker uses Leaflet which accesses `window` at import time.
+// It MUST be loaded with ssr:false or the server build crashes.
+const MapPinPicker = dynamic(
+  () =>
+    import("@/components/listings/map-pin-picker").then(
+      (mod) => mod.MapPinPicker,
+    ),
+  {
+    ssr: false,
+    loading: () => (
+      <div
+        className="flex items-center justify-center rounded-2xl border border-border bg-muted/30"
+        style={{ height: 360 }}
+      >
+        <span className="text-sm text-muted-foreground">Loading map…</span>
+      </div>
+    ),
+  },
+);
 
 import { createListing, updateListing } from "@/actions/listings";
 import { ImageUpload } from "@/components/listings/image-upload";
@@ -182,87 +201,8 @@ function getLocationFallback(latitude: number, longitude: number) {
   return `Pinned location (${latitude.toFixed(5)}, ${longitude.toFixed(5)})`;
 }
 
-function clamp(value: number, min: number, max: number) {
-  return Math.min(max, Math.max(min, value));
-}
-
-function MapPinPicker({
-  latitude,
-  longitude,
-  onChange,
-}: {
-  latitude?: number;
-  longitude?: number;
-  onChange: (coords: { latitude: number; longitude: number }) => void;
-}) {
-  function updateFromPointer(
-    event: MouseEvent<HTMLButtonElement> | KeyboardEvent<HTMLButtonElement>,
-  ) {
-    const rect = event.currentTarget.getBoundingClientRect();
-    let clientX = rect.left + rect.width / 2;
-    let clientY = rect.top + rect.height / 2;
-
-    if ("clientX" in event) {
-      clientX = event.clientX;
-      clientY = event.clientY;
-    }
-
-    const x = clamp((clientX - rect.left) / rect.width, 0, 1);
-    const y = clamp((clientY - rect.top) / rect.height, 0, 1);
-
-    onChange({
-      latitude: Number((90 - y * 180).toFixed(6)),
-      longitude: Number((x * 360 - 180).toFixed(6)),
-    });
-  }
-
-  const markerX =
-    typeof longitude === "number"
-      ? clamp(((longitude + 180) / 360) * 100, 0, 100)
-      : 50;
-  const markerY =
-    typeof latitude === "number"
-      ? clamp(((90 - latitude) / 180) * 100, 0, 100)
-      : 50;
-
-  return (
-    <div className="space-y-3">
-      <button
-        aria-label="Select the listing location on the map"
-        className="relative aspect-[16/9] w-full overflow-hidden rounded-2xl border border-border bg-[radial-gradient(circle_at_top,_rgba(56,189,248,0.18),transparent_35%),linear-gradient(180deg,rgba(59,130,246,0.12),rgba(34,197,94,0.08)),linear-gradient(90deg,rgba(255,255,255,0.08)_1px,transparent_1px),linear-gradient(rgba(255,255,255,0.08)_1px,transparent_1px)] bg-[length:auto,auto,56px_56px,56px_56px] bg-center text-left shadow-sm transition hover:border-primary/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
-        onClick={updateFromPointer}
-        onKeyDown={(event) => {
-          if (event.key === "Enter" || event.key === " ") {
-            event.preventDefault();
-            updateFromPointer(event);
-          }
-        }}
-        type="button"
-      >
-        <div className="absolute inset-0 bg-[linear-gradient(135deg,rgba(15,23,42,0.12),transparent_55%)]" />
-        <div className="absolute left-4 top-4 rounded-full bg-background/90 px-3 py-1 text-xs font-medium text-foreground shadow-sm">
-          Tap to place pin
-        </div>
-        <div
-          className="absolute -translate-x-1/2 -translate-y-full text-primary transition"
-          style={{
-            left: `${markerX}%`,
-            top: `${markerY}%`,
-          }}
-        >
-          <MapPin className="size-8 fill-current drop-shadow" />
-        </div>
-      </button>
-      <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-border/70 bg-muted/30 px-4 py-3 text-sm">
-        <span className="text-muted-foreground">
-          {typeof latitude === "number" && typeof longitude === "number"
-            ? `Pinned at ${latitude.toFixed(4)}, ${longitude.toFixed(4)}`
-            : "No pin selected yet"}
-        </span>
-      </div>
-    </div>
-  );
-}
+// The fake MapPinPicker that was here has been removed.
+// The real one is dynamically imported above (Leaflet requires ssr:false).
 
 function FieldLabel({
   htmlFor,
@@ -734,7 +674,7 @@ export function ListingForm({ listing, categories }: ListingFormProps) {
                 <MapPinPicker
                   latitude={typeof latitude === "number" ? latitude : undefined}
                   longitude={typeof longitude === "number" ? longitude : undefined}
-                  onChange={({ latitude: nextLatitude, longitude: nextLongitude }) => {
+                  onChange={({ latitude: nextLatitude, longitude: nextLongitude, address }) => {
                     form.setValue("latitude", nextLatitude, {
                       shouldDirty: true,
                       shouldValidate: true,
@@ -743,6 +683,14 @@ export function ListingForm({ listing, categories }: ListingFormProps) {
                       shouldDirty: true,
                       shouldValidate: true,
                     });
+                    // Auto-fill location description from geocoded address
+                    // only when the field is still empty so we don't clobber
+                    // something the user typed manually.
+                    if (address && !form.getValues("location_description")) {
+                      form.setValue("location_description", address, {
+                        shouldDirty: true,
+                      });
+                    }
                   }}
                 />
                 {errors.latitude ? (
