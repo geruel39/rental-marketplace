@@ -1,15 +1,9 @@
 import type { Metadata } from "next";
-import { Inter } from "next/font/google";
 
 import { FooterGate } from "@/components/layout/footer-gate";
 import { Navbar } from "@/components/layout/navbar";
 import { Toaster } from "@/components/ui/sonner";
 import "./globals.css";
-
-const inter = Inter({
-  subsets: ["latin"],
-  display: "swap",
-});
 
 export const metadata: Metadata = {
   title: "RentHub - P2P Rental Marketplace",
@@ -24,7 +18,7 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en" className="h-full">
-      <body className={`${inter.className} min-h-full bg-background text-foreground`}>
+      <body className={`font-sans min-h-full bg-background text-foreground`}>
         <div className="flex min-h-screen flex-col">
           <Navbar />
           <div className="flex-1">{children}</div>
