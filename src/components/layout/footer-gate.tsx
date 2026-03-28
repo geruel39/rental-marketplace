@@ -7,7 +7,7 @@ import { Footer } from "@/components/layout/footer";
 export function FooterGate() {
   const pathname = usePathname();
 
-  if (pathname.startsWith("/dashboard")) {
+  if (pathname.startsWith("/dashboard") || pathname.startsWith("/admin")) {
     return null;
   }
 

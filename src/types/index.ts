@@ -15,6 +15,26 @@ export type BookingStatus =
   | "cancelled_by_lister"
   | "disputed";
 export type ReviewRole = "as_renter" | "as_lister";
+export type ReportType =
+  | "spam"
+  | "inappropriate"
+  | "fraud"
+  | "harassment"
+  | "misleading"
+  | "counterfeit"
+  | "safety"
+  | "other";
+export type ReportStatus = "open" | "investigating" | "resolved" | "dismissed";
+export type AdminTargetType =
+  | "user"
+  | "listing"
+  | "booking"
+  | "review"
+  | "payout"
+  | "category"
+  | "report"
+  | "settings";
+export type ModerationStatus = "pending" | "approved" | "rejected" | "flagged";
 export type StockMovementType =
   | "initial"
   | "adjustment_add"
@@ -86,6 +106,12 @@ export interface Profile {
   payout_bank_account: BankAccount | null;
   payout_email: string | null;
   notification_preferences: NotificationPreferences;
+  is_admin: boolean;
+  is_suspended: boolean;
+  suspended_at: string | null;
+  suspended_reason: string | null;
+  suspended_by: string | null;
+  admin_notes: string | null;
   member_since: string;
   last_active: string;
   created_at: string;
@@ -145,6 +171,12 @@ export interface Listing {
   views_count: number;
   favorites_count: number;
   is_featured: boolean;
+  is_flagged: boolean;
+  flagged_reason: string | null;
+  moderation_status: ModerationStatus;
+  moderation_notes: string | null;
+  moderated_by: string | null;
+  moderated_at: string | null;
   search_vector: string | null;
   created_at: string;
   updated_at: string;
@@ -184,6 +216,10 @@ export interface Booking {
   lister_reviewed: boolean;
   stock_deducted: boolean;
   stock_restored: boolean;
+  admin_notes: string | null;
+  dispute_resolved_by: string | null;
+  dispute_resolved_at: string | null;
+  dispute_resolution: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -232,8 +268,42 @@ export interface Review {
   response: string | null;
   responded_at: string | null;
   is_public: boolean;
+  is_flagged: boolean;
+  is_hidden: boolean;
+  flagged_reason: string | null;
+  moderated_by: string | null;
   created_at: string;
 }
+
+export interface Report {
+  id: string;
+  reporter_id: string;
+  reported_user_id?: string | null;
+  reported_listing_id?: string | null;
+  reported_review_id?: string | null;
+  reported_message_id?: string | null;
+  report_type: ReportType;
+  description: string;
+  status: ReportStatus;
+  admin_notes?: string | null;
+  resolved_by?: string | null;
+  resolved_at?: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface AdminAuditLog {
+  id: string;
+  admin_id: string;
+  action: string;
+  target_type: AdminTargetType;
+  target_id: string;
+  details: JsonObject;
+  ip_address?: string | null;
+  created_at: string;
+}
+
+export type PlatformSettings = JsonObject;
 
 export interface Conversation {
   id: string;
@@ -340,6 +410,13 @@ export type ReviewWithUsers = Review & {
   listing?: Listing;
 };
 
+export type ReportWithDetails = Report & {
+  reporter: Profile;
+  reported_user?: Profile;
+  reported_listing?: Listing;
+  reported_review?: Review;
+};
+
 export interface InventorySummary {
   totalListings: number;
   inStockCount: number;
@@ -384,6 +461,23 @@ export interface DashboardStats {
   pendingReviewsCount: number;
   pendingReviewsAsLister: number;
   pendingReviewsAsRenter: number;
+}
+
+export interface AdminDashboardStats {
+  totalUsers: number;
+  newUsersThisMonth: number;
+  totalListings: number;
+  activeListings: number;
+  flaggedListings: number;
+  totalBookings: number;
+  activeBookings: number;
+  disputedBookings: number;
+  totalRevenue: number;
+  revenueThisMonth: number;
+  pendingPayouts: number;
+  pendingPayoutsAmount: number;
+  openReports: number;
+  totalInventoryItems: number;
 }
 
 export interface PaginatedResponse<T> {
