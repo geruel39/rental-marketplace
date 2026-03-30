@@ -22,6 +22,7 @@ interface ReviewListProps {
   canRespond?: boolean;
   currentPage?: number;
   totalPages?: number;
+  enableReporting?: boolean;
 }
 
 export function ReviewList({
@@ -31,6 +32,7 @@ export function ReviewList({
   canRespond = false,
   currentPage,
   totalPages,
+  enableReporting = false,
 }: ReviewListProps) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
@@ -126,7 +128,10 @@ export function ReviewList({
 
           return (
             <div key={review.id} className="space-y-3">
-              <ReviewCard review={review} />
+              <ReviewCard
+                canReport={enableReporting && currentUserId !== review.reviewer_id}
+                review={review}
+              />
 
               {canRespondToReview ? (
                 <div className="rounded-2xl border border-border/70 bg-background p-4 shadow-sm">

@@ -1355,6 +1355,75 @@ export async function unhideReview(reviewId: string): Promise<ActionResponse> {
   }
 }
 
+export async function flagReview(
+  reviewId: string,
+  reason: string,
+): Promise<ActionResponse> {
+  try {
+    const { adminId } = await verifyAdmin();
+    const admin = createAdminClient();
+
+    const { error } = await admin
+      .from("reviews")
+      .update({
+        is_flagged: true,
+        flagged_reason: reason.trim() || null,
+        moderated_by: adminId,
+      })
+      .eq("id", reviewId);
+
+    if (error) {
+      throw error;
+    }
+
+    await logAdminAction({
+      adminId,
+      action: "flag_review",
+      targetType: "review",
+      targetId: reviewId,
+      details: { reason: reason.trim() || null },
+    });
+
+    revalidateAdminViews();
+    return { success: "Review flagged" };
+  } catch (error) {
+    console.error("flagReview failed:", error);
+    return { error: error instanceof Error ? error.message : "Failed to flag review" };
+  }
+}
+
+export async function unflagReview(reviewId: string): Promise<ActionResponse> {
+  try {
+    const { adminId } = await verifyAdmin();
+    const admin = createAdminClient();
+
+    const { error } = await admin
+      .from("reviews")
+      .update({
+        is_flagged: false,
+        flagged_reason: null,
+      })
+      .eq("id", reviewId);
+
+    if (error) {
+      throw error;
+    }
+
+    await logAdminAction({
+      adminId,
+      action: "unflag_review",
+      targetType: "review",
+      targetId: reviewId,
+    });
+
+    revalidateAdminViews();
+    return { success: "Review unflagged" };
+  } catch (error) {
+    console.error("unflagReview failed:", error);
+    return { error: error instanceof Error ? error.message : "Failed to unflag review" };
+  }
+}
+
 export async function getAdminReports(params: {
   status?: ReportStatus | "all";
   type?: ReportType | "all";
@@ -1442,6 +1511,50 @@ export async function resolveReport(
   } catch (error) {
     console.error("resolveReport failed:", error);
     return { error: error instanceof Error ? error.message : "Failed to resolve report" };
+  }
+}
+
+export async function updateReportStatus(
+  reportId: string,
+  status: ReportStatus,
+  notes?: string,
+): Promise<ActionResponse> {
+  try {
+    const { adminId } = await verifyAdmin();
+    const admin = createAdminClient();
+
+    const updates: Record<string, unknown> = {
+      status,
+      admin_notes: notes?.trim() || null,
+    };
+
+    if (status === "resolved" || status === "dismissed") {
+      updates.resolved_by = adminId;
+      updates.resolved_at = new Date().toISOString();
+    }
+
+    const { error } = await admin.from("reports").update(updates).eq("id", reportId);
+
+    if (error) {
+      throw error;
+    }
+
+    await logAdminAction({
+      adminId,
+      action: "update_report_status",
+      targetType: "report",
+      targetId: reportId,
+      details: {
+        status,
+        notes: notes?.trim() || null,
+      },
+    });
+
+    revalidateAdminViews();
+    return { success: "Report status updated" };
+  } catch (error) {
+    console.error("updateReportStatus failed:", error);
+    return { error: error instanceof Error ? error.message : "Failed to update report status" };
   }
 }
 

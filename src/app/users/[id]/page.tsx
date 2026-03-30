@@ -10,6 +10,7 @@ import { MessageProfileButton } from "@/components/profile/message-profile-butto
 import { ReputationDisplay } from "@/components/profile/reputation-display";
 import { TrustBadges } from "@/components/profile/trust-badges";
 import { ReviewList } from "@/components/reviews/review-list";
+import { ReportDialog } from "@/components/shared/report-dialog";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -133,10 +134,13 @@ export default async function PublicProfilePage({
                   <Link href="/dashboard/settings">Edit Profile</Link>
                 </Button>
               ) : user ? (
-                <MessageProfileButton
-                  currentUserId={user.id}
-                  profileUserId={profile.id}
-                />
+                <>
+                  <MessageProfileButton
+                    currentUserId={user.id}
+                    profileUserId={profile.id}
+                  />
+                  <ReportDialog targetId={profile.id} targetType="user" />
+                </>
               ) : null}
             </div>
           </div>
@@ -178,11 +182,21 @@ export default async function PublicProfilePage({
           </TabsContent>
 
           <TabsContent value="lister-reviews">
-            <ReviewList reviews={listerReviews.data} showSummary />
+            <ReviewList
+              currentUserId={user?.id}
+              enableReporting={Boolean(user)}
+              reviews={listerReviews.data}
+              showSummary
+            />
           </TabsContent>
 
           <TabsContent value="renter-reviews">
-            <ReviewList reviews={renterReviews.data} showSummary />
+            <ReviewList
+              currentUserId={user?.id}
+              enableReporting={Boolean(user)}
+              reviews={renterReviews.data}
+              showSummary
+            />
           </TabsContent>
         </Tabs>
       </div>

@@ -1,14 +1,16 @@
 import { Badge } from "@/components/ui/badge";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { ReportDialog } from "@/components/shared/report-dialog";
 import { formatRelativeTime, getInitials } from "@/lib/utils";
 import { StarRating } from "@/components/reviews/star-rating";
 import type { ReviewWithUsers } from "@/types";
 
 interface ReviewCardProps {
   review: ReviewWithUsers;
+  canReport?: boolean;
 }
 
-export function ReviewCard({ review }: ReviewCardProps) {
+export function ReviewCard({ review, canReport = false }: ReviewCardProps) {
   const reviewerName =
     review.reviewer.display_name || review.reviewer.full_name || review.reviewer.email;
   const revieweeName =
@@ -39,6 +41,13 @@ export function ReviewCard({ review }: ReviewCardProps) {
             </div>
           </div>
         </div>
+        {canReport ? (
+          <ReportDialog
+            targetId={review.id}
+            targetType="review"
+            trigger={<Badge variant="outline">Report</Badge>}
+          />
+        ) : null}
       </div>
 
       {review.comment ? (

@@ -13,6 +13,7 @@ import { ListingGrid } from "@/components/listings/listing-grid";
 import { StockLevelBadge } from "@/components/inventory/stock-level-badge";
 import { ProfileCard } from "@/components/profile/profile-card";
 import { ReviewCard } from "@/components/reviews/review-card";
+import { ReportDialog } from "@/components/shared/report-dialog";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
@@ -173,6 +174,9 @@ export default async function ListingDetailPage({
                   size="sm"
                   variant="outline"
                 />
+                {user && !isOwner ? (
+                  <ReportDialog targetId={data.listing.id} targetType="listing" />
+                ) : null}
               </div>
               <div className="flex flex-wrap items-center gap-3 text-muted-foreground">
                 <span className="flex items-center gap-2">
@@ -284,7 +288,11 @@ export default async function ListingDetailPage({
             ) : (
               <div className="space-y-4">
                 {displayedReviews.map((review) => (
-                  <ReviewCard key={review.id} review={review} />
+                  <ReviewCard
+                    canReport={Boolean(user && user.id !== review.reviewer_id)}
+                    key={review.id}
+                    review={review}
+                  />
                 ))}
                 {listingReviews.totalCount > 5 && !showAllReviews ? (
                   <Button asChild variant="outline">
