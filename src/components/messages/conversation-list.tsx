@@ -5,9 +5,10 @@ import { useMemo, useState } from "react";
 import { MessageSquareMore, Search } from "lucide-react";
 
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { HydratedRelativeTime } from "@/components/shared/hydrated-relative-time";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
-import { cn, formatRelativeTime, getInitials } from "@/lib/utils";
+import { cn, getInitials } from "@/lib/utils";
 import type { ConversationWithDetails } from "@/types";
 
 interface ConversationListProps {
@@ -87,9 +88,10 @@ export function ConversationList({
                 <div className="min-w-0 flex-1 space-y-1">
                   <div className="flex items-start justify-between gap-3">
                     <p className="truncate font-medium">{displayName}</p>
-                    <span className="shrink-0 text-xs text-muted-foreground">
-                      {formatRelativeTime(conversation.last_message_at)}
-                    </span>
+                    <HydratedRelativeTime
+                      className="shrink-0 text-xs text-muted-foreground"
+                      value={conversation.last_message_at}
+                    />
                   </div>
 
                   {conversation.listing ? (

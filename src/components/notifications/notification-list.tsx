@@ -5,8 +5,9 @@ import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 
 import { markAsRead } from "@/actions/notifications";
+import { HydratedRelativeTime } from "@/components/shared/hydrated-relative-time";
 import { getNotificationMeta } from "@/lib/notification-meta";
-import { cn, formatRelativeTime } from "@/lib/utils";
+import { cn } from "@/lib/utils";
 import type { Notification } from "@/types";
 
 interface NotificationListProps {
@@ -95,9 +96,10 @@ export function NotificationList({
                   >
                     {notification.title}
                   </p>
-                  <span className="shrink-0 text-xs text-muted-foreground">
-                    {formatRelativeTime(notification.created_at)}
-                  </span>
+                  <HydratedRelativeTime
+                    className="shrink-0 text-xs text-muted-foreground"
+                    value={notification.created_at}
+                  />
                 </div>
                 {notification.body ? (
                   <p

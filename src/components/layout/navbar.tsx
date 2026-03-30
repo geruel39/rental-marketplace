@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { headers } from "next/headers";
 import {
   Bell,
   CreditCard,
@@ -12,6 +13,7 @@ import {
   Receipt,
   Settings,
   ShieldCheck,
+  Shield,
   Star,
   User as UserIcon,
   Wallet,
@@ -87,6 +89,13 @@ const mobileDashboardSections = [
 ] as const;
 
 export async function Navbar() {
+  const headerStore = await headers();
+  const pathname = headerStore.get("x-pathname") ?? "";
+
+  if (pathname === "/maintenance") {
+    return null;
+  }
+
   let user:
     | {
         id: string;
@@ -95,6 +104,7 @@ export async function Navbar() {
       }
     | null = null;
   let profile: Pick<Profile, "avatar_url" | "display_name" | "full_name"> | null = null;
+  let isAdmin = false;
   let latestNotifications: Notification[] = [];
   let unreadNotifications = 0;
 
@@ -108,11 +118,12 @@ export async function Navbar() {
     if (sessionUser) {
       const { data: userProfile } = await supabase
         .from("profiles")
-        .select("avatar_url, display_name, full_name")
+        .select("avatar_url, display_name, full_name, is_admin")
         .eq("id", sessionUser.id)
-        .maybeSingle<Pick<Profile, "avatar_url" | "display_name" | "full_name">>();
+        .maybeSingle<Pick<Profile, "avatar_url" | "display_name" | "full_name" | "is_admin">>();
 
       profile = userProfile ?? null;
+      isAdmin = userProfile?.is_admin ?? false;
 
       const [notifications, unreadCount] = await Promise.all([
         getNotifications(sessionUser.id, 1),
@@ -314,6 +325,14 @@ export async function Navbar() {
                       Settings
                     </Link>
                   </DropdownMenuItem>
+                  {isAdmin ? (
+                    <DropdownMenuItem asChild>
+                      <Link href="/admin">
+                        <Shield className="size-4 text-orange-600" />
+                        Admin
+                      </Link>
+                    </DropdownMenuItem>
+                  ) : null}
                   <DropdownMenuSeparator />
                   <DropdownMenuItem asChild>
                     <a href="/auth/logout">

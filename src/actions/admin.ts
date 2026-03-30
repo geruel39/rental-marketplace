@@ -1744,6 +1744,8 @@ export async function updatePlatformSetting(
 export async function getAuditLog(params: {
   adminId?: string;
   targetType?: AdminTargetType | "all";
+  dateFrom?: string;
+  dateTo?: string;
   page?: number;
   perPage?: number;
 }): Promise<PaginatedResponse<AuditLogRow>> {
@@ -1769,6 +1771,16 @@ export async function getAuditLog(params: {
 
   if (params.targetType && params.targetType !== "all") {
     query = query.eq("target_type", params.targetType);
+  }
+
+  if (params.dateFrom) {
+    query = query.gte("created_at", new Date(params.dateFrom).toISOString());
+  }
+
+  if (params.dateTo) {
+    const dateTo = new Date(params.dateTo);
+    dateTo.setHours(23, 59, 59, 999);
+    query = query.lte("created_at", dateTo.toISOString());
   }
 
   const { data, count, error } = await query.range(from, to);

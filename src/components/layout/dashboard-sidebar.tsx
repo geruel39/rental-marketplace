@@ -12,12 +12,14 @@ import {
   Plus,
   Receipt,
   Settings,
+  Shield,
   ShieldCheck,
   Star,
   Wallet,
 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
+import { Separator } from "@/components/ui/separator";
 import { cn } from "@/lib/utils";
 
 export const dashboardSections = [
@@ -59,7 +61,7 @@ export const dashboardSections = [
   },
 ];
 
-export function DashboardSidebar() {
+export function DashboardSidebar({ isAdmin = false }: { isAdmin?: boolean }) {
   const pathname = usePathname();
 
   return (
@@ -103,6 +105,29 @@ export function DashboardSidebar() {
               </div>
             </div>
           ))}
+
+          {isAdmin ? (
+            <div className="space-y-2">
+              <Separator className="bg-orange-200/70" />
+              <h2 className="px-3 pt-2 text-xs font-semibold uppercase tracking-[0.18em] text-orange-700">
+                Admin
+              </h2>
+              <div className="space-y-1">
+                <Link
+                  href="/admin"
+                  className={cn(
+                    "flex items-center gap-3 rounded-lg px-3 py-2 text-sm transition-colors",
+                    pathname === "/admin" || pathname.startsWith("/admin/")
+                      ? "bg-orange-600 text-white"
+                      : "text-orange-700 hover:bg-orange-100 hover:text-orange-900",
+                  )}
+                >
+                  <Shield className="size-4" />
+                  Admin Panel
+                </Link>
+              </div>
+            </div>
+          ) : null}
         </nav>
       </div>
     </aside>

@@ -4,6 +4,7 @@ import { NextResponse, type NextRequest } from "next/server";
 const protectedRoutes = ["/dashboard", "/listings/new", "/admin"];
 const authRoutes = ["/login", "/register"];
 const adminRoutes = ["/admin"];
+const maintenanceBypassRoutes = ["/maintenance"];
 
 function matchesRoute(pathname: string, routes: string[]) {
   return routes.some(
@@ -12,9 +13,12 @@ function matchesRoute(pathname: string, routes: string[]) {
 }
 
 export async function middleware(request: NextRequest) {
+  const requestHeaders = new Headers(request.headers);
+  requestHeaders.set("x-pathname", request.nextUrl.pathname);
+
   const response = NextResponse.next({
     request: {
-      headers: request.headers,
+      headers: requestHeaders,
     },
   });
 
@@ -62,6 +66,40 @@ export async function middleware(request: NextRequest) {
   } = await supabase.auth.getUser();
 
   const { pathname } = request.nextUrl;
+  let isAdmin = false;
+
+  if (user) {
+    const { data: profile } = await supabase
+      .from("profiles")
+      .select("is_admin")
+      .eq("id", user.id)
+      .maybeSingle<{ is_admin: boolean }>();
+
+    isAdmin = profile?.is_admin === true;
+  }
+
+  const { data: maintenanceSetting } = await supabase
+    .from("platform_settings")
+    .select("value")
+    .eq("key", "maintenance_mode")
+    .maybeSingle<{ value: boolean | string | number | null }>();
+
+  const maintenanceMode =
+    maintenanceSetting?.value === true ||
+    maintenanceSetting?.value === 1 ||
+    maintenanceSetting?.value === "1" ||
+    maintenanceSetting?.value === "true";
+
+  if (
+    maintenanceMode &&
+    !isAdmin &&
+    !matchesRoute(pathname, maintenanceBypassRoutes)
+  ) {
+    const redirectUrl = request.nextUrl.clone();
+    redirectUrl.pathname = "/maintenance";
+    redirectUrl.search = "";
+    return NextResponse.redirect(redirectUrl);
+  }
 
   if (!user && matchesRoute(pathname, protectedRoutes)) {
     const redirectUrl = request.nextUrl.clone();
@@ -78,13 +116,7 @@ export async function middleware(request: NextRequest) {
   }
 
   if (user && matchesRoute(pathname, adminRoutes)) {
-    const { data: profile } = await supabase
-      .from("profiles")
-      .select("is_admin")
-      .eq("id", user.id)
-      .maybeSingle<{ is_admin: boolean }>();
-
-    if (!profile?.is_admin) {
+    if (!isAdmin) {
       const redirectUrl = request.nextUrl.clone();
       redirectUrl.pathname = "/dashboard";
       redirectUrl.searchParams.delete("redirectedFrom");
