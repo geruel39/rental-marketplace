@@ -1,6 +1,7 @@
 import { getAdminBookings } from "@/actions/admin";
 import { AdminBookingTable } from "@/components/admin/admin-booking-table";
 import { AdminPageHeader } from "@/components/admin/admin-page-header";
+import { ExpireUnpaidBookingsButton } from "@/components/admin/expire-unpaid-bookings-button";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import {
   Card,
@@ -31,23 +32,40 @@ export default async function AdminBookingsPage({
   const page = getPage(getSingleValue(resolvedSearchParams.page));
 
   const status =
-    filter === "active" || filter === "completed" ? filter : undefined;
+    filter === "pending" ||
+    filter === "awaiting_payment" ||
+    filter === "confirmed" ||
+    filter === "out_for_delivery" ||
+    filter === "active" ||
+    filter === "returned" ||
+    filter === "completed"
+      ? filter
+      : undefined;
   const disputed = filter === "disputed" ? true : undefined;
 
-  const [bookingsResult, totalResult, activeResult, disputedResult, completedResult] =
+  const [
+    bookingsResult,
+    totalResult,
+    awaitingPaymentResult,
+    outForDeliveryResult,
+    returnedResult,
+    disputedResult,
+  ] =
     await Promise.all([
       getAdminBookings({ status, disputed, page }),
       getAdminBookings({ perPage: 1 }),
-      getAdminBookings({ status: "active", perPage: 1 }),
+      getAdminBookings({ status: "awaiting_payment", perPage: 1 }),
+      getAdminBookings({ status: "out_for_delivery", perPage: 1 }),
+      getAdminBookings({ status: "returned", perPage: 1 }),
       getAdminBookings({ disputed: true, perPage: 1 }),
-      getAdminBookings({ status: "completed", perPage: 1 }),
     ]);
 
   const stats = [
     { label: "Total", value: totalResult.totalCount },
-    { label: "Active", value: activeResult.totalCount },
+    { label: "Awaiting Payment", value: awaitingPaymentResult.totalCount },
+    { label: "Out for Delivery", value: outForDeliveryResult.totalCount },
+    { label: "Returned", value: returnedResult.totalCount },
     { label: "Disputed", value: disputedResult.totalCount },
-    { label: "Completed", value: completedResult.totalCount },
   ];
 
   return (
@@ -66,6 +84,10 @@ export default async function AdminBookingsPage({
           </AlertDescription>
         </Alert>
       ) : null}
+
+      <div className="flex justify-end">
+        <ExpireUnpaidBookingsButton />
+      </div>
 
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
         {stats.map((stat) => (

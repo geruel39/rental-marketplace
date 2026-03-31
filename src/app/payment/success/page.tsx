@@ -1,21 +1,29 @@
 import Link from "next/link";
-import { CheckCircle2, Loader2 } from "lucide-react";
+import { format } from "date-fns";
+import { CheckCircle2, Loader2, TriangleAlert } from "lucide-react";
 
 import { getBookingDetails } from "@/actions/bookings";
-import { checkPaymentStatus } from "@/actions/hitpay";
+import { BookingSummaryCard } from "@/components/bookings/booking-summary-card";
 import { PaymentStatusPoller } from "@/components/payments/payment-status-poller";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { formatCurrency, formatDate } from "@/lib/utils";
 
 type SearchParams = Record<string, string | string[] | undefined>;
+
+interface PaymentSuccessPageProps {
+  searchParams: Promise<SearchParams>;
+}
 
 function getSingleValue(value: string | string[] | undefined) {
   return Array.isArray(value) ? value[0] : value;
 }
 
-interface PaymentSuccessPageProps {
-  searchParams: Promise<SearchParams>;
+function formatDateTime(value?: string | null) {
+  if (!value) {
+    return "To be confirmed";
+  }
+
+  return format(new Date(value), "PPP p");
 }
 
 export default async function PaymentSuccessPage({
@@ -23,91 +31,118 @@ export default async function PaymentSuccessPage({
 }: PaymentSuccessPageProps) {
   const resolvedSearchParams = await searchParams;
   const bookingId = getSingleValue(resolvedSearchParams.booking);
-  console.log("[SUCCESS_PAGE] Loaded with bookingId:", bookingId);
+  const booking = bookingId ? await getBookingDetails(bookingId) : null;
 
-  let booking = bookingId ? await getBookingDetails(bookingId) : null;
-  console.log("[SUCCESS_PAGE] Booking fetched:", booking ? "exists" : "null");
-  console.log("[SUCCESS_PAGE] Initial booking status:", booking?.hitpay_payment_status);
-
-  let paymentStatusFromApi: string | null = null;
-  
-  if (bookingId && booking && booking.hitpay_payment_status !== "completed") {
-    console.log("[SUCCESS_PAGE] About to check payment status via API");
-    try {
-      const paymentStatus = await checkPaymentStatus(bookingId);
-      console.log("[SUCCESS_PAGE] checkPaymentStatus returned:", paymentStatus);
-
-      if ("status" in paymentStatus && paymentStatus.status === "completed") {
-        console.log("[SUCCESS_PAGE] Refetching booking after API check");
-        booking = await getBookingDetails(bookingId);
-      } else if ("status" in paymentStatus) {
-        paymentStatusFromApi = paymentStatus.status;
-        console.log("[SUCCESS_PAGE] API check result:", paymentStatus);
-      }
-    } catch (error) {
-      console.error("[SUCCESS_PAGE] Error in checkPaymentStatus:", error);
-    }
-  } else {
-    console.log("[SUCCESS_PAGE] Skipping API check - bookingId:", !!bookingId, "booking:", !!booking, "status:", booking?.hitpay_payment_status);
+  if (!bookingId || !booking) {
+    return (
+      <main className="mx-auto flex min-h-[70vh] max-w-3xl items-center px-4 py-12 sm:px-6 lg:px-8">
+        <Card className="w-full border-border/70">
+          <CardHeader className="text-center">
+            <TriangleAlert className="mx-auto size-12 text-amber-600" />
+            <CardTitle className="text-2xl">Booking not found</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-6 text-center">
+            <p className="text-sm text-muted-foreground">
+              We could not find the booking linked to this payment.
+            </p>
+            <Button asChild>
+              <Link href="/dashboard/my-rentals">Go to My Rentals</Link>
+            </Button>
+          </CardContent>
+        </Card>
+      </main>
+    );
   }
 
-  const isPaid = booking?.hitpay_payment_status === "completed";
-  console.log("[SUCCESS_PAGE] Final isPaid:", isPaid);
+  if (booking.status === "confirmed") {
+    return (
+      <main className="mx-auto flex min-h-[70vh] max-w-4xl items-center px-4 py-12 sm:px-6 lg:px-8">
+        <Card className="w-full border-border/70">
+          <CardHeader className="text-center">
+            <CheckCircle2 className="mx-auto size-12 text-emerald-600" />
+            <CardTitle className="text-2xl">Payment Successful!</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-6">
+            <BookingSummaryCard booking={booking} />
 
-  // Determine if payment is in a terminal state
-  const isTerminalState = isPaid || 
-    paymentStatusFromApi === "failed" || 
-    paymentStatusFromApi === "cancelled" || 
-    paymentStatusFromApi === "rejected";
+            <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-950">
+              {booking.fulfillment_type === "pickup" ? (
+                <p>
+                  Your pickup is scheduled for {formatDateTime(booking.pickup_scheduled_at)}.
+                  Location: {booking.listing.location}.
+                </p>
+              ) : (
+                <p>
+                  Your item will be delivered to{" "}
+                  {[booking.delivery_address, booking.delivery_city, booking.delivery_state, booking.delivery_postal_code]
+                    .filter(Boolean)
+                    .join(", ")}{" "}
+                  on {formatDateTime(booking.delivery_scheduled_at)}.
+                </p>
+              )}
+            </div>
+
+            <div className="flex flex-wrap justify-center gap-3">
+              <Button asChild>
+                <Link href={`/dashboard/bookings/${booking.id}`}>View Booking Details</Link>
+              </Button>
+              <Button asChild variant="outline">
+                <Link href="/dashboard/my-rentals">View My Rentals</Link>
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+      </main>
+    );
+  }
+
+  if (booking.status === "awaiting_payment") {
+    return (
+      <main className="mx-auto flex min-h-[70vh] max-w-4xl items-center px-4 py-12 sm:px-6 lg:px-8">
+        <PaymentStatusPoller
+          enabled
+          fallbackMessage="Payment is being verified. You can check your rentals page for updates."
+        />
+        <Card className="w-full border-border/70">
+          <CardHeader className="text-center">
+            <Loader2 className="mx-auto size-12 animate-spin text-amber-500" />
+            <CardTitle className="text-2xl">Processing your payment...</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-6">
+            <p className="text-center text-sm text-muted-foreground">
+              This usually takes a few seconds.
+            </p>
+
+            <BookingSummaryCard booking={booking} />
+
+            <div className="flex justify-center">
+              <Button asChild variant="outline">
+                <Link href="/dashboard/my-rentals">Check My Rentals</Link>
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+      </main>
+    );
+  }
 
   return (
     <main className="mx-auto flex min-h-[70vh] max-w-3xl items-center px-4 py-12 sm:px-6 lg:px-8">
-      <PaymentStatusPoller enabled={Boolean(bookingId && !isPaid)} />
       <Card className="w-full border-border/70">
         <CardHeader className="text-center">
-          {isPaid ? (
-            <CheckCircle2 className="mx-auto size-12 text-emerald-600" />
-          ) : paymentStatusFromApi && !isTerminalState ? (
-            <Loader2 className="mx-auto size-12 animate-spin text-amber-500" />
-          ) : (
-            <Loader2 className="mx-auto size-12 animate-spin text-primary" />
-          )}
-          <CardTitle className="text-2xl">
-            {isPaid 
-              ? "Payment Successful!" 
-              : paymentStatusFromApi && !isTerminalState 
-                ? `Payment ${paymentStatusFromApi} - Please wait...`
-                : "Payment is being processed..."
-            }
-          </CardTitle>
+          <TriangleAlert className="mx-auto size-12 text-amber-600" />
+          <CardTitle className="text-2xl">Payment received</CardTitle>
         </CardHeader>
-        <CardContent className="space-y-6">
-          {booking && isPaid ? (
-            <div className="space-y-3 rounded-2xl bg-muted/40 p-5 text-sm">
-              <p>
-                <span className="font-medium">Listing:</span> {booking.listing.title}
-              </p>
-              <p>
-                <span className="font-medium">Dates:</span> {formatDate(booking.start_date)} -{" "}
-                {formatDate(booking.end_date)}
-              </p>
-              <p>
-                <span className="font-medium">Amount:</span> {formatCurrency(booking.total_price)}
-              </p>
-            </div>
-          ) : booking && paymentStatusFromApi && !isTerminalState ? (
-            <div className="space-y-3 rounded-2xl bg-amber-50 border border-amber-200 p-5 text-sm text-amber-800">
-              <p className="font-medium">Payment status: {paymentStatusFromApi}</p>
-              <p>If you've completed payment but still see this message, please wait a moment and the page will refresh automatically. If the issue persists, go to your dashboard and try again.</p>
-            </div>
-          ) : (
-            <p className="text-center text-sm text-muted-foreground">
-              We are waiting for HitPay to confirm your payment. This page will refresh automatically.
-            </p>
-          )}
-
-          <div className="flex justify-center">
+        <CardContent className="space-y-6 text-center">
+          <p className="text-sm text-muted-foreground">
+            Your booking is currently in the <strong>{booking.status.replaceAll("_", " ")}</strong> state.
+            Please check your booking details for the latest update.
+          </p>
+          <div className="flex flex-wrap justify-center gap-3">
             <Button asChild>
+              <Link href={`/dashboard/bookings/${booking.id}`}>View Booking Details</Link>
+            </Button>
+            <Button asChild variant="outline">
               <Link href="/dashboard/my-rentals">View My Rentals</Link>
             </Button>
           </div>

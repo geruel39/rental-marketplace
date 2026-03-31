@@ -3,7 +3,7 @@ import { Star } from "lucide-react";
 import Link from "next/link";
 import { redirect } from "next/navigation";
 
-import { getBookingDetails, getBookingTimeline } from "@/actions/bookings";
+import { getBookingDetails } from "@/actions/bookings";
 import { BookingStatusBadge } from "@/components/bookings/booking-status-badge";
 import { PaymentButton } from "@/components/bookings/payment-button";
 import { BookingTimeline } from "@/components/bookings/booking-timeline";
@@ -68,11 +68,12 @@ export default async function BookingDetailPage({
     .maybeSingle<{ is_admin: boolean }>();
 
   const booking = await getBookingDetails(id);
-  const timeline = await getBookingTimeline(id);
 
   if (!booking) {
     redirect("/dashboard");
   }
+
+  const timeline = booking.timeline ?? [];
 
   const isAdmin = profile?.is_admin ?? false;
   const isLister = booking.lister_id === user.id;

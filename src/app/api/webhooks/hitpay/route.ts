@@ -1,6 +1,5 @@
 import { NextResponse } from "next/server";
 
-import { confirmPaymentFromWebhook } from "@/actions/bookings";
 import { verifyWebhookSignature } from "@/lib/hitpay";
 import { createAdminClient } from "@/lib/supabase/admin";
 
@@ -9,6 +8,28 @@ interface HitPayDebugBookingRecord {
   hitpay_payment_request_id: string | null;
   hitpay_payment_status: string | null;
   booking_status: string | null;
+}
+
+interface HitPayWebhookBookingRecord {
+  id: string;
+  listing_id: string;
+  renter_id: string;
+  lister_id: string;
+  status: string;
+  total_price: number;
+  fulfillment_type: string | null;
+  pickup_scheduled_at: string | null;
+  delivery_scheduled_at: string | null;
+  delivery_address: string | null;
+  hitpay_payment_status: string | null;
+  listing:
+    | {
+        title: string;
+      }
+    | Array<{
+        title: string;
+      }>
+    | null;
 }
 
 function getNestedRecord(
@@ -37,6 +58,34 @@ function getFirstString(
   }
 
   return "";
+}
+
+function getFirstNumber(
+  sources: Array<Record<string, unknown> | null>,
+  keys: string[],
+) {
+  for (const source of sources) {
+    if (!source) {
+      continue;
+    }
+
+    for (const key of keys) {
+      const value = source[key];
+
+      if (typeof value === "number" && Number.isFinite(value)) {
+        return value;
+      }
+
+      if (typeof value === "string" && value.trim().length > 0) {
+        const parsed = Number(value);
+        if (Number.isFinite(parsed)) {
+          return parsed;
+        }
+      }
+    }
+  }
+
+  return null;
 }
 
 function normalizeEventPayload(payload: Record<string, unknown>) {
@@ -85,7 +134,10 @@ function normalizeEventPayload(payload: Record<string, unknown>) {
     console.log("[WEBHOOK] Found paymentId:", paymentId);
   }
 
-  return { event, bookingId, paymentId, status };
+  const amount = getFirstNumber(sources, ["amount"]);
+  const currency = getFirstString(sources, ["currency"]);
+
+  return { event, bookingId, paymentId, status, amount, currency };
 }
 
 export async function GET(request: Request) {
@@ -221,15 +273,122 @@ export async function POST(request: Request) {
 
     if (isCompletedEvent && normalized.bookingId) {
       console.log("[WEBHOOK] Processing completed payment for booking:", normalized.bookingId);
+      const admin = createAdminClient();
       const bookingId = normalized.bookingId;
-      const result = await confirmPaymentFromWebhook(
-        bookingId,
-        normalized.paymentId || undefined,
-      );
+      const { data: booking, error: bookingError } = await admin
+        .from("bookings")
+        .select(
+          `
+            id,
+            listing_id,
+            renter_id,
+            lister_id,
+            status,
+            total_price,
+            fulfillment_type,
+            pickup_scheduled_at,
+            delivery_scheduled_at,
+            delivery_address,
+            hitpay_payment_status,
+            listing:listings!bookings_listing_id_fkey(title)
+          `,
+        )
+        .eq("id", bookingId)
+        .maybeSingle<HitPayWebhookBookingRecord>();
 
-      if (result.error) {
-        console.log("[WEBHOOK] Error confirming payment:", result.error);
-        return NextResponse.json({ error: result.error }, { status: 500 });
+      if (bookingError) {
+        console.error("[WEBHOOK] Could not load booking:", bookingError);
+        return NextResponse.json({ error: bookingError.message }, { status: 500 });
+      }
+
+      if (!booking) {
+        console.log("[WEBHOOK] No booking found for reference number:", bookingId);
+        return NextResponse.json({ success: true, ignored: "booking_not_found" }, { status: 200 });
+      }
+
+      if (booking.status !== "awaiting_payment") {
+        console.log("[WEBHOOK] Booking is no longer awaiting payment, ignoring:", booking.status);
+        return NextResponse.json({ success: true, ignored: "already_processed" }, { status: 200 });
+      }
+
+      const paidAt = new Date().toISOString();
+      const amount = normalized.amount ?? booking.total_price;
+      const currency = normalized.currency || "SGD";
+      const listing = Array.isArray(booking.listing) ? booking.listing[0] : booking.listing;
+      const handoverDate =
+        booking.fulfillment_type === "delivery"
+          ? booking.delivery_scheduled_at
+          : booking.pickup_scheduled_at;
+
+      const { error: updateError } = await admin
+        .from("bookings")
+        .update({
+          status: "confirmed",
+          stock_deducted: true,
+          paid_at: paidAt,
+          hitpay_payment_id: normalized.paymentId || null,
+          hitpay_payment_status: "completed",
+        })
+        .eq("id", booking.id);
+
+      if (updateError) {
+        console.error("[WEBHOOK] Could not confirm booking payment:", updateError);
+        return NextResponse.json({ error: updateError.message }, { status: 500 });
+      }
+
+      const { error: timelineError } = await admin.from("booking_timeline").insert({
+        booking_id: booking.id,
+        status: "confirmed",
+        previous_status: "awaiting_payment",
+        actor_id: null,
+        actor_role: "system",
+        title: "Payment received",
+        description: `Payment of ${amount} confirmed via HitPay.`,
+        metadata: {
+          payment_id: normalized.paymentId || null,
+          amount,
+          currency,
+        },
+      });
+
+      if (timelineError) {
+        console.error("[WEBHOOK] Could not insert booking timeline entry:", timelineError);
+      }
+
+      const renterBody =
+        booking.fulfillment_type === "delivery"
+          ? `Payment confirmed! Your item will be delivered${booking.delivery_address ? ` to ${booking.delivery_address}` : ""}${handoverDate ? ` on ${handoverDate}` : ""}.`
+          : `Payment confirmed! Your item will be ready for pickup${handoverDate ? ` on ${handoverDate}` : ""}.`;
+
+      const notifications = [
+        {
+          user_id: booking.lister_id,
+          type: "payment_received",
+          title: "Payment received for booking",
+          body: `Payment received for ${listing?.title ?? "this booking"}. Please prepare the item for ${booking.fulfillment_type ?? "handover"}.`,
+          listing_id: booking.listing_id,
+          booking_id: booking.id,
+          from_user_id: booking.renter_id,
+          action_url: `/dashboard/bookings/${booking.id}`,
+        },
+        {
+          user_id: booking.renter_id,
+          type: "payment_confirmed",
+          title: "Payment confirmed",
+          body: renterBody,
+          listing_id: booking.listing_id,
+          booking_id: booking.id,
+          from_user_id: booking.lister_id,
+          action_url: `/dashboard/bookings/${booking.id}`,
+        },
+      ];
+
+      const { error: notificationError } = await admin
+        .from("notifications")
+        .insert(notifications);
+
+      if (notificationError) {
+        console.error("[WEBHOOK] Could not create payment notifications:", notificationError);
       }
 
       console.log("[WEBHOOK] Webhook processing completed successfully");

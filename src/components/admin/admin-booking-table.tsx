@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 
+import { BookingStatusBadge } from "@/components/bookings/booking-status-badge";
 import { DisputeResolveDialog } from "@/components/admin/dispute-resolve-dialog";
 import { Pagination } from "@/components/shared/pagination";
 import { Button } from "@/components/ui/button";
@@ -17,16 +18,6 @@ import {
 } from "@/components/ui/table";
 import { formatCurrency, formatDate } from "@/lib/utils";
 import type { BookingWithDetails } from "@/types";
-
-const statusTone: Record<string, string> = {
-  active: "bg-sky-600 text-white hover:bg-sky-600",
-  confirmed: "bg-blue-600 text-white hover:bg-blue-600",
-  completed: "bg-emerald-600 text-white hover:bg-emerald-600",
-  disputed: "bg-red-600 text-white hover:bg-red-600",
-  cancelled_by_lister: "bg-muted text-foreground hover:bg-muted",
-  cancelled_by_renter: "bg-muted text-foreground hover:bg-muted",
-  pending: "bg-amber-500 text-black hover:bg-amber-500",
-};
 
 function getPaymentStatus(booking: BookingWithDetails) {
   return booking.hitpay_payment_status || booking.hitpay_payment_id || (booking.paid_at ? "paid" : "unpaid");
@@ -73,7 +64,17 @@ export function AdminBookingTable({
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap gap-2 rounded-2xl border border-orange-200/60 bg-white/90 p-2">
-        {["all", "active", "disputed", "completed", "cancelled"].map((tab) => (
+        {[
+          "all",
+          "pending",
+          "awaiting_payment",
+          "confirmed",
+          "out_for_delivery",
+          "active",
+          "returned",
+          "completed",
+          "disputed",
+        ].map((tab) => (
           <Button
             key={tab}
             onClick={() => updateFilter(tab)}
@@ -81,7 +82,7 @@ export function AdminBookingTable({
             type="button"
             variant={activeFilter === tab ? "default" : "ghost"}
           >
-            {tab.charAt(0).toUpperCase() + tab.slice(1)}
+            {tab.replaceAll("_", " ").replace(/\b\w/g, (char) => char.toUpperCase())}
           </Button>
         ))}
       </div>
@@ -95,6 +96,7 @@ export function AdminBookingTable({
               <TableHead>Renter</TableHead>
               <TableHead>Lister</TableHead>
               <TableHead>Dates</TableHead>
+              <TableHead>Fulfillment</TableHead>
               <TableHead>Qty</TableHead>
               <TableHead>Amount</TableHead>
               <TableHead>Status</TableHead>
@@ -105,7 +107,7 @@ export function AdminBookingTable({
           <TableBody>
             {bookings.length === 0 ? (
               <TableRow>
-                <TableCell className="py-8 text-center text-muted-foreground" colSpan={10}>
+                <TableCell className="py-8 text-center text-muted-foreground" colSpan={11}>
                   No bookings matched this filter.
                 </TableCell>
               </TableRow>
@@ -127,12 +129,15 @@ export function AdminBookingTable({
                   <TableCell>
                     {formatDate(booking.start_date)} - {formatDate(booking.end_date)}
                   </TableCell>
+                  <TableCell>
+                    <Badge variant="outline">
+                      {booking.fulfillment_type === "delivery" ? "Delivery" : "Pickup"}
+                    </Badge>
+                  </TableCell>
                   <TableCell>{booking.quantity}</TableCell>
                   <TableCell>{formatCurrency(booking.total_price)}</TableCell>
                   <TableCell>
-                    <Badge className={statusTone[booking.status] ?? "bg-muted text-foreground hover:bg-muted"}>
-                      {booking.status}
-                    </Badge>
+                    <BookingStatusBadge status={booking.status} />
                   </TableCell>
                   <TableCell>{getPaymentStatus(booking)}</TableCell>
                   <TableCell className="text-right">

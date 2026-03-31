@@ -5,9 +5,13 @@ import { useRouter } from "next/navigation";
 
 interface PaymentStatusPollerProps {
   enabled: boolean;
+  fallbackMessage?: string;
 }
 
-export function PaymentStatusPoller({ enabled }: PaymentStatusPollerProps) {
+export function PaymentStatusPoller({
+  enabled,
+  fallbackMessage,
+}: PaymentStatusPollerProps) {
   const router = useRouter();
   const [attempts, setAttempts] = useState(0);
   const MAX_ATTEMPTS = 10; // Stop polling after 10 attempts (30 seconds)
@@ -33,5 +37,13 @@ export function PaymentStatusPoller({ enabled }: PaymentStatusPollerProps) {
     };
   }, [enabled, router, attempts]);
 
-  return null;
+  if (!enabled || attempts < MAX_ATTEMPTS || !fallbackMessage) {
+    return null;
+  }
+
+  return (
+    <p className="text-center text-sm text-muted-foreground">
+      {fallbackMessage}
+    </p>
+  );
 }

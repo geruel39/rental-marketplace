@@ -1544,22 +1544,41 @@ export async function cancelBooking(
       return { error: "You are not allowed to cancel this booking." };
     }
 
-    if (!CANCELLABLE_STATUSES.has(booking.status)) {
-      if (
-        booking.status === "active" ||
-        booking.status === "out_for_delivery"
-      ) {
-        return { error: "Active bookings must use the dispute flow instead." };
-      }
+    if (booking.status === "active" || booking.status === "out_for_delivery") {
+      return {
+        error:
+          "Cannot cancel an active booking. Please use the dispute process instead.",
+      };
+    }
 
+    if (booking.status === "returned" || booking.status === "completed") {
+      return { error: "This booking cannot be cancelled." };
+    }
+
+    if (!CANCELLABLE_STATUSES.has(booking.status)) {
       return { error: "This booking can no longer be cancelled." };
     }
 
     let stockReleased = false;
+    let stockMessage = "";
 
-    if (booking.stock_reserved && !booking.stock_restored) {
+    if (
+      booking.status === "awaiting_payment" &&
+      booking.stock_reserved &&
+      !booking.stock_restored
+    ) {
       await releaseStock(auth.supabase, booking, auth.user.id);
       stockReleased = true;
+      stockMessage = " Reserved stock was released after cancellation.";
+    } else if (
+      booking.status === "confirmed" &&
+      booking.stock_deducted &&
+      !booking.stock_restored
+    ) {
+      await releaseStock(auth.supabase, booking, auth.user.id);
+      stockReleased = true;
+      stockMessage =
+        " Confirmed stock allocation was released after cancellation.";
     }
 
     const cancelStatus =
@@ -1585,10 +1604,6 @@ export async function cancelBooking(
       return { error: updateError.message };
     }
 
-    const stockMessage = stockReleased
-      ? " Reserved stock was released."
-      : "";
-
     await addTimeline({
       bookingId: booking.id,
       status: cancelStatus,
@@ -1600,6 +1615,7 @@ export async function cancelBooking(
       metadata: {
         cancelled_by: actorRole,
         stock_released: stockReleased,
+        cancelled_from_status: booking.status,
       },
     });
 
@@ -1623,6 +1639,23 @@ export async function cancelBooking(
   } catch (error) {
     console.error("cancelBooking failed:", error);
     return { error: "Something went wrong. Please try again." };
+  }
+}
+
+export async function expireUnpaidBookings(): Promise<ActionResponse> {
+  try {
+    const admin = createAdminClient();
+    const result = await callRpcWithFallbacks<unknown>(admin, "expire_unpaid_bookings", [
+      {},
+    ]);
+
+    const expiredCount = extractRpcNumber(result) ?? 0;
+    revalidateBookingViews();
+
+    return { success: `Expired ${expiredCount} unpaid bookings` };
+  } catch (error) {
+    console.error("expireUnpaidBookings failed:", error);
+    return { error: "Could not expire unpaid bookings." };
   }
 }
 

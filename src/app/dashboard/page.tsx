@@ -12,16 +12,17 @@ import {
 } from "lucide-react";
 import { redirect } from "next/navigation";
 
+import { getIncomingRequests, getMyRentals } from "@/actions/bookings";
 import { getDashboardStats } from "@/actions/profile";
+import { BookingSummaryCard } from "@/components/bookings/booking-summary-card";
 import { LowStockAlert } from "@/components/inventory/low-stock-alert";
 import { StockSummaryCard } from "@/components/inventory/stock-summary-card";
 import { NotificationList } from "@/components/notifications/notification-list";
 import { EmptyState } from "@/components/shared/empty-state";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { createClient } from "@/lib/supabase/server";
-import { cn, formatCurrency, formatDate } from "@/lib/utils";
+import { cn, formatCurrency } from "@/lib/utils";
 import type { BookingWithDetails, DashboardStats, Profile } from "@/types";
 
 interface StatsSectionProps {
@@ -160,29 +161,18 @@ function QuickActionsSection() {
   );
 }
 
-function StatusBadge({ status }: { status: BookingWithDetails["status"] }) {
-  const variant =
-    status === "pending"
-      ? "secondary"
-      : status === "completed" || status === "active" || status === "confirmed"
-        ? "default"
-        : "destructive";
-
-  return <Badge variant={variant}>{status.replaceAll("_", " ")}</Badge>;
-}
-
 function BookingList({
   bookings,
   href,
   emptyTitle,
   emptyDescription,
-  role,
+  currentUserId,
 }: {
   bookings: BookingWithDetails[];
   href: string;
   emptyTitle: string;
   emptyDescription: string;
-  role: "lister" | "renter";
+  currentUserId: string;
 }) {
   if (bookings.length === 0) {
     return (
@@ -199,35 +189,82 @@ function BookingList({
   return (
     <div className="space-y-3">
       {bookings.map((booking) => (
-        <article
+        <BookingSummaryCard
           key={booking.id}
-          className="rounded-2xl border border-border bg-background p-4 shadow-sm"
-        >
-          <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-            <div className="space-y-2">
-              <div className="flex flex-wrap items-center gap-2">
-                <Link
-                  className="font-medium transition-colors hover:text-primary hover:underline"
-                  href={`/listings/${booking.listing.id}`}
-                >
-                  {booking.listing.title}
-                </Link>
-                <StatusBadge status={booking.status} />
-              </div>
-              <div className="flex flex-wrap gap-x-4 gap-y-1 text-sm text-muted-foreground">
-                <span>
-                  {role === "lister"
-                    ? booking.renter.display_name || booking.renter.full_name
-                    : booking.lister.display_name || booking.lister.full_name}
-                </span>
-                <span>{formatDate(booking.created_at)}</span>
-                <span>x {booking.quantity}</span>
-              </div>
-            </div>
-          </div>
-        </article>
+          booking={booking}
+          compact
+          currentUserId={currentUserId}
+        />
       ))}
     </div>
+  );
+}
+
+async function ActionRequiredSection({
+  incomingRequestsPromise,
+  myRentalsPromise,
+  userId,
+}: {
+  incomingRequestsPromise: Promise<BookingWithDetails[]>;
+  myRentalsPromise: Promise<BookingWithDetails[]>;
+  userId: string;
+}) {
+  const [incomingRequests, myRentals] = await Promise.all([
+    incomingRequestsPromise,
+    myRentalsPromise,
+  ]);
+  const actionItems = [
+    ...incomingRequests
+      .filter((booking) => booking.status === "pending" || booking.status === "returned")
+      .slice(0, 3)
+      .map((booking) => ({
+        booking,
+        label:
+          booking.status === "pending"
+            ? "Review request"
+            : "Inspect returned item",
+      })),
+    ...myRentals
+      .filter((booking) => booking.status === "awaiting_payment")
+      .slice(0, 3)
+      .map((booking) => ({
+        booking,
+        label: "Complete payment",
+      })),
+  ].slice(0, 6);
+
+  if (actionItems.length === 0) {
+    return null;
+  }
+
+  return (
+    <section className="space-y-4">
+      <div className="space-y-1">
+        <h2 className="text-lg font-semibold">Action Required</h2>
+        <p className="text-sm text-muted-foreground">
+          Bookings waiting on your next step.
+        </p>
+      </div>
+      <div className="space-y-3">
+        {actionItems.map(({ booking, label }) => (
+          <div
+            key={booking.id}
+            className="rounded-2xl border border-border/70 bg-background p-3 shadow-sm"
+          >
+            <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+              <BookingSummaryCard
+                booking={booking}
+                compact
+                currentUserId={userId}
+              />
+              <Button asChild className="shrink-0">
+                <Link href={`/dashboard/bookings/${booking.id}`}>{label}</Link>
+              </Button>
+            </div>
+          </div>
+        ))}
+      </div>
+    </section>
   );
 }
 
@@ -275,7 +312,10 @@ async function DashboardAlertsSection({ statsPromise }: StatsSectionProps) {
   );
 }
 
-async function ListerSection({ statsPromise }: StatsSectionProps) {
+async function ListerSection({
+  statsPromise,
+  userId,
+}: StatsSectionProps & { userId: string }) {
   const stats = await statsPromise;
 
   return (
@@ -330,7 +370,7 @@ async function ListerSection({ statsPromise }: StatsSectionProps) {
             emptyDescription="New renter requests will appear here as soon as they come in."
             emptyTitle="No recent booking requests"
             href="/dashboard/requests"
-            role="lister"
+            currentUserId={userId}
           />
         </CardContent>
       </Card>
@@ -338,7 +378,10 @@ async function ListerSection({ statsPromise }: StatsSectionProps) {
   );
 }
 
-async function RenterSection({ statsPromise }: StatsSectionProps) {
+async function RenterSection({
+  statsPromise,
+  userId,
+}: StatsSectionProps & { userId: string }) {
   const stats = await statsPromise;
 
   return (
@@ -381,7 +424,7 @@ async function RenterSection({ statsPromise }: StatsSectionProps) {
             emptyDescription="Your latest booking activity will show up here."
             emptyTitle="No recent rentals"
             href="/dashboard/my-rentals"
-            role="renter"
+            currentUserId={userId}
           />
         </CardContent>
       </Card>
@@ -428,6 +471,8 @@ export default async function DashboardPage() {
     .maybeSingle<Profile>();
 
   const statsPromise = getDashboardStats(user.id);
+  const incomingRequestsPromise = getIncomingRequests(user.id);
+  const myRentalsPromise = getMyRentals(user.id);
   const displayName =
     profile?.display_name || profile?.full_name || user.email || "there";
 
@@ -447,12 +492,20 @@ export default async function DashboardPage() {
         <DashboardAlertsSection statsPromise={statsPromise} />
       </Suspense>
 
+      <Suspense fallback={<SectionSkeleton cards={2} rows={2} />}>
+        <ActionRequiredSection
+          incomingRequestsPromise={incomingRequestsPromise}
+          myRentalsPromise={myRentalsPromise}
+          userId={user.id}
+        />
+      </Suspense>
+
       <Suspense fallback={<SectionSkeleton cards={4} rows={3} />}>
-        <ListerSection statsPromise={statsPromise} />
+        <ListerSection statsPromise={statsPromise} userId={user.id} />
       </Suspense>
 
       <Suspense fallback={<SectionSkeleton cards={3} rows={3} />}>
-        <RenterSection statsPromise={statsPromise} />
+        <RenterSection statsPromise={statsPromise} userId={user.id} />
       </Suspense>
 
       <QuickActionsSection />
