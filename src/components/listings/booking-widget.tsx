@@ -1,20 +1,30 @@
 "use client";
 
 import Link from "next/link";
-import { useActionState, useEffect, useMemo, useState, useTransition } from "react";
+import { useState, useTransition } from "react";
 import {
   addDays,
+  addHours,
+  addMonths,
+  addWeeks,
   differenceInCalendarDays,
   differenceInHours,
   format,
   startOfDay,
 } from "date-fns";
-import { CalendarIcon, Minus, Plus } from "lucide-react";
+import {
+  CalendarIcon,
+  Loader2,
+  Minus,
+  Plus,
+} from "lucide-react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 
 import { createBookingRequest } from "@/actions/bookings";
-import { getOrCreateConversation } from "@/actions/messages";
+import { DeliveryAddressForm } from "@/components/bookings/delivery-address-form";
+import { FulfillmentSelector } from "@/components/bookings/fulfillment-selector";
+import { SchedulePicker } from "@/components/bookings/schedule-picker";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Calendar } from "@/components/ui/calendar";
@@ -22,9 +32,24 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
+import { Separator } from "@/components/ui/separator";
+import {
+  Sheet,
+  SheetContent,
+  SheetDescription,
+  SheetHeader,
+  SheetTitle,
+  SheetTrigger,
+} from "@/components/ui/sheet";
 import { Textarea } from "@/components/ui/textarea";
 import { cn, formatCurrency } from "@/lib/utils";
-import type { ActionResponse, Listing, PricingPeriod } from "@/types";
+import type {
+  ActionResponse,
+  DeliveryAddress,
+  FulfillmentType,
+  Listing,
+  PricingPeriod,
+} from "@/types";
 
 interface BookingWidgetProps {
   listing: Listing;
@@ -33,7 +58,6 @@ interface BookingWidgetProps {
   currentUserId?: string;
 }
 
-const initialState: ActionResponse | null = null;
 const SERVICE_FEE_RATE = 0.05;
 
 function getAvailablePricingOptions(listing: Listing) {
@@ -45,6 +69,20 @@ function getAvailablePricingOptions(listing: Listing) {
   ].filter((option): option is { value: PricingPeriod; label: string; price: number } =>
     typeof option.price === "number",
   );
+}
+
+function getPrimaryPrice(listing: Listing) {
+  switch (listing.primary_pricing_period) {
+    case "hour":
+      return listing.price_per_hour;
+    case "week":
+      return listing.price_per_week;
+    case "month":
+      return listing.price_per_month;
+    case "day":
+    default:
+      return listing.price_per_day;
+  }
 }
 
 function getNumUnits(
@@ -76,75 +114,129 @@ function getNumUnits(
   }
 }
 
-function getPrimaryPrice(listing: Listing) {
-  switch (listing.primary_pricing_period) {
+function getMinimumEndDate(
+  startDate: Date | undefined,
+  minimumRentalPeriod: number,
+  pricingPeriod: PricingPeriod,
+) {
+  if (!startDate) {
+    return undefined;
+  }
+
+  switch (pricingPeriod) {
     case "hour":
-      return listing.price_per_hour;
+      return addHours(startDate, minimumRentalPeriod);
     case "week":
-      return listing.price_per_week;
+      return addWeeks(startDate, minimumRentalPeriod);
     case "month":
-      return listing.price_per_month;
+      return addMonths(startDate, minimumRentalPeriod);
     case "day":
     default:
-      return listing.price_per_day;
+      return addDays(startDate, minimumRentalPeriod);
   }
+}
+
+function getPeriodLabel(period: PricingPeriod) {
+  switch (period) {
+    case "hour":
+      return "hour";
+    case "week":
+      return "week";
+    case "month":
+      return "month";
+    case "day":
+    default:
+      return "day";
+  }
+}
+
+function getStockState(listing: Listing) {
+  if (!listing.track_inventory) {
+    return null;
+  }
+
+  if (listing.quantity_available === 0) {
+    return {
+      className: "bg-destructive/10 text-destructive",
+      label: "Out of Stock",
+    };
+  }
+
+  if (listing.quantity_available <= (listing.low_stock_threshold ?? 1)) {
+    return {
+      className: "bg-amber-100 text-amber-800",
+      label: `Low Stock - only ${listing.quantity_available} left`,
+    };
+  }
+
+  return {
+    className: "bg-emerald-100 text-emerald-800",
+    label: `${listing.quantity_available} available`,
+  };
+}
+
+function formatPolicy(policy: string) {
+  return policy.charAt(0).toUpperCase() + policy.slice(1);
 }
 
 export function BookingWidget({
   listing,
   isOwner,
   isLoggedIn,
-  currentUserId,
 }: BookingWidgetProps) {
   const router = useRouter();
-  const [isMessagePending, startMessageTransition] = useTransition();
-  const tomorrow = useMemo(() => addDays(new Date(), 1), []);
-  const pricingOptions = useMemo(() => getAvailablePricingOptions(listing), [listing]);
-  const [state, formAction, isPending] = useActionState(createBookingRequest, initialState);
+  const [isPending, startTransition] = useTransition();
+  const [isMobileSheetOpen, setIsMobileSheetOpen] = useState(false);
+  const [serverState, setServerState] = useState<ActionResponse | null>(null);
+  const [clientErrors, setClientErrors] = useState<Record<string, string>>({});
+  const [tomorrow] = useState(() => addDays(startOfDay(new Date()), 1));
+  const [startOpen, setStartOpen] = useState(false);
+  const [endOpen, setEndOpen] = useState(false);
+  const pricingOptions = getAvailablePricingOptions(listing);
+  const [fulfillmentType, setFulfillmentType] = useState<FulfillmentType>(
+    listing.delivery_available ? "pickup" : "pickup",
+  );
+  const [pickupScheduledAt, setPickupScheduledAt] = useState<string>("");
+  const [pickupNotes, setPickupNotes] = useState("");
+  const [deliveryScheduledAt, setDeliveryScheduledAt] = useState<string>("");
+  const [deliveryNotes, setDeliveryNotes] = useState("");
+  const [deliveryAddress, setDeliveryAddress] = useState<DeliveryAddress>({
+    address: "",
+    city: "",
+    state: "",
+    postal_code: "",
+  });
   const [startDate, setStartDate] = useState<Date | undefined>(tomorrow);
   const [endDate, setEndDate] = useState<Date | undefined>(addDays(tomorrow, 1));
-  const [quantity, setQuantity] = useState(1);
   const [pricingPeriod, setPricingPeriod] = useState<PricingPeriod>(
     listing.primary_pricing_period,
   );
+  const [quantity, setQuantity] = useState(1);
   const [message, setMessage] = useState("");
-  const [startOpen, setStartOpen] = useState(false);
-  const [endOpen, setEndOpen] = useState(false);
+  const stockState = getStockState(listing);
   const isOutOfStock = listing.track_inventory && listing.quantity_available === 0;
-  const maxQuantity = listing.track_inventory ? Math.max(1, listing.quantity_available) : null;
-  const selectedUnitPrice =
+  const selectedPrice =
     pricingOptions.find((option) => option.value === pricingPeriod)?.price ??
     getPrimaryPrice(listing) ??
     0;
   const numUnits = getNumUnits(startDate, endDate, pricingPeriod);
-  const subtotal = selectedUnitPrice * Math.max(numUnits, 0) * quantity;
+  const subtotal = selectedPrice * Math.max(numUnits, 0) * quantity;
   const serviceFee = subtotal * SERVICE_FEE_RATE;
   const depositAmount = (listing.deposit_amount ?? 0) * quantity;
-  const deliveryFee = listing.delivery_available ? listing.delivery_fee : 0;
-  const total = subtotal + serviceFee + depositAmount + deliveryFee;
-  const formDisabled =
-    isPending ||
-    isOwner ||
-    isOutOfStock ||
-    !startDate ||
-    !endDate ||
-    endDate <= startDate;
-
-  useEffect(() => {
-    if (state?.success) {
-      toast.success(state.success);
-      router.push("/dashboard/my-rentals");
-      router.refresh();
-    }
-  }, [router, state?.success]);
+  const appliedDeliveryFee =
+    fulfillmentType === "delivery" ? listing.delivery_fee ?? 0 : 0;
+  const total = subtotal + serviceFee + depositAmount + appliedDeliveryFee;
+  const minimumEndDate = getMinimumEndDate(
+    startDate,
+    listing.minimum_rental_period,
+    pricingPeriod,
+  );
+  const maxQuantity = listing.track_inventory
+    ? Math.max(1, listing.quantity_available)
+    : 99;
 
   function updateQuantity(nextQuantity: number) {
-    if (maxQuantity !== null) {
-      setQuantity(Math.max(1, Math.min(maxQuantity, nextQuantity)));
-      return;
-    }
-
-    setQuantity(Math.max(1, nextQuantity));
+    setQuantity(Math.max(1, Math.min(maxQuantity, nextQuantity)));
   }
 
   function getSubmitLabel() {
@@ -154,163 +246,378 @@ export function BookingWidget({
     return listing.instant_book ? "Book Now" : "Request to Book";
   }
 
-  function handleMessageClick() {
-    if (!isLoggedIn) {
-      router.push(`/login?redirectedFrom=/listings/${listing.id}`);
+  function validate() {
+    const nextErrors: Record<string, string> = {};
+
+    if (!startDate) {
+      nextErrors.start_date = "Select a start date.";
+    }
+
+    if (!endDate) {
+      nextErrors.end_date = "Select an end date.";
+    }
+
+    if (startDate && endDate && endDate <= startDate) {
+      nextErrors.end_date = "End date must be after the start date.";
+    }
+
+    if (minimumEndDate && endDate && endDate < minimumEndDate) {
+      nextErrors.end_date = `End date must meet the minimum rental period of ${listing.minimum_rental_period} ${getPeriodLabel(pricingPeriod)}${listing.minimum_rental_period > 1 ? "s" : ""}.`;
+    }
+
+    if (fulfillmentType === "pickup" && !pickupScheduledAt) {
+      nextErrors.pickup_scheduled_at = "Select a pickup date and time.";
+    }
+
+    if (fulfillmentType === "delivery") {
+      if (!deliveryAddress.address.trim()) {
+        nextErrors.delivery_address = "Delivery address is required.";
+      }
+      if (!deliveryAddress.city.trim()) {
+        nextErrors.delivery_city = "Delivery city is required.";
+      }
+      if (!deliveryAddress.postal_code.trim()) {
+        nextErrors.delivery_postal_code = "Postal code is required.";
+      }
+      if (!deliveryScheduledAt) {
+        nextErrors.delivery_scheduled_at = "Select a delivery date and time.";
+      }
+    }
+
+    setClientErrors(nextErrors);
+    return Object.keys(nextErrors).length === 0;
+  }
+
+  async function submitBooking() {
+    if (!isLoggedIn || isOwner || isOutOfStock || !validate()) {
       return;
     }
 
-    if (isOwner) {
-      return;
-    }
+    const formData = new FormData();
+    formData.set("listing_id", listing.id);
+    formData.set("start_date", startDate ? format(startDate, "yyyy-MM-dd") : "");
+    formData.set("end_date", endDate ? format(endDate, "yyyy-MM-dd") : "");
+    formData.set("quantity", String(quantity));
+    formData.set("pricing_period", pricingPeriod);
+    formData.set("fulfillment_type", fulfillmentType);
+    formData.set("message", message);
+    formData.set("pickup_scheduled_at", fulfillmentType === "pickup" ? pickupScheduledAt : "");
+    formData.set("pickup_notes", fulfillmentType === "pickup" ? pickupNotes : "");
+    formData.set(
+      "delivery_address",
+      fulfillmentType === "delivery" ? deliveryAddress.address : "",
+    );
+    formData.set(
+      "delivery_city",
+      fulfillmentType === "delivery" ? deliveryAddress.city : "",
+    );
+    formData.set(
+      "delivery_state",
+      fulfillmentType === "delivery" ? deliveryAddress.state : "",
+    );
+    formData.set(
+      "delivery_postal_code",
+      fulfillmentType === "delivery" ? deliveryAddress.postal_code : "",
+    );
+    formData.set(
+      "delivery_scheduled_at",
+      fulfillmentType === "delivery" ? deliveryScheduledAt : "",
+    );
+    formData.set(
+      "delivery_notes",
+      fulfillmentType === "delivery" ? deliveryNotes : "",
+    );
 
-    startMessageTransition(async () => {
-      try {
-        const conversationId = await getOrCreateConversation(
-          listing.id,
-          listing.owner_id,
-          currentUserId ?? "",
-        );
+    startTransition(async () => {
+      const result = await createBookingRequest(null, formData);
+      setServerState(result);
 
-        router.push(`/dashboard/messages/${conversationId}`);
-      } catch (error) {
-        toast.error(
-          error instanceof Error ? error.message : "Could not open conversation",
-        );
+      if (result.error) {
+        toast.error(result.error);
+        return;
+      }
+
+      if (result.success) {
+        toast.success(result.success);
+        setIsMobileSheetOpen(false);
+        router.push("/dashboard/my-rentals");
+        router.refresh();
       }
     });
   }
 
-  return (
-    <div className="rounded-3xl border border-border/70 bg-card p-5 shadow-sm md:sticky md:top-20">
+  function renderDatePicker(params: {
+    error?: string;
+    label: string;
+    minDate?: Date;
+    onOpenChange: (open: boolean) => void;
+    onSelect: (date: Date | undefined) => void;
+    open: boolean;
+    value?: Date;
+  }) {
+    return (
       <div className="space-y-2">
-        <div className="flex items-baseline gap-2">
-          <span className="text-3xl font-semibold">
-            {formatCurrency(getPrimaryPrice(listing) ?? 0)}
-          </span>
-          <span className="text-muted-foreground">/{listing.primary_pricing_period}</span>
-        </div>
-
-        {pricingOptions.length > 1 ? (
-          <div className="space-y-1 text-sm text-muted-foreground">
-            {pricingOptions.map((option) => (
-              <p key={option.value}>
-                {option.label}: {formatCurrency(option.price)} / {option.value}
-              </p>
-            ))}
-          </div>
-        ) : null}
+        <Label>{params.label}</Label>
+        <Popover onOpenChange={params.onOpenChange} open={params.open}>
+          <PopoverTrigger asChild>
+            <Button
+              className={cn(
+                "w-full justify-between",
+                params.error && "border-destructive text-destructive hover:text-destructive",
+              )}
+              type="button"
+              variant="outline"
+            >
+              <span>{params.value ? format(params.value, "PPP") : "Select date"}</span>
+              <CalendarIcon className="size-4" />
+            </Button>
+          </PopoverTrigger>
+          <PopoverContent align="start" className="w-auto p-0">
+            <Calendar
+              disabled={(date) => Boolean(params.minDate && date < params.minDate)}
+              mode="single"
+              onSelect={(date) => {
+                params.onSelect(date);
+                params.onOpenChange(false);
+              }}
+              selected={params.value}
+            />
+          </PopoverContent>
+        </Popover>
+        {params.error ? <p className="text-xs text-destructive">{params.error}</p> : null}
       </div>
+    );
+  }
 
-      {listing.track_inventory ? (
-        <div
-          className={cn(
-            "mt-4 rounded-2xl px-4 py-3 text-sm font-medium",
-            isOutOfStock
-              ? "bg-destructive/10 text-destructive"
-              : listing.quantity_available <= (listing.low_stock_threshold ?? 1)
-                ? "bg-amber-100 text-amber-800"
-                : "bg-emerald-100 text-emerald-800",
-          )}
-        >
-          {isOutOfStock
-            ? "Out of Stock"
-            : listing.quantity_available <= (listing.low_stock_threshold ?? 1)
-              ? `Low Stock - only ${listing.quantity_available} left`
-              : `${listing.quantity_available} available`}
-        </div>
-      ) : null}
+  function renderSubmitButton() {
+    if (!isLoggedIn) {
+      return (
+        <Button asChild className="w-full">
+          <Link href="/login">Login to Book</Link>
+        </Button>
+      );
+    }
 
-      <form
-        action={formAction}
-        className="mt-5 space-y-4"
-        onSubmit={(event) => {
-          if (!startDate || !endDate || endDate <= startDate) {
-            event.preventDefault();
-            toast.error("Choose a valid date range first.");
-          }
-        }}
-      >
-        {state?.error ? (
+    return (
+      <Button className="w-full" disabled={isPending || isOwner || isOutOfStock} onClick={submitBooking} type="button">
+        {isPending ? <Loader2 className="size-4 animate-spin" /> : null}
+        {getSubmitLabel()}
+      </Button>
+    );
+  }
+
+  const bookingFormContent = (
+    <div className="space-y-6">
+        {serverState?.error ? (
           <Alert variant="destructive">
-            <AlertDescription>{state.error}</AlertDescription>
+            <AlertDescription>{serverState.error}</AlertDescription>
           </Alert>
         ) : null}
 
-        <input name="listing_id" type="hidden" value={listing.id} />
-        <input
-          name="start_date"
-          type="hidden"
-          value={startDate ? format(startDate, "yyyy-MM-dd") : ""}
-        />
-        <input
-          name="end_date"
-          type="hidden"
-          value={endDate ? format(endDate, "yyyy-MM-dd") : ""}
-        />
-        <input name="quantity" type="hidden" value={quantity} />
-        <input name="pricing_period" type="hidden" value={pricingPeriod} />
-        <input name="message" type="hidden" value={message} />
+        <section className="space-y-3">
+          <div className="flex items-baseline gap-2">
+            <span className="text-3xl font-semibold">
+              {formatCurrency(getPrimaryPrice(listing) ?? 0)}
+            </span>
+            <span className="text-muted-foreground">/{listing.primary_pricing_period}</span>
+          </div>
+          {pricingOptions.length > 1 ? (
+            <div className="space-y-1 text-sm text-muted-foreground">
+              {pricingOptions.map((option) => (
+                <p key={option.value}>
+                  {option.label}: {formatCurrency(option.price)} / {option.value}
+                </p>
+              ))}
+            </div>
+          ) : null}
+        </section>
 
-        <div className="grid gap-4 sm:grid-cols-2 md:grid-cols-1 xl:grid-cols-2">
-          <div className="space-y-2">
-            <Label>Start Date</Label>
-            <Popover onOpenChange={setStartOpen} open={startOpen}>
-              <PopoverTrigger asChild>
-                <Button className="w-full justify-between" disabled={formDisabled} variant="outline">
-                  {startDate ? format(startDate, "PPP") : "Select date"}
-                  <CalendarIcon className="size-4" />
-                </Button>
-              </PopoverTrigger>
-              <PopoverContent align="start" className="w-auto p-0">
-                <Calendar
-                  disabled={(date) => date < tomorrow}
-                  mode="single"
-                  onSelect={(date) => {
-                    setStartDate(date);
-                    if (date && endDate && endDate <= date) {
-                      setEndDate(addDays(date, 1));
-                    }
-                    setStartOpen(false);
-                  }}
-                  selected={startDate}
-                />
-              </PopoverContent>
-            </Popover>
+        {stockState ? (
+          <section
+            className={cn(
+              "rounded-2xl px-4 py-3 text-sm font-medium",
+              stockState.className,
+            )}
+          >
+            {stockState.label}
+          </section>
+        ) : null}
+
+        <section className="space-y-3">
+          <div className="space-y-1">
+            <h3 className="font-medium">Fulfillment</h3>
+            <p className="text-sm text-muted-foreground">
+              Choose how you want to receive the item.
+            </p>
           </div>
 
-          <div className="space-y-2">
-            <Label>End Date</Label>
-            <Popover onOpenChange={setEndOpen} open={endOpen}>
-              <PopoverTrigger asChild>
-                <Button className="w-full justify-between" disabled={formDisabled} variant="outline">
-                  {endDate ? format(endDate, "PPP") : "Select date"}
-                  <CalendarIcon className="size-4" />
-                </Button>
-              </PopoverTrigger>
-              <PopoverContent align="start" className="w-auto p-0">
-                <Calendar
-                  disabled={(date) =>
-                    date < tomorrow || Boolean(startDate && date <= startDate)
+          {listing.delivery_available ? (
+            <FulfillmentSelector
+              deliveryAvailable={listing.delivery_available}
+              deliveryFee={listing.delivery_fee}
+              deliveryRadius={listing.delivery_radius_km}
+              onChange={setFulfillmentType}
+              pickupLocation={listing.location}
+              value={fulfillmentType}
+            />
+          ) : (
+            <div className="rounded-2xl border border-border/70 bg-muted/30 p-4 text-sm text-muted-foreground">
+              Pickup only. Pick up from {listing.location}.
+            </div>
+          )}
+        </section>
+
+        <section className="space-y-4">
+          {fulfillmentType === "pickup" ? (
+            <>
+              <SchedulePicker
+                error={clientErrors.pickup_scheduled_at}
+                label="Pickup Date and Time"
+                minDate={tomorrow}
+                onChange={setPickupScheduledAt}
+                value={pickupScheduledAt}
+              />
+              <div className="space-y-2">
+                <Label htmlFor="pickup-notes">Pickup Notes</Label>
+                <Textarea
+                  id="pickup-notes"
+                  onChange={(event) => setPickupNotes(event.target.value)}
+                  placeholder="Any pickup instructions..."
+                  rows={3}
+                  value={pickupNotes}
+                />
+              </div>
+              <p className="text-sm text-muted-foreground">
+                Pickup location: {listing.location}
+              </p>
+            </>
+          ) : (
+            <>
+              <DeliveryAddressForm
+                errors={clientErrors}
+                onChange={setDeliveryAddress}
+                value={deliveryAddress}
+              />
+              <SchedulePicker
+                error={clientErrors.delivery_scheduled_at}
+                label="Delivery Date and Time"
+                minDate={tomorrow}
+                onChange={setDeliveryScheduledAt}
+                value={deliveryScheduledAt}
+              />
+              <div className="space-y-2">
+                <Label htmlFor="delivery-notes">Delivery Notes</Label>
+                <Textarea
+                  id="delivery-notes"
+                  onChange={(event) => setDeliveryNotes(event.target.value)}
+                  placeholder="Any delivery notes..."
+                  rows={3}
+                  value={deliveryNotes}
+                />
+              </div>
+              {listing.delivery_radius_km ? (
+                <p className="text-sm text-muted-foreground">
+                  Delivery within {listing.delivery_radius_km}km
+                </p>
+              ) : null}
+            </>
+          )}
+        </section>
+
+        <section className="space-y-4">
+          <div className="space-y-1">
+            <h3 className="font-medium">Rental Period</h3>
+            <p className="text-sm text-muted-foreground">
+              Minimum rental period: {listing.minimum_rental_period} {getPeriodLabel(pricingPeriod)}
+              {listing.minimum_rental_period > 1 ? "s" : ""}
+            </p>
+          </div>
+
+          <div className="grid gap-4 sm:grid-cols-2">
+            {renderDatePicker({
+              error: clientErrors.start_date,
+              label: "Start Date",
+              minDate: tomorrow,
+              onOpenChange: setStartOpen,
+              onSelect: (date) => {
+                setStartDate(date);
+                if (!date) {
+                  return;
+                }
+
+                const nextMinEnd = getMinimumEndDate(
+                  date,
+                  listing.minimum_rental_period,
+                  pricingPeriod,
+                );
+
+                if (nextMinEnd && (!endDate || endDate < nextMinEnd)) {
+                  setEndDate(nextMinEnd);
+                }
+              },
+              open: startOpen,
+              value: startDate,
+            })}
+
+            {renderDatePicker({
+              error: clientErrors.end_date,
+              label: "End Date",
+              minDate: minimumEndDate ?? tomorrow,
+              onOpenChange: setEndOpen,
+              onSelect: setEndDate,
+              open: endOpen,
+              value: endDate,
+            })}
+          </div>
+
+          {pricingOptions.length > 1 ? (
+            <div className="space-y-2">
+              <Label>Pricing Period</Label>
+              <RadioGroup
+                className="grid gap-3 sm:grid-cols-2"
+                onValueChange={(value) => {
+                  const nextPeriod = value as PricingPeriod;
+                  setPricingPeriod(nextPeriod);
+                  const nextMinEndDate = getMinimumEndDate(
+                    startDate,
+                    listing.minimum_rental_period,
+                    nextPeriod,
+                  );
+
+                  if (nextMinEndDate && (!endDate || endDate < nextMinEndDate)) {
+                    setEndDate(nextMinEndDate);
                   }
-                  mode="single"
-                  onSelect={(date) => {
-                    setEndDate(date);
-                    setEndOpen(false);
-                  }}
-                  selected={endDate}
-                />
-              </PopoverContent>
-            </Popover>
-          </div>
-        </div>
+                }}
+                value={pricingPeriod}
+              >
+                {pricingOptions.map((option) => (
+                  <label
+                    key={option.value}
+                    className={cn(
+                      "flex cursor-pointer items-center justify-between rounded-2xl border border-border/70 p-3",
+                      pricingPeriod === option.value && "border-primary bg-primary/5",
+                    )}
+                  >
+                    <div>
+                      <p className="font-medium">{option.label}</p>
+                      <p className="text-sm text-muted-foreground">
+                        {formatCurrency(option.price)} / {option.value}
+                      </p>
+                    </div>
+                    <RadioGroupItem value={option.value} />
+                  </label>
+                ))}
+              </RadioGroup>
+            </div>
+          ) : null}
+        </section>
 
-        <div className="space-y-2">
+        <section className="space-y-2">
           <Label htmlFor="booking-quantity">Quantity</Label>
           <div className="flex items-center gap-2">
             <Button
               aria-label="Decrease quantity"
-              disabled={formDisabled || quantity <= 1}
+              disabled={isOutOfStock || quantity <= 1}
               onClick={() => updateQuantity(quantity - 1)}
               size="icon"
               type="button"
@@ -319,18 +626,16 @@ export function BookingWidget({
               <Minus className="size-4" />
             </Button>
             <Input
-              className="text-center"
-              disabled={formDisabled}
               id="booking-quantity"
-              max={maxQuantity ?? undefined}
+              inputMode="numeric"
+              max={maxQuantity}
               min={1}
               onChange={(event) => updateQuantity(Number(event.target.value) || 1)}
-              type="number"
               value={quantity}
             />
             <Button
               aria-label="Increase quantity"
-              disabled={formDisabled || (maxQuantity !== null && quantity >= maxQuantity)}
+              disabled={isOutOfStock || quantity >= maxQuantity}
               onClick={() => updateQuantity(quantity + 1)}
               size="icon"
               type="button"
@@ -339,94 +644,94 @@ export function BookingWidget({
               <Plus className="size-4" />
             </Button>
           </div>
-        </div>
+        </section>
 
-        {pricingOptions.length > 1 ? (
-          <div className="space-y-2">
-            <Label>Pricing Period</Label>
-            <RadioGroup
-              className="gap-2"
-              onValueChange={(value) => setPricingPeriod(value as PricingPeriod)}
-              value={pricingPeriod}
-            >
-              {pricingOptions.map((option) => (
-                <label
-                  key={option.value}
-                  className="flex items-center justify-between rounded-2xl border border-border px-3 py-2 text-sm"
-                >
-                  <span className="flex items-center gap-2">
-                    <RadioGroupItem value={option.value} />
-                    {option.label}
-                  </span>
-                  <span className="text-muted-foreground">{formatCurrency(option.price)}</span>
-                </label>
-              ))}
-            </RadioGroup>
-          </div>
-        ) : null}
-
-        <div className="rounded-2xl bg-muted/40 p-4 text-sm">
-          <div className="flex justify-between gap-3">
-            <span className="text-muted-foreground">
-              {formatCurrency(selectedUnitPrice)} x {Math.max(numUnits, 0)} x {quantity}
+        <section className="space-y-3 rounded-2xl border border-border/70 bg-muted/20 p-4">
+          <div className="flex items-center justify-between text-sm">
+            <span>
+              {formatCurrency(selectedPrice)} × {Math.max(numUnits, 0)} × {quantity}
             </span>
             <span>{formatCurrency(subtotal)}</span>
           </div>
-          <div className="mt-2 flex justify-between gap-3">
-            <span className="text-muted-foreground">Service fee (5%)</span>
+          <div className="flex items-center justify-between text-sm">
+            <span>Service fee (5%)</span>
             <span>{formatCurrency(serviceFee)}</span>
           </div>
-          <div className="mt-2 flex justify-between gap-3">
-            <span className="text-muted-foreground">Security deposit</span>
-            <span>{formatCurrency(depositAmount)}</span>
-          </div>
-          {listing.delivery_available ? (
-            <div className="mt-2 flex justify-between gap-3">
-              <span className="text-muted-foreground">Delivery fee</span>
-              <span>{formatCurrency(deliveryFee)}</span>
+          {depositAmount > 0 ? (
+            <div className="flex items-center justify-between text-sm">
+              <span>Security deposit</span>
+              <span>{formatCurrency(depositAmount)}</span>
             </div>
           ) : null}
-          <div className="my-3 border-t border-border" />
-          <div className="flex justify-between gap-3 text-base font-semibold">
+          <div className="flex items-center justify-between text-sm">
+            <span>Delivery fee</span>
+            <span>{formatCurrency(appliedDeliveryFee)}</span>
+          </div>
+          <Separator />
+          <div className="flex items-center justify-between text-base font-semibold">
             <span>Total</span>
             <span>{formatCurrency(total)}</span>
           </div>
-        </div>
+        </section>
 
-        <div className="space-y-2">
-          <Label htmlFor="booking-message">Message to the lister</Label>
+        <section className="space-y-2">
+          <Label htmlFor="booking-message">Message to lister</Label>
           <Textarea
-            disabled={formDisabled}
             id="booking-message"
             onChange={(event) => setMessage(event.target.value)}
-            placeholder="Share pickup details, questions, or anything the lister should know."
+            placeholder="Message to lister (optional)"
+            rows={4}
             value={message}
           />
-        </div>
+        </section>
 
-        {!isLoggedIn ? (
-          <Button asChild className="w-full">
-            <Link href={`/login?redirectedFrom=/listings/${listing.id}`}>{getSubmitLabel()}</Link>
-          </Button>
-        ) : (
-          <div className="space-y-2">
-            <Button className="w-full" disabled={formDisabled} type="submit">
-              {isPending ? "Submitting..." : getSubmitLabel()}
-            </Button>
-            {!isOwner ? (
-              <Button
-                className="w-full"
-                disabled={isMessagePending || !currentUserId}
-                onClick={handleMessageClick}
-                type="button"
-                variant="outline"
-              >
-                {isMessagePending ? "Opening chat..." : "Message Lister"}
+        <section className="space-y-3">
+          {renderSubmitButton()}
+          <div className="space-y-1 text-xs text-muted-foreground">
+            <p>
+              {fulfillmentType === "pickup"
+                ? `You'll pick up from: ${listing.location}`
+                : "Delivery to your address"}
+            </p>
+            <p>Cancellation policy: {formatPolicy(listing.cancellation_policy)}</p>
+            <p>Payment must be completed within 24 hours of acceptance</p>
+          </div>
+        </section>
+      </div>
+  );
+
+  return (
+    <>
+      <div className="hidden rounded-3xl border border-border/70 bg-card p-5 shadow-sm md:sticky md:top-20 md:block">
+        {bookingFormContent}
+      </div>
+
+      <div className="md:hidden">
+        {isLoggedIn && !isOwner && !isOutOfStock ? (
+          <Sheet onOpenChange={setIsMobileSheetOpen} open={isMobileSheetOpen}>
+            <SheetTrigger asChild>
+              <Button className="fixed right-4 bottom-4 left-4 z-40 rounded-full shadow-lg">
+                {listing.instant_book ? "Book Now" : "Request to Book"}
               </Button>
-            ) : null}
+            </SheetTrigger>
+            <SheetContent className="max-h-[90vh] overflow-y-auto rounded-t-3xl" side="bottom">
+              <SheetHeader className="px-5 pt-5 pb-2 text-left">
+                <SheetTitle>Book This Item</SheetTitle>
+              <SheetDescription>
+                  Choose fulfillment, dates, and quantity before sending your booking.
+                </SheetDescription>
+              </SheetHeader>
+              <div className="px-5 pb-8">
+                {bookingFormContent}
+              </div>
+            </SheetContent>
+          </Sheet>
+        ) : (
+          <div className="mt-6 rounded-3xl border border-border/70 bg-card p-5 shadow-sm">
+            {bookingFormContent}
           </div>
         )}
-      </form>
-    </div>
+      </div>
+    </>
   );
 }
