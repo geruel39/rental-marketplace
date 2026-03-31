@@ -27,6 +27,7 @@ interface PaymentBookingRecord {
   lister_id?: string;
   listing_id?: string;
   hitpay_payment_request_id?: string | null;
+  hitpay_payment_url?: string | null;
   hitpay_payment_status?: string | null;
 }
 
@@ -62,6 +63,9 @@ export async function createPaymentForBooking(
         `
           id,
           total_price,
+          hitpay_payment_request_id,
+          hitpay_payment_url,
+          hitpay_payment_status,
           renter:profiles!bookings_renter_id_fkey(email, display_name, full_name),
           listing:listings!bookings_listing_id_fkey(title)
         `,
@@ -82,6 +86,13 @@ export async function createPaymentForBooking(
 
     if (!renter?.email || !listing?.title) {
       return { error: "Booking is missing renter or listing details" };
+    }
+
+    if (
+      booking.hitpay_payment_url &&
+      booking.hitpay_payment_status !== "completed"
+    ) {
+      return { paymentUrl: booking.hitpay_payment_url };
     }
 
     const appUrl = getAppUrl();
@@ -113,8 +124,12 @@ export async function createPaymentForBooking(
     return { paymentUrl: payment.url };
   } catch (error) {
     console.error("createPaymentForBooking failed:", error);
+    const message =
+      error instanceof Error && error.message.trim().length > 0
+        ? error.message
+        : "Something went wrong. Please try again.";
     return {
-      error: "Something went wrong. Please try again.",
+      error: message,
     };
   }
 }

@@ -244,6 +244,20 @@ CREATE TABLE IF NOT EXISTS inventory_movements (
   created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
+-- BOOKING TIMELINE (booking audit trail)
+CREATE TABLE IF NOT EXISTS booking_timeline (
+  id UUID DEFAULT uuid_generate_v4() PRIMARY KEY,
+  booking_id UUID REFERENCES bookings(id) ON DELETE CASCADE NOT NULL,
+  status booking_status NOT NULL,
+  previous_status booking_status,
+  actor_id UUID REFERENCES profiles(id) ON DELETE SET NULL,
+  actor_role TEXT NOT NULL DEFAULT 'system',
+  title TEXT NOT NULL DEFAULT '',
+  description TEXT,
+  metadata JSONB NOT NULL DEFAULT '{}'::jsonb,
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
 -- PAYOUTS
 CREATE TABLE IF NOT EXISTS payouts (
   id UUID DEFAULT uuid_generate_v4() PRIMARY KEY,
@@ -348,6 +362,7 @@ ALTER TABLE messages ENABLE ROW LEVEL SECURITY;
 ALTER TABLE favorites ENABLE ROW LEVEL SECURITY;
 ALTER TABLE notifications ENABLE ROW LEVEL SECURITY;
 ALTER TABLE inventory_movements ENABLE ROW LEVEL SECURITY;
+ALTER TABLE booking_timeline ENABLE ROW LEVEL SECURITY;
 ALTER TABLE payouts ENABLE ROW LEVEL SECURITY;
 
 -- Drop existing policies first (idempotent)
@@ -374,6 +389,7 @@ DROP POLICY IF EXISTS "notifications_insert" ON notifications;
 DROP POLICY IF EXISTS "notifications_update" ON notifications;
 DROP POLICY IF EXISTS "inventory_movements_select" ON inventory_movements;
 DROP POLICY IF EXISTS "inventory_movements_insert" ON inventory_movements;
+DROP POLICY IF EXISTS "booking_timeline_select" ON booking_timeline;
 DROP POLICY IF EXISTS "payouts_select" ON payouts;
 
 -- PROFILES POLICIES
@@ -459,6 +475,18 @@ CREATE POLICY "inventory_movements_insert" ON inventory_movements
     listing_id IN (SELECT id FROM listings WHERE owner_id = auth.uid())
   );
 
+-- BOOKING TIMELINE POLICIES
+CREATE POLICY "booking_timeline_select" ON booking_timeline
+  FOR SELECT USING (
+    EXISTS (
+      SELECT 1
+      FROM bookings
+      WHERE bookings.id = booking_timeline.booking_id
+        AND auth.uid() IN (bookings.renter_id, bookings.lister_id)
+    )
+    OR auth.uid() IN (SELECT id FROM profiles WHERE is_admin = TRUE)
+  );
+
 -- PAYOUTS POLICIES
 CREATE POLICY "payouts_select" ON payouts
   FOR SELECT USING (auth.uid() = lister_id);
@@ -479,6 +507,7 @@ CREATE INDEX IF NOT EXISTS idx_listings_low_stock ON listings(owner_id, quantity
   WHERE track_inventory = TRUE;
 CREATE INDEX IF NOT EXISTS idx_inventory_movements_listing ON inventory_movements(listing_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_inventory_movements_booking ON inventory_movements(booking_id);
+CREATE INDEX IF NOT EXISTS idx_booking_timeline_booking_created ON booking_timeline(booking_id, created_at ASC);
 CREATE INDEX IF NOT EXISTS idx_bookings_renter ON bookings(renter_id);
 CREATE INDEX IF NOT EXISTS idx_bookings_lister ON bookings(lister_id);
 CREATE INDEX IF NOT EXISTS idx_bookings_listing ON bookings(listing_id);

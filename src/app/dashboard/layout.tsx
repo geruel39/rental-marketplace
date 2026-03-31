@@ -26,7 +26,10 @@ export default async function DashboardLayout({
 
   return (
     <div className="min-h-[calc(100vh-4rem)] bg-muted/30">
-      <DashboardSidebar isAdmin={profile?.is_admin ?? false} />
+      <DashboardSidebar
+        currentUserId={user.id}
+        isAdmin={profile?.is_admin ?? false}
+      />
       <div className="lg:pl-64">
         <main className="min-h-[calc(100vh-4rem)] overflow-y-auto px-4 py-6 pb-24 sm:px-6 lg:px-8">
           {children}

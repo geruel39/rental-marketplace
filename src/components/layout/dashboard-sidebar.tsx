@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useEffect, useState } from "react";
 import { usePathname } from "next/navigation";
 import {
   Bell,
@@ -18,6 +19,7 @@ import {
   Wallet,
 } from "lucide-react";
 
+import { getBookingDetails } from "@/actions/bookings";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
 import { cn } from "@/lib/utils";
@@ -61,8 +63,54 @@ export const dashboardSections = [
   },
 ];
 
-export function DashboardSidebar({ isAdmin = false }: { isAdmin?: boolean }) {
+export function DashboardSidebar({
+  currentUserId,
+  isAdmin = false,
+}: {
+  currentUserId: string;
+  isAdmin?: boolean;
+}) {
   const pathname = usePathname();
+  const [bookingRouteTarget, setBookingRouteTarget] = useState<string | null>(null);
+
+  useEffect(() => {
+    async function resolveBookingRoute() {
+      if (!pathname.startsWith("/dashboard/bookings/")) {
+        setBookingRouteTarget(null);
+        return;
+      }
+
+      const bookingId = pathname.split("/")[3];
+
+      if (!bookingId) {
+        setBookingRouteTarget(null);
+        return;
+      }
+
+      const booking = await getBookingDetails(bookingId);
+
+      if (!booking) {
+        setBookingRouteTarget(null);
+        return;
+      }
+
+      if (booking.lister_id === currentUserId) {
+        setBookingRouteTarget("/dashboard/requests");
+        return;
+      }
+
+      if (booking.renter_id === currentUserId) {
+        setBookingRouteTarget("/dashboard/my-rentals");
+        return;
+      }
+
+      setBookingRouteTarget("/dashboard");
+    }
+
+    void resolveBookingRoute();
+  }, [currentUserId, pathname]);
+
+  const effectivePath = bookingRouteTarget ?? pathname;
 
   return (
     <aside className="hidden w-64 shrink-0 border-r border-border/70 bg-background lg:fixed lg:top-16 lg:bottom-0 lg:left-0 lg:block">
@@ -84,7 +132,8 @@ export function DashboardSidebar({ isAdmin = false }: { isAdmin?: boolean }) {
                 {section.items.map((item) => {
                   const Icon = item.icon;
                   const isActive =
-                    pathname === item.href || pathname.startsWith(`${item.href}/`);
+                    effectivePath === item.href ||
+                    effectivePath.startsWith(`${item.href}/`);
 
                   return (
                     <Link

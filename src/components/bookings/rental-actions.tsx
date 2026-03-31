@@ -1,10 +1,8 @@
 "use client";
 
 import { format } from "date-fns";
-import Link from "next/link";
 import { useState, useTransition } from "react";
 import {
-  CreditCard,
   Loader2,
   ShieldAlert,
   Star,
@@ -14,6 +12,7 @@ import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 
 import { cancelBooking, raiseDispute } from "@/actions/bookings";
+import { PaymentButton } from "@/components/bookings/payment-button";
 import { PaymentCountdown } from "@/components/bookings/payment-countdown";
 import { ReturnForm } from "@/components/bookings/return-form";
 import { DualReviewForm } from "@/components/reviews/dual-review-form";
@@ -94,12 +93,10 @@ export function RentalActions({ booking }: RentalActionsProps) {
           <p className="text-sm text-muted-foreground">Waiting for payment</p>
         )}
         <div className="flex flex-wrap justify-end gap-2">
-          <Button asChild>
-            <Link href={booking.hitpay_payment_url ?? "#"} rel="noreferrer" target="_blank">
-              <CreditCard className="size-4" />
-              Pay Now
-            </Link>
-          </Button>
+          <PaymentButton
+            bookingId={booking.id}
+            paymentUrl={booking.hitpay_payment_url}
+          />
           <ConfirmDialog
             confirmLabel="Cancel Booking"
             description="This will cancel the booking before payment is completed."

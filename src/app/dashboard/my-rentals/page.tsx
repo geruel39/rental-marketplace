@@ -168,7 +168,7 @@ export default async function MyRentalsPage({ searchParams }: MyRentalsPageProps
                         <h2 className="text-lg font-semibold">
                           <Link
                             className="transition-colors hover:text-primary hover:underline"
-                            href={`/listings/${booking.listing.id}`}
+                            href={`/dashboard/bookings/${booking.id}`}
                           >
                             {booking.listing.title}
                           </Link>
@@ -176,6 +176,12 @@ export default async function MyRentalsPage({ searchParams }: MyRentalsPageProps
                         <BookingStatusBadge status={booking.status} />
                         <Badge variant="outline">{getFulfillmentBadge(booking)}</Badge>
                       </div>
+                      <Link
+                        className="inline-flex text-sm font-medium text-primary hover:underline"
+                        href={`/dashboard/bookings/${booking.id}`}
+                      >
+                        View Details -&gt;
+                      </Link>
                     </div>
 
                     <div className="flex flex-wrap items-center gap-3">
