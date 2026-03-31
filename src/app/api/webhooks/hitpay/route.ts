@@ -1,16 +1,8 @@
 import { NextResponse } from "next/server";
 
-import { createNotification } from "@/actions/notifications";
+import { confirmPaymentFromWebhook } from "@/actions/bookings";
 import { verifyWebhookSignature } from "@/lib/hitpay";
 import { createAdminClient } from "@/lib/supabase/admin";
-
-interface WebhookBookingRecord {
-  id: string;
-  renter_id: string;
-  lister_id: string;
-  listing_id: string;
-  listing: { title: string } | Array<{ title: string }> | null;
-}
 
 interface HitPayDebugBookingRecord {
   id: string;
@@ -229,69 +221,16 @@ export async function POST(request: Request) {
 
     if (isCompletedEvent && normalized.bookingId) {
       console.log("[WEBHOOK] Processing completed payment for booking:", normalized.bookingId);
-
-      const admin = createAdminClient();
       const bookingId = normalized.bookingId;
+      const result = await confirmPaymentFromWebhook(
+        bookingId,
+        normalized.paymentId || undefined,
+      );
 
-      const { data: booking, error: bookingError } = await admin
-        .from("bookings")
-        .select(
-          `
-            id,
-            renter_id,
-            lister_id,
-            listing_id
-          `,
-        )
-        .eq("id", bookingId)
-        .maybeSingle<WebhookBookingRecord>();
-
-      if (bookingError || !booking) {
-        console.log("[WEBHOOK] Booking not found or error:", bookingError?.message);
-        return NextResponse.json({ error: "Booking not found" }, { status: 404 });
+      if (result.error) {
+        console.log("[WEBHOOK] Error confirming payment:", result.error);
+        return NextResponse.json({ error: result.error }, { status: 500 });
       }
-
-      console.log("[WEBHOOK] Updating booking status to completed");
-
-      const { error: updateError } = await admin
-        .from("bookings")
-        .update({
-          hitpay_payment_id: normalized.paymentId || null,
-          hitpay_payment_status: "completed",
-          paid_at: new Date().toISOString(),
-          status: "active",
-        })
-        .eq("id", bookingId);
-
-      if (updateError) {
-        console.log("[WEBHOOK] Error updating booking:", updateError.message);
-        return NextResponse.json({ error: updateError.message }, { status: 500 });
-      }
-
-      console.log("[WEBHOOK] Sending notifications");
-
-      await Promise.all([
-        createNotification({
-          userId: booking.lister_id,
-          type: "payment_received",
-          title: "Payment received",
-          bookingId,
-          listingId: booking.listing_id,
-          fromUserId: booking.renter_id,
-          body: "The renter has completed payment.",
-          actionUrl: "/dashboard/requests?status=active",
-        }),
-        createNotification({
-          userId: booking.renter_id,
-          type: "payment_confirmed",
-          title: "Payment confirmed",
-          bookingId,
-          listingId: booking.listing_id,
-          fromUserId: booking.lister_id,
-          body: "Your payment has been confirmed.",
-          actionUrl: "/dashboard/my-rentals?status=active",
-        }),
-      ]);
 
       console.log("[WEBHOOK] Webhook processing completed successfully");
     } else {

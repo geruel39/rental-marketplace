@@ -2,7 +2,6 @@
 
 import { getAppUrl } from "@/lib/env";
 import { createPaymentRequest, getPaymentStatus } from "@/lib/hitpay";
-import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
 
 interface PaymentBookingRecord {
@@ -31,66 +30,25 @@ interface PaymentBookingRecord {
   hitpay_payment_status?: string | null;
 }
 
-async function markBookingPaid(
-  booking: PaymentBookingRecord,
-): Promise<{ error?: string }> {
-  console.log("[MARK_PAID] Marking booking as paid:", booking.id);
+function extractPaymentId(payments: Record<string, unknown>[]) {
+  const firstPayment = payments[0];
 
-  if (!booking.renter_id || !booking.lister_id || !booking.listing_id) {
-    console.log("[MARK_PAID] Missing ownership details");
-    return { error: "Booking is missing ownership details" };
+  if (!firstPayment) {
+    return undefined;
   }
 
-  const listing = Array.isArray(booking.listing) ? booking.listing[0] : booking.listing;
-
-  if (!listing?.title) {
-    console.log("[MARK_PAID] Missing listing details");
-    return { error: "Booking is missing listing details" };
+  if (typeof firstPayment.id === "string" && firstPayment.id.length > 0) {
+    return firstPayment.id;
   }
 
-  const admin = createAdminClient();
-  const { error: updateError } = await admin
-    .from("bookings")
-    .update({
-      hitpay_payment_status: "completed",
-      paid_at: new Date().toISOString(),
-      status: "active",
-    })
-    .eq("id", booking.id)
-    .neq("hitpay_payment_status", "completed");
-
-  if (updateError) {
-    console.log("[MARK_PAID] Update error:", updateError.message);
-    return { error: updateError.message };
+  if (
+    typeof firstPayment.payment_id === "string" &&
+    firstPayment.payment_id.length > 0
+  ) {
+    return firstPayment.payment_id;
   }
 
-  console.log("[MARK_PAID] Booking updated, sending notifications");
-
-  await admin.from("notifications").insert([
-    {
-      user_id: booking.lister_id,
-      type: "payment_received",
-      title: `Payment received for ${listing.title}`,
-      booking_id: booking.id,
-      listing_id: booking.listing_id,
-      from_user_id: booking.renter_id,
-      body: "The renter has completed payment.",
-      action_url: "/dashboard/requests?status=active",
-    },
-    {
-      user_id: booking.renter_id,
-      type: "payment_confirmed",
-      title: "Payment confirmed",
-      booking_id: booking.id,
-      listing_id: booking.listing_id,
-      from_user_id: booking.lister_id,
-      body: `Your payment for ${listing.title} has been confirmed.`,
-      action_url: "/dashboard/my-rentals?status=active",
-    },
-  ]);
-
-  console.log("[MARK_PAID] Notifications sent");
-  return {};
+  return undefined;
 }
 
 export async function createPaymentForBooking(
@@ -209,10 +167,14 @@ export async function checkPaymentStatus(
     const isCompleted = completedStatuses.includes(payment.status.toLowerCase());
     
     if (isCompleted) {
-      console.log("[PAYMENT_STATUS] Payment is completed, marking booking as paid");
-      const result = await markBookingPaid(booking);
+      console.log("[PAYMENT_STATUS] Payment is completed, confirming booking");
+      const { confirmPayment } = await import("@/actions/bookings");
+      const result = await confirmPayment(
+        booking.id,
+        extractPaymentId(payment.payments),
+      );
       if (result.error) {
-        console.log("[PAYMENT_STATUS] Error marking as paid:", result.error);
+        console.log("[PAYMENT_STATUS] Error confirming payment:", result.error);
         return { error: result.error };
       }
     } else {
