@@ -106,6 +106,15 @@ export const bookingRequestSchema = z
     end_date: dateValueSchema,
     quantity: z.coerce.number().int().min(1).default(1),
     pricing_period: pricingPeriodSchema,
+    fulfillment_type: z.enum(["pickup", "delivery"]).default("pickup"),
+    delivery_address: z.string().min(5).optional(),
+    delivery_city: z.string().min(2).optional(),
+    delivery_state: z.string().optional(),
+    delivery_postal_code: z.string().min(3).optional(),
+    delivery_notes: z.string().max(500).optional(),
+    delivery_scheduled_at: z.string().optional(),
+    pickup_scheduled_at: z.string().optional(),
+    pickup_notes: z.string().max(500).optional(),
     message: z.string().max(500).optional(),
   })
   .refine(
@@ -114,7 +123,61 @@ export const bookingRequestSchema = z
       message: "End date must be after start date",
       path: ["end_date"],
     },
+  )
+  .refine(
+    (data) =>
+      data.fulfillment_type !== "delivery" ||
+      Boolean(
+        data.delivery_address &&
+          data.delivery_city &&
+          data.delivery_postal_code,
+      ),
+    {
+      message:
+        "Delivery address, city, and postal code are required for delivery",
+      path: ["delivery_address"],
+    },
+  )
+  .refine(
+    (data) =>
+      data.fulfillment_type !== "delivery" || Boolean(data.delivery_scheduled_at),
+    {
+      message: "Delivery schedule is required for delivery",
+      path: ["delivery_scheduled_at"],
+    },
+  )
+  .refine(
+    (data) =>
+      data.fulfillment_type !== "pickup" || Boolean(data.pickup_scheduled_at),
+    {
+      message: "Pickup schedule is required for pickup",
+      path: ["pickup_scheduled_at"],
+    },
   );
+
+export const returnItemSchema = z.object({
+  booking_id: z.string().uuid(),
+  return_method: z.enum(["pickup_by_lister", "dropoff_by_renter"]),
+  return_scheduled_at: z.string(),
+  return_notes: z.string().max(500).optional(),
+});
+
+export const confirmReturnSchema = z.object({
+  booking_id: z.string().uuid(),
+  return_condition: z.enum([
+    "excellent",
+    "good",
+    "fair",
+    "damaged",
+    "missing_parts",
+  ]),
+  return_condition_notes: z.string().max(1000).optional(),
+});
+
+export const markDeliveredSchema = z.object({
+  booking_id: z.string().uuid(),
+  delivery_notes: z.string().max(500).optional(),
+});
 
 export const reviewSchema = z.object({
   booking_id: z.string().uuid(),
@@ -170,6 +233,9 @@ export type RegisterInput = z.infer<typeof registerSchema>;
 export type ResetPasswordInput = z.infer<typeof resetPasswordSchema>;
 export type ListingInput = z.infer<typeof listingSchema>;
 export type BookingRequestInput = z.infer<typeof bookingRequestSchema>;
+export type ReturnItemInput = z.infer<typeof returnItemSchema>;
+export type ConfirmReturnInput = z.infer<typeof confirmReturnSchema>;
+export type MarkDeliveredInput = z.infer<typeof markDeliveredSchema>;
 export type ReviewInput = z.infer<typeof reviewSchema>;
 export type MessageInput = z.infer<typeof messageSchema>;
 export type ProfileUpdateInput = z.infer<typeof profileUpdateSchema>;

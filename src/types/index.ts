@@ -8,12 +8,24 @@ export type ListingStatus = "draft" | "active" | "paused" | "archived";
 export type PricingPeriod = "hour" | "day" | "week" | "month";
 export type BookingStatus =
   | "pending"
+  | "awaiting_payment"
   | "confirmed"
+  | "out_for_delivery"
   | "active"
+  | "returned"
   | "completed"
   | "cancelled_by_renter"
   | "cancelled_by_lister"
   | "disputed";
+export type FulfillmentType = "pickup" | "delivery";
+export type ReturnMethod = "pickup_by_lister" | "dropoff_by_renter";
+export type ReturnCondition =
+  | "excellent"
+  | "good"
+  | "fair"
+  | "damaged"
+  | "missing_parts";
+export type TimelineActorRole = "system" | "renter" | "lister" | "admin";
 export type ReviewRole = "as_renter" | "as_lister";
 export type ReportType =
   | "spam"
@@ -201,6 +213,28 @@ export interface Booking {
   total_price: number;
   lister_payout: number;
   status: BookingStatus;
+  fulfillment_type: FulfillmentType;
+  delivery_address?: string;
+  delivery_city?: string;
+  delivery_state?: string;
+  delivery_postal_code?: string;
+  delivery_latitude?: number;
+  delivery_longitude?: number;
+  delivery_scheduled_at?: string;
+  delivery_notes?: string;
+  delivered_at?: string;
+  pickup_scheduled_at?: string;
+  pickup_notes?: string;
+  picked_up_at?: string;
+  return_method?: ReturnMethod;
+  return_scheduled_at?: string;
+  return_notes?: string;
+  returned_at?: string;
+  return_condition?: ReturnCondition;
+  return_condition_notes?: string;
+  payment_expires_at?: string;
+  stock_reserved?: boolean;
+  stock_reserved_at?: string;
   message: string | null;
   cancelled_at: string | null;
   cancelled_by: string | null;
@@ -396,6 +430,124 @@ export type BookingWithDetails = Booking & {
   listing: Listing;
   renter: Profile;
   lister: Profile;
+  timeline?: BookingTimelineWithActor[];
+};
+
+export interface BookingTimeline {
+  id: string;
+  booking_id: string;
+  status: BookingStatus;
+  previous_status?: BookingStatus;
+  actor_id?: string;
+  actor_role: TimelineActorRole;
+  title: string;
+  description?: string;
+  metadata: Record<string, unknown>;
+  created_at: string;
+}
+
+export type BookingTimelineWithActor = BookingTimeline & {
+  actor?: Profile;
+};
+
+export type DeliveryAddress = {
+  address: string;
+  city: string;
+  state: string;
+  postal_code: string;
+  latitude?: number;
+  longitude?: number;
+};
+
+export const BOOKING_STATUS_CONFIG: Record<
+  BookingStatus,
+  {
+    label: string;
+    color: string;
+    icon: string;
+    description: string;
+    next_statuses: BookingStatus[];
+  }
+> = {
+  pending: {
+    label: "Pending",
+    color: "bg-yellow-100 text-yellow-800",
+    icon: "Clock",
+    description: "Waiting for lister to review",
+    next_statuses: [
+      "awaiting_payment",
+      "cancelled_by_lister",
+      "cancelled_by_renter",
+    ],
+  },
+  awaiting_payment: {
+    label: "Awaiting Payment",
+    color: "bg-orange-100 text-orange-800",
+    icon: "CreditCard",
+    description: "Accepted — waiting for payment",
+    next_statuses: ["confirmed", "cancelled_by_renter", "cancelled_by_lister"],
+  },
+  confirmed: {
+    label: "Confirmed",
+    color: "bg-blue-100 text-blue-800",
+    icon: "CheckCircle",
+    description: "Payment received — preparing item",
+    next_statuses: [
+      "out_for_delivery",
+      "active",
+      "cancelled_by_lister",
+      "disputed",
+    ],
+  },
+  out_for_delivery: {
+    label: "Out for Delivery",
+    color: "bg-purple-100 text-purple-800",
+    icon: "Truck",
+    description: "Item is being delivered",
+    next_statuses: ["active"],
+  },
+  active: {
+    label: "Active",
+    color: "bg-green-100 text-green-800",
+    icon: "Play",
+    description: "Rental period in progress",
+    next_statuses: ["returned", "disputed"],
+  },
+  returned: {
+    label: "Returned",
+    color: "bg-indigo-100 text-indigo-800",
+    icon: "RotateCcw",
+    description: "Item returned — awaiting condition check",
+    next_statuses: ["completed", "disputed"],
+  },
+  completed: {
+    label: "Completed",
+    color: "bg-green-100 text-green-800",
+    icon: "CheckCircle2",
+    description: "Rental completed successfully",
+    next_statuses: [],
+  },
+  cancelled_by_renter: {
+    label: "Cancelled",
+    color: "bg-red-100 text-red-800",
+    icon: "XCircle",
+    description: "Cancelled by renter",
+    next_statuses: [],
+  },
+  cancelled_by_lister: {
+    label: "Declined",
+    color: "bg-red-100 text-red-800",
+    icon: "XCircle",
+    description: "Declined by lister",
+    next_statuses: [],
+  },
+  disputed: {
+    label: "Disputed",
+    color: "bg-red-100 text-red-800",
+    icon: "AlertTriangle",
+    description: "Under dispute resolution",
+    next_statuses: ["completed", "cancelled_by_lister"],
+  },
 };
 
 export type ConversationWithDetails = Conversation & {
