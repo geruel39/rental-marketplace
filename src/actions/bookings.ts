@@ -393,29 +393,20 @@ async function addTimeline(params: {
 }) {
   try {
     const admin = createAdminClient();
+    const { error } = await admin.from("booking_timeline").insert({
+      booking_id: params.bookingId,
+      status: params.status,
+      previous_status: params.previousStatus ?? null,
+      actor_id: params.actorId ?? null,
+      actor_role: params.actorRole,
+      title: params.title,
+      description: params.description ?? null,
+      metadata: params.metadata ?? {},
+    });
 
-    await callRpcWithFallbacks(admin, "add_booking_timeline", [
-      {
-        p_booking_id: params.bookingId,
-        p_status: params.status,
-        p_previous_status: params.previousStatus ?? null,
-        p_actor_id: params.actorId ?? null,
-        p_actor_role: params.actorRole,
-        p_title: params.title,
-        p_description: params.description ?? null,
-        p_metadata: params.metadata ?? {},
-      },
-      {
-        booking_id: params.bookingId,
-        status: params.status,
-        previous_status: params.previousStatus ?? null,
-        actor_id: params.actorId ?? null,
-        actor_role: params.actorRole,
-        title: params.title,
-        description: params.description ?? null,
-        metadata: params.metadata ?? {},
-      },
-    ]);
+    if (error) {
+      throw error;
+    }
   } catch (error) {
     console.error("addTimeline failed:", error);
   }
