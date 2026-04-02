@@ -130,6 +130,47 @@ export function ConditionCheckForm({ booking }: ConditionCheckFormProps) {
             </div>
           </div>
 
+          <div className="grid gap-4 md:grid-cols-2">
+            <div className="space-y-2">
+              <Label className="text-sm">Handover Proof Photos</Label>
+              {booking.handover_proof_urls?.length ? (
+                <div className="grid grid-cols-3 gap-2">
+                  {booking.handover_proof_urls.map((url) => (
+                    <div className="overflow-hidden rounded-lg border" key={url}>
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img
+                        alt="Handover proof"
+                        className="h-20 w-full object-cover"
+                        src={url}
+                      />
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <p className="text-xs text-muted-foreground">No handover proof photos uploaded.</p>
+              )}
+            </div>
+            <div className="space-y-2">
+              <Label className="text-sm">Return Proof Photos</Label>
+              {booking.return_proof_urls?.length ? (
+                <div className="grid grid-cols-3 gap-2">
+                  {booking.return_proof_urls.map((url) => (
+                    <div className="overflow-hidden rounded-lg border" key={url}>
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img
+                        alt="Return proof"
+                        className="h-20 w-full object-cover"
+                        src={url}
+                      />
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <p className="text-xs text-muted-foreground">No return proof photos uploaded.</p>
+              )}
+            </div>
+          </div>
+
           <div className="space-y-2">
             <Label>Condition</Label>
             <Select

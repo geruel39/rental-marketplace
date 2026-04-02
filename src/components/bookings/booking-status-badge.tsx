@@ -8,7 +8,6 @@ import {
   CreditCard,
   Play,
   RotateCcw,
-  Truck,
   XCircle,
 } from "lucide-react";
 
@@ -30,7 +29,6 @@ const iconMap = {
   CreditCard,
   Play,
   RotateCcw,
-  Truck,
   XCircle,
 } as const;
 
