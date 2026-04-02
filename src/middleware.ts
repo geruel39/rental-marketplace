@@ -1,9 +1,9 @@
 import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
 
-const protectedRoutes = ["/dashboard", "/listings/new", "/admin"];
+const protectedRoutes = ["/dashboard", "/listings/new"];
 const authRoutes = ["/login", "/register"];
-const adminRoutes = ["/admin"];
+
 function matchesRoute(pathname: string, routes: string[]) {
   return routes.some(
     (route) => pathname === route || pathname.startsWith(`${route}/`),
@@ -64,17 +64,6 @@ export async function middleware(request: NextRequest) {
   } = await supabase.auth.getUser();
 
   const { pathname } = request.nextUrl;
-  let isAdmin = false;
-
-  if (user) {
-    const { data: profile } = await supabase
-      .from("profiles")
-      .select("is_admin")
-      .eq("id", user.id)
-      .maybeSingle<{ is_admin: boolean }>();
-
-    isAdmin = profile?.is_admin === true;
-  }
 
   if (!user && matchesRoute(pathname, protectedRoutes)) {
     const redirectUrl = request.nextUrl.clone();
@@ -88,15 +77,6 @@ export async function middleware(request: NextRequest) {
     redirectUrl.pathname = "/dashboard";
     redirectUrl.searchParams.delete("redirectedFrom");
     return NextResponse.redirect(redirectUrl);
-  }
-
-  if (user && matchesRoute(pathname, adminRoutes)) {
-    if (!isAdmin) {
-      const redirectUrl = request.nextUrl.clone();
-      redirectUrl.pathname = "/dashboard";
-      redirectUrl.searchParams.delete("redirectedFrom");
-      return NextResponse.redirect(redirectUrl);
-    }
   }
 
   return response;
