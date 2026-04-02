@@ -1,18 +1,13 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { addHours, format, startOfDay } from "date-fns";
+import { addHours, format } from "date-fns";
 
 import { createPaymentForBooking } from "@/actions/hitpay";
 import { createNotification } from "@/actions/notifications";
-import { calculateNumUnits } from "@/lib/bookings";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
-import {
-  bookingRequestSchema,
-  confirmReturnSchema,
-  returnItemSchema,
-} from "@/lib/validations";
+import { bookingRequestSchema, confirmReturnSchema } from "@/lib/validations";
 import type {
   ActionResponse,
   Booking,
@@ -21,7 +16,7 @@ import type {
   BookingTimelineWithActor,
   BookingWithDetails,
   Listing,
-  PricingCalculation,
+  PricingPeriod,
   Profile,
   TimelineActorRole,
 } from "@/types";
@@ -29,18 +24,9 @@ import type {
 const RENTER_SERVICE_FEE_RATE = 0.05;
 const LISTER_SERVICE_FEE_RATE = 0.05;
 const PAYMENT_EXPIRY_HOURS = 24;
-const CANCELLABLE_STATUSES = new Set<BookingStatus>([
-  "pending",
-  "awaiting_payment",
-  "confirmed",
-]);
-const COMPLETED_PAYMENT_STATUSES = new Set<BookingStatus>([
-  "confirmed",
-  "out_for_delivery",
-  "active",
-  "returned",
-  "completed",
-]);
+const PROOFS_BUCKET = "booking-proofs";
+const MAX_PROOF_PHOTOS = 5;
+const MAX_PROOF_FILE_BYTES = 10 * 1024 * 1024;
 
 type SupabaseClient = Awaited<ReturnType<typeof createClient>>;
 type AdminSupabaseClient = ReturnType<typeof createAdminClient>;
@@ -65,17 +51,6 @@ type AuthContext = {
   >;
   profile: Profile | null;
 };
-type AcceptBookingOptions = {
-  supabase: AnySupabaseClient;
-  bookingId: string;
-  actorId: string;
-  actorRole: "lister";
-};
-type ConfirmPaymentOptions = {
-  supabase: AnySupabaseClient;
-  bookingId: string;
-  paymentId?: string;
-};
 
 function roundMoney(value: number) {
   return Math.round(value * 100) / 100;
@@ -86,8 +61,8 @@ function normalizeText(value: string | null | undefined) {
   return trimmed ? trimmed : undefined;
 }
 
-function toDateOnlyString(value: string | Date) {
-  return format(new Date(value), "yyyy-MM-dd");
+function sanitizeFilename(filename: string) {
+  return filename.replace(/[^a-zA-Z0-9._-]/g, "-");
 }
 
 function formatDateTime(value: string | Date | null | undefined) {
@@ -98,14 +73,8 @@ function formatDateTime(value: string | Date | null | undefined) {
   return format(new Date(value), "PPP p");
 }
 
-function appendNote(existing: string | null | undefined, incoming?: string) {
-  const next = normalizeText(incoming);
-
-  if (!next) {
-    return existing ?? null;
-  }
-
-  return existing ? `${existing}\n${next}` : next;
+function formatMoney(value: number) {
+  return `$${value.toFixed(2)}`;
 }
 
 function unwrapRelation<T>(value: MaybeArray<T>): T | null {
@@ -120,63 +89,51 @@ function getActorDisplayName(profile: Profile | null, fallback?: string | null) 
   return profile?.display_name || profile?.full_name || fallback || "Someone";
 }
 
-function getUnitPrice(listing: Listing, pricingPeriod: Booking["pricing_period"]) {
-  switch (pricingPeriod) {
-    case "hour":
-      return listing.price_per_hour;
-    case "week":
-      return listing.price_per_week;
-    case "month":
-      return listing.price_per_month;
-    case "day":
-    default:
-      return listing.price_per_day;
-  }
+function getRoleForBooking(
+  booking: Pick<Booking, "renter_id" | "lister_id">,
+  userId: string,
+): "renter" | "lister" | null {
+  if (booking.renter_id === userId) return "renter";
+  if (booking.lister_id === userId) return "lister";
+  return null;
 }
 
-function calculatePricing(params: {
-  listing: Listing;
-  pricingPeriod: Booking["pricing_period"];
-  quantity: number;
-  startDate: string;
-  endDate: string;
-  deliveryFee: number;
-}): PricingCalculation {
-  const unitPrice = getUnitPrice(params.listing, params.pricingPeriod);
+function revalidateBookingViews() {
+  revalidatePath("/dashboard");
+  revalidatePath("/dashboard/requests");
+  revalidatePath("/dashboard/my-rentals");
+  revalidatePath("/dashboard/bookings");
+  revalidatePath("/payment/success");
+}
 
-  if (typeof unitPrice !== "number") {
-    throw new Error(
-      `This listing does not support ${params.pricingPeriod} pricing`,
-    );
+function getFormData(
+  prevStateOrFormData: ActionResponse | FormData | null,
+  maybeFormData?: FormData,
+) {
+  return prevStateOrFormData instanceof FormData
+    ? prevStateOrFormData
+    : maybeFormData;
+}
+
+function extractRpcDateTime(value: unknown): string | null {
+  if (typeof value === "string" && value.trim().length > 0) return value;
+
+  if (Array.isArray(value) && value.length > 0) {
+    for (const row of value) {
+      const parsed = extractRpcDateTime(row);
+      if (parsed) return parsed;
+    }
   }
 
-  const numUnits = calculateNumUnits(
-    params.startDate,
-    params.endDate,
-    params.pricingPeriod,
-  );
-  const subtotal = roundMoney(unitPrice * numUnits * params.quantity);
-  const serviceFeeRenter = roundMoney(subtotal * RENTER_SERVICE_FEE_RATE);
-  const serviceFeeLister = roundMoney(subtotal * LISTER_SERVICE_FEE_RATE);
-  const depositAmount = roundMoney(
-    (params.listing.deposit_amount ?? 0) * params.quantity,
-  );
-  const totalPrice = roundMoney(
-    subtotal + serviceFeeRenter + depositAmount + params.deliveryFee,
-  );
-  const listerPayout = roundMoney(subtotal - serviceFeeLister);
+  if (value && typeof value === "object") {
+    const record = value as Record<string, unknown>;
+    for (const key of ["rental_ends_at", "end_date", "rental_end", "rental_end_at"]) {
+      const parsed = extractRpcDateTime(record[key]);
+      if (parsed) return parsed;
+    }
+  }
 
-  return {
-    subtotal,
-    serviceFeeRenter,
-    serviceFeeLister,
-    depositAmount,
-    deliveryFee: params.deliveryFee,
-    totalPrice,
-    listerPayout,
-    numUnits,
-    unitPrice,
-  };
+  return null;
 }
 
 async function requireAuthenticatedUser(): Promise<AuthContext | null> {
@@ -195,11 +152,7 @@ async function requireAuthenticatedUser(): Promise<AuthContext | null> {
     .eq("id", user.id)
     .maybeSingle<Profile>();
 
-  return {
-    supabase,
-    user,
-    profile: profile ?? null,
-  };
+  return { supabase, user, profile: profile ?? null };
 }
 
 async function callRpcWithFallbacks<T>(
@@ -211,99 +164,162 @@ async function callRpcWithFallbacks<T>(
 
   for (const args of argsList) {
     const { data, error } = await supabase.rpc(fn, args);
-
-    if (!error) {
-      return data as T;
-    }
-
+    if (!error) return data as T;
     lastError = new Error(error.message);
   }
 
   throw lastError ?? new Error(`RPC ${fn} failed`);
 }
 
-function extractRpcNumber(value: unknown): number | null {
-  if (typeof value === "number" && Number.isFinite(value)) {
-    return value;
+async function addTimeline(params: {
+  bookingId: string;
+  status: BookingStatus;
+  previousStatus?: BookingStatus;
+  actorId?: string | null;
+  actorRole: TimelineActorRole;
+  title: string;
+  description?: string;
+  metadata?: Record<string, unknown>;
+}): Promise<void> {
+  try {
+    const admin = createAdminClient();
+    await callRpcWithFallbacks(admin, "add_booking_timeline", [
+      {
+        p_booking_id: params.bookingId,
+        p_status: params.status,
+        p_previous_status: params.previousStatus ?? null,
+        p_actor_id: params.actorId ?? null,
+        p_actor_role: params.actorRole,
+        p_title: params.title,
+        p_description: params.description ?? null,
+        p_metadata: params.metadata ?? {},
+      },
+      {
+        booking_id: params.bookingId,
+        status: params.status,
+        previous_status: params.previousStatus ?? null,
+        actor_id: params.actorId ?? null,
+        actor_role: params.actorRole,
+        title: params.title,
+        description: params.description ?? null,
+        metadata: params.metadata ?? {},
+      },
+    ]);
+  } catch (error) {
+    console.error("addTimeline failed:", error);
   }
-
-  if (typeof value === "string") {
-    const parsed = Number(value);
-    return Number.isFinite(parsed) ? parsed : null;
-  }
-
-  if (Array.isArray(value) && value.length > 0) {
-    const first = value[0];
-
-    if (typeof first === "number") {
-      return first;
-    }
-
-    if (first && typeof first === "object") {
-      for (const key of [
-        "get_available_stock",
-        "available_stock",
-        "stock_available",
-      ]) {
-        const parsed = extractRpcNumber(
-          (first as Record<string, unknown>)[key],
-        );
-
-        if (parsed !== null) {
-          return parsed;
-        }
-      }
-    }
-  }
-
-  if (value && typeof value === "object") {
-    for (const key of ["get_available_stock", "available_stock", "stock_available"]) {
-      const parsed = extractRpcNumber((value as Record<string, unknown>)[key]);
-
-      if (parsed !== null) {
-        return parsed;
-      }
-    }
-  }
-
-  return null;
 }
 
-async function getAvailableStock(
+async function uploadProofPhotos(
+  bookingId: string,
+  type: "handover" | "return",
+  files: File[],
+): Promise<string[]> {
+  if (files.length < 1) {
+    throw new Error("At least 1 proof photo is required.");
+  }
+  if (files.length > MAX_PROOF_PHOTOS) {
+    throw new Error(`You can upload at most ${MAX_PROOF_PHOTOS} proof photos.`);
+  }
+
+  for (const file of files) {
+    if (!file.type.startsWith("image/")) {
+      throw new Error("Proof files must be images.");
+    }
+    if (file.size > MAX_PROOF_FILE_BYTES) {
+      throw new Error("Each proof photo must be 10MB or smaller.");
+    }
+  }
+
+  const supabase = await createClient();
+  const urls: string[] = [];
+
+  for (const file of files) {
+    const path = `${bookingId}/${type}/${crypto.randomUUID()}-${sanitizeFilename(file.name || "proof.jpg")}`;
+    const buffer = await file.arrayBuffer();
+
+    const { error: uploadError } = await supabase.storage
+      .from(PROOFS_BUCKET)
+      .upload(path, buffer, { contentType: file.type, upsert: false });
+
+    if (uploadError) {
+      throw new Error(`Failed to upload proof photo: ${uploadError.message}`);
+    }
+
+    const { data } = supabase.storage.from(PROOFS_BUCKET).getPublicUrl(path);
+    urls.push(data.publicUrl);
+  }
+
+  return urls;
+}
+
+async function getBookingRecord(
+  supabase: AnySupabaseClient,
+  bookingId: string,
+) {
+  const { data, error } = await supabase
+    .from("bookings")
+    .select(
+      `
+        *,
+        listing:listings!bookings_listing_id_fkey(*),
+        renter:profiles!bookings_renter_id_fkey(*),
+        lister:profiles!bookings_lister_id_fkey(*)
+      `,
+    )
+    .eq("id", bookingId)
+    .maybeSingle<BookingRecord>();
+
+  if (error || !data) {
+    throw new Error("Booking not found");
+  }
+
+  const listing = unwrapRelation(data.listing);
+  const renter = unwrapRelation(data.renter);
+  const lister = unwrapRelation(data.lister);
+
+  if (!listing || !renter || !lister) {
+    throw new Error("Booking relations are incomplete");
+  }
+
+  return { ...data, listing, renter, lister };
+}
+
+async function getListingRecord(
   supabase: AnySupabaseClient,
   listingId: string,
-  startDate: string,
-  endDate: string,
-  trackInventory = true,
 ) {
-  if (!trackInventory) {
-    return Number.MAX_SAFE_INTEGER;
+  const { data, error } = await supabase
+    .from("listings")
+    .select("*, owner:profiles!listings_owner_id_fkey(*)")
+    .eq("id", listingId)
+    .maybeSingle<ListingRecord>();
+
+  if (error || !data) {
+    throw new Error("Listing not found");
   }
 
-  const data = await callRpcWithFallbacks<unknown>(
-    supabase,
-    "get_available_stock",
-    [
-      {
-        p_listing_id: listingId,
-        p_start_date: startDate,
-        p_end_date: endDate,
-      },
-      {
-        listing_id: listingId,
-        start_date: startDate,
-        end_date: endDate,
-      },
-    ],
-  );
-
-  const available = extractRpcNumber(data);
-
-  if (available === null) {
-    throw new Error("Could not determine available stock");
+  const owner = unwrapRelation(data.owner);
+  if (!owner) {
+    throw new Error("Listing owner not found");
   }
 
-  return available;
+  return { ...data, owner };
+}
+
+function getUnitPrice(listing: Listing, pricingPeriod: PricingPeriod) {
+  switch (pricingPeriod) {
+    case "hour":
+      return listing.price_per_hour;
+    case "day":
+      return listing.price_per_day;
+    case "week":
+      return listing.price_per_week;
+    case "month":
+      return listing.price_per_month;
+    default:
+      return null;
+  }
 }
 
 async function reserveStock(
@@ -311,27 +327,23 @@ async function reserveStock(
   booking: Pick<Booking, "id" | "listing_id" | "quantity">,
   userId: string,
 ) {
-  const result = await callRpcWithFallbacks<boolean | null>(
-    supabase,
-    "reserve_stock",
-    [
-      {
-        p_listing_id: booking.listing_id,
-        p_booking_id: booking.id,
-        p_quantity: booking.quantity,
-        p_user_id: userId,
-      },
-      {
-        listing_id: booking.listing_id,
-        booking_id: booking.id,
-        quantity: booking.quantity,
-        user_id: userId,
-      },
-    ],
-  );
+  const result = await callRpcWithFallbacks<boolean | null>(supabase, "reserve_stock", [
+    {
+      p_listing_id: booking.listing_id,
+      p_booking_id: booking.id,
+      p_quantity: booking.quantity,
+      p_user_id: userId,
+    },
+    {
+      listing_id: booking.listing_id,
+      booking_id: booking.id,
+      quantity: booking.quantity,
+      user_id: userId,
+    },
+  ]);
 
   if (result === false) {
-    throw new Error("Not enough stock available to reserve this booking");
+    throw new Error("Not enough stock available to reserve this booking.");
   }
 }
 
@@ -377,167 +389,35 @@ async function returnStock(
   ]);
 }
 
-function getPaymentExpiryTime() {
-  return addHours(new Date(), PAYMENT_EXPIRY_HOURS);
-}
-
-async function addTimeline(params: {
+async function acceptBookingRequestInternal(params: {
+  supabase: AnySupabaseClient;
   bookingId: string;
-  status: BookingStatus;
-  previousStatus?: BookingStatus;
-  actorId?: string | null;
-  actorRole: TimelineActorRole;
-  title: string;
-  description?: string;
-  metadata?: Record<string, unknown>;
-}) {
-  try {
-    const admin = createAdminClient();
-    const { error } = await admin.from("booking_timeline").insert({
-      booking_id: params.bookingId,
-      status: params.status,
-      previous_status: params.previousStatus ?? null,
-      actor_id: params.actorId ?? null,
-      actor_role: params.actorRole,
-      title: params.title,
-      description: params.description ?? null,
-      metadata: params.metadata ?? {},
-    });
+  actorId: string;
+  skipListerCheck?: boolean;
+}): Promise<BookingActionResponse> {
+  const booking = await getBookingRecord(params.supabase, params.bookingId);
 
-    if (error) {
-      throw error;
-    }
-  } catch (error) {
-    console.error("addTimeline failed:", error);
+  if (!params.skipListerCheck && booking.lister_id !== params.actorId) {
+    return { error: "Only the lister can accept this booking request." };
   }
-}
-
-async function getBookingRecord(
-  supabase: AnySupabaseClient,
-  bookingId: string,
-) {
-  const { data, error } = await supabase
-    .from("bookings")
-    .select(
-      `
-        *,
-        listing:listings!bookings_listing_id_fkey(*),
-        renter:profiles!bookings_renter_id_fkey(*),
-        lister:profiles!bookings_lister_id_fkey(*)
-      `,
-    )
-    .eq("id", bookingId)
-    .maybeSingle<BookingRecord>();
-
-  if (error || !data) {
-    throw new Error("Booking not found");
-  }
-
-  const listing = unwrapRelation(data.listing);
-  const renter = unwrapRelation(data.renter);
-  const lister = unwrapRelation(data.lister);
-
-  if (!listing || !renter || !lister) {
-    throw new Error("Booking relations are incomplete");
-  }
-
-  return {
-    ...data,
-    listing,
-    renter,
-    lister,
-  };
-}
-
-async function getListingRecord(
-  supabase: AnySupabaseClient,
-  listingId: string,
-) {
-  const { data, error } = await supabase
-    .from("listings")
-    .select("*, owner:profiles!listings_owner_id_fkey(*)")
-    .eq("id", listingId)
-    .eq("status", "active")
-    .maybeSingle<ListingRecord>();
-
-  if (error || !data) {
-    throw new Error("Listing not found");
-  }
-
-  const owner = unwrapRelation(data.owner);
-
-  if (!owner) {
-    throw new Error("Listing owner not found");
-  }
-
-  return {
-    ...data,
-    owner,
-  };
-}
-
-function revalidateBookingViews() {
-  revalidatePath("/dashboard");
-  revalidatePath("/dashboard/requests");
-  revalidatePath("/dashboard/my-rentals");
-  revalidatePath("/payment/success");
-}
-
-function getFormData(
-  prevStateOrFormData: ActionResponse | FormData | null,
-  maybeFormData?: FormData,
-) {
-  return prevStateOrFormData instanceof FormData
-    ? prevStateOrFormData
-    : maybeFormData;
-}
-
-function getRoleForBooking(
-  booking: Pick<Booking, "renter_id" | "lister_id">,
-  userId: string,
-): "renter" | "lister" | null {
-  if (booking.renter_id === userId) {
-    return "renter";
-  }
-
-  if (booking.lister_id === userId) {
-    return "lister";
-  }
-
-  return null;
-}
-
-function getScheduledFulfillmentDate(booking: Booking) {
-  return booking.fulfillment_type === "delivery"
-    ? booking.delivery_scheduled_at
-    : booking.pickup_scheduled_at;
-}
-
-async function acceptBookingRequestInternal(
-  options: AcceptBookingOptions,
-): Promise<BookingActionResponse> {
-  const booking = await getBookingRecord(options.supabase, options.bookingId);
 
   if (booking.status !== "pending") {
-    return { error: "Only pending bookings can be accepted" };
+    return { error: "Only pending bookings can be accepted." };
   }
 
-  const availableStock = await getAvailableStock(
-    options.supabase,
-    booking.listing_id,
-    booking.start_date,
-    booking.end_date,
-    booking.listing.track_inventory,
-  );
-
-  if (availableStock < booking.quantity) {
-    return { error: "Insufficient stock. Cannot accept." };
+  if (booking.listing.track_inventory) {
+    const available = booking.listing.quantity_available ?? 0;
+    if (available < booking.quantity) {
+      return {
+        error: `Not enough stock available (${available} available, you requested ${booking.quantity})`,
+      };
+    }
   }
 
-  await reserveStock(options.supabase, booking, options.actorId);
+  await reserveStock(params.supabase, booking, params.actorId);
 
-  const paymentExpiresAt = getPaymentExpiryTime().toISOString();
-  const { error: updateError } = await options.supabase
+  const paymentExpiresAt = addHours(new Date(), PAYMENT_EXPIRY_HOURS).toISOString();
+  const { error: updateError } = await params.supabase
     .from("bookings")
     .update({
       status: "awaiting_payment",
@@ -555,66 +435,61 @@ async function acceptBookingRequestInternal(
     bookingId: booking.id,
     status: "awaiting_payment",
     previousStatus: "pending",
-    actorId: options.actorId,
-    actorRole: options.actorRole,
-    title: "Booking accepted by lister",
-    description: `Stock has been reserved. Waiting for renter to complete payment. Payment must be completed by ${formatDateTime(paymentExpiresAt)}.`,
-    metadata: {
-      stock_reserved: true,
-      payment_expires_at: paymentExpiresAt,
-    },
+    actorId: params.actorId,
+    actorRole: "lister",
+    title: "Booking accepted",
+    description: `Lister accepted the request. Stock reserved. Renter must complete payment by ${formatDateTime(paymentExpiresAt)}.`,
+    metadata: { payment_expires_at: paymentExpiresAt },
   });
 
   const paymentResult = await createPaymentForBooking(booking.id);
-
   if ("error" in paymentResult) {
-    return paymentResult;
+    return { error: paymentResult.error };
   }
 
   await createNotification({
     userId: booking.renter_id,
     type: "booking_accepted",
-    title: "Your booking has been accepted",
-    body: `Your booking has been accepted! Please complete payment by ${formatDateTime(paymentExpiresAt)}.${paymentResult.paymentUrl ? " Use the payment link to continue." : ""}`,
+    title: "Booking accepted - payment required",
+    body: `Your booking has been accepted! Complete payment to confirm. Payment link: ${paymentResult.paymentUrl}`,
     listingId: booking.listing_id,
     bookingId: booking.id,
     fromUserId: booking.lister_id,
-    actionUrl: paymentResult.paymentUrl ?? "/dashboard/my-rentals",
+    actionUrl: paymentResult.paymentUrl,
   });
 
   revalidateBookingViews();
 
   return {
-    success: "Booking accepted. Payment link sent to renter.",
+    success: "Booking accepted. Payment link created.",
     paymentUrl: paymentResult.paymentUrl,
+    bookingId: booking.id,
   };
 }
 
-async function confirmPaymentInternal(
-  options: ConfirmPaymentOptions,
-): Promise<ActionResponse> {
-  const booking = await getBookingRecord(options.supabase, options.bookingId);
+async function confirmPaymentInternal(params: {
+  supabase: AnySupabaseClient;
+  bookingId: string;
+  paymentId?: string;
+}): Promise<ActionResponse> {
+  const booking = await getBookingRecord(params.supabase, params.bookingId);
 
   if (booking.status !== "awaiting_payment") {
-    if (
-      booking.hitpay_payment_status === "completed" &&
-      COMPLETED_PAYMENT_STATUSES.has(booking.status)
-    ) {
+    if (booking.status === "confirmed" || booking.hitpay_payment_status === "completed") {
       return { success: "Payment already confirmed." };
     }
-
     return { error: "Only bookings awaiting payment can be confirmed." };
   }
 
   const paidAt = new Date().toISOString();
-  const { error: updateError } = await options.supabase
+  const { error: updateError } = await params.supabase
     .from("bookings")
     .update({
       status: "confirmed",
-      stock_deducted: true,
       paid_at: paidAt,
-      hitpay_payment_id: options.paymentId ?? booking.hitpay_payment_id,
+      hitpay_payment_id: params.paymentId ?? booking.hitpay_payment_id,
       hitpay_payment_status: "completed",
+      stock_deducted: true,
     })
     .eq("id", booking.id);
 
@@ -628,45 +503,38 @@ async function confirmPaymentInternal(
     previousStatus: "awaiting_payment",
     actorId: null,
     actorRole: "system",
-    title: "Payment received",
-    description: `Payment of ${booking.total_price} has been confirmed. Item is being prepared.`,
+    title: "Payment confirmed",
+    description: `Payment of ${formatMoney(booking.total_price)} received. The lister will arrange to hand over the item. Use messages to coordinate.`,
     metadata: {
-      payment_id: options.paymentId ?? null,
+      payment_id: params.paymentId ?? null,
       amount: booking.total_price,
     },
   });
-
-  const scheduledDate = formatDateTime(getScheduledFulfillmentDate(booking));
-  const handoffText =
-    booking.fulfillment_type === "delivery"
-      ? `delivered on ${scheduledDate}`
-      : `ready for pickup on ${scheduledDate}`;
 
   await Promise.all([
     createNotification({
       userId: booking.lister_id,
       type: "payment_received",
-      title: "Payment received for booking",
-      body: `Payment received for booking. Please prepare the item for ${booking.fulfillment_type}.`,
+      title: "Payment received",
+      body: "Payment received! Please arrange handover with the renter and mark the item as received when done.",
       listingId: booking.listing_id,
       bookingId: booking.id,
       fromUserId: booking.renter_id,
-      actionUrl: "/dashboard/requests",
+      actionUrl: `/dashboard/bookings/${booking.id}`,
     }),
     createNotification({
       userId: booking.renter_id,
       type: "payment_confirmed",
       title: "Payment confirmed",
-      body: `Payment confirmed! Your item will be ${handoffText}.`,
+      body: "Payment confirmed! Contact the lister to arrange item handover.",
       listingId: booking.listing_id,
       bookingId: booking.id,
       fromUserId: booking.lister_id,
-      actionUrl: "/dashboard/my-rentals",
+      actionUrl: `/dashboard/bookings/${booking.id}`,
     }),
   ]);
 
   revalidateBookingViews();
-
   return { success: "Payment confirmed." };
 }
 
@@ -676,228 +544,148 @@ export async function createBookingRequest(
 ): Promise<BookingActionResponse> {
   try {
     const auth = await requireAuthenticatedUser();
-
     if (!auth) {
       return { error: "You must be signed in to create a booking." };
     }
 
     const formData = getFormData(prevState, formDataArg);
-
     if (!formData) {
       return { error: "Missing booking form data." };
     }
 
     const parsed = bookingRequestSchema.safeParse({
       listing_id: formData.get("listing_id"),
-      start_date: formData.get("start_date"),
-      end_date: formData.get("end_date"),
+      rental_units: formData.get("rental_units"),
       quantity: formData.get("quantity"),
       pricing_period: formData.get("pricing_period"),
-      fulfillment_type: formData.get("fulfillment_type"),
-      delivery_address: normalizeText(formData.get("delivery_address")?.toString()),
-      delivery_city: normalizeText(formData.get("delivery_city")?.toString()),
-      delivery_state: normalizeText(formData.get("delivery_state")?.toString()),
-      delivery_postal_code: normalizeText(
-        formData.get("delivery_postal_code")?.toString(),
-      ),
-      delivery_notes: normalizeText(formData.get("delivery_notes")?.toString()),
-      delivery_scheduled_at: normalizeText(
-        formData.get("delivery_scheduled_at")?.toString(),
-      ),
-      pickup_scheduled_at: normalizeText(
-        formData.get("pickup_scheduled_at")?.toString(),
-      ),
-      pickup_notes: normalizeText(formData.get("pickup_notes")?.toString()),
       message: normalizeText(formData.get("message")?.toString()),
     });
 
     if (!parsed.success) {
-      return {
-        error: parsed.error.issues[0]?.message ?? "Invalid booking request.",
-      };
-    }
-
-    const startDate = toDateOnlyString(parsed.data.start_date);
-    const endDate = toDateOnlyString(parsed.data.end_date);
-    const today = toDateOnlyString(startOfDay(new Date()));
-
-    if (startDate < today) {
-      return { error: "Start date must be today or later." };
-    }
-
-    if (endDate <= startDate) {
-      return { error: "End date must be after start date." };
+      return { error: parsed.error.issues[0]?.message ?? "Invalid booking request." };
     }
 
     const listing = await getListingRecord(auth.supabase, parsed.data.listing_id);
-
     if (listing.owner_id === auth.user.id) {
       return { error: "You cannot book your own listing." };
     }
 
-    if (
-      parsed.data.fulfillment_type === "delivery" &&
-      !listing.delivery_available
-    ) {
-      return { error: "This listing does not support delivery." };
+    if (listing.status !== "active") {
+      return { error: "This listing is not available for booking." };
     }
 
-    const availableStock = await getAvailableStock(
-      auth.supabase,
-      listing.id,
-      startDate,
-      endDate,
-      listing.track_inventory,
+    if (listing.track_inventory) {
+      const available = listing.quantity_available ?? 0;
+      if (available < parsed.data.quantity) {
+        return {
+          error: `Not enough stock available (${available} available, you requested ${parsed.data.quantity})`,
+        };
+      }
+    }
+
+    const unitPrice = getUnitPrice(listing, parsed.data.pricing_period);
+    if (typeof unitPrice !== "number") {
+      return {
+        error: `This item is not available for ${parsed.data.pricing_period} rental`,
+      };
+    }
+
+    const subtotal = roundMoney(
+      unitPrice * parsed.data.rental_units * parsed.data.quantity,
     );
+    const serviceFeeRenter = roundMoney(subtotal * RENTER_SERVICE_FEE_RATE);
+    const serviceFeeLister = roundMoney(subtotal * LISTER_SERVICE_FEE_RATE);
+    const depositAmount = roundMoney((listing.deposit_amount ?? 0) * parsed.data.quantity);
+    const totalPrice = roundMoney(subtotal + serviceFeeRenter + depositAmount);
+    const listerPayout = roundMoney(subtotal - serviceFeeLister);
 
-    if (availableStock < parsed.data.quantity) {
-      return { error: "Not enough stock" };
-    }
-
-    const deliveryFee =
-      parsed.data.fulfillment_type === "delivery"
-        ? roundMoney(listing.delivery_fee ?? 0)
-        : 0;
-    const deliveryLatitude = Number(formData.get("delivery_latitude"));
-    const deliveryLongitude = Number(formData.get("delivery_longitude"));
-    const pricing = calculatePricing({
-      listing,
-      pricingPeriod: parsed.data.pricing_period,
-      quantity: parsed.data.quantity,
-      startDate,
-      endDate,
-      deliveryFee,
-    });
-
-    const { data: insertedBooking, error: insertError } = await auth.supabase
+    const { data: createdBooking, error: insertError } = await auth.supabase
       .from("bookings")
       .insert({
         listing_id: listing.id,
         renter_id: auth.user.id,
         lister_id: listing.owner_id,
-        start_date: startDate,
-        end_date: endDate,
-        quantity: parsed.data.quantity,
+        rental_units: parsed.data.rental_units,
         pricing_period: parsed.data.pricing_period,
-        unit_price: pricing.unitPrice,
-        num_units: pricing.numUnits,
-        subtotal: pricing.subtotal,
-        delivery_fee: pricing.deliveryFee,
-        service_fee_renter: pricing.serviceFeeRenter,
-        service_fee_lister: pricing.serviceFeeLister,
-        deposit_amount: pricing.depositAmount,
-        total_price: pricing.totalPrice,
-        lister_payout: pricing.listerPayout,
+        unit_price: unitPrice,
+        num_units: parsed.data.rental_units,
+        quantity: parsed.data.quantity,
+        subtotal,
+        service_fee_renter: serviceFeeRenter,
+        service_fee_lister: serviceFeeLister,
+        deposit_amount: depositAmount,
+        delivery_fee: 0,
+        total_price: totalPrice,
+        lister_payout: listerPayout,
         status: "pending",
-        fulfillment_type: parsed.data.fulfillment_type,
-        delivery_address:
-          parsed.data.fulfillment_type === "delivery"
-            ? parsed.data.delivery_address ?? null
-            : null,
-        delivery_city:
-          parsed.data.fulfillment_type === "delivery"
-            ? parsed.data.delivery_city ?? null
-            : null,
-        delivery_state:
-          parsed.data.fulfillment_type === "delivery"
-            ? parsed.data.delivery_state ?? null
-            : null,
-        delivery_postal_code:
-          parsed.data.fulfillment_type === "delivery"
-            ? parsed.data.delivery_postal_code ?? null
-            : null,
-        delivery_latitude:
-          parsed.data.fulfillment_type === "delivery" &&
-          Number.isFinite(deliveryLatitude)
-            ? deliveryLatitude
-            : null,
-        delivery_longitude:
-          parsed.data.fulfillment_type === "delivery" &&
-          Number.isFinite(deliveryLongitude)
-            ? deliveryLongitude
-            : null,
-        delivery_scheduled_at:
-          parsed.data.fulfillment_type === "delivery"
-            ? parsed.data.delivery_scheduled_at ?? null
-            : null,
-        delivery_notes:
-          parsed.data.fulfillment_type === "delivery"
-            ? parsed.data.delivery_notes ?? null
-            : null,
-        pickup_scheduled_at:
-          parsed.data.fulfillment_type === "pickup"
-            ? parsed.data.pickup_scheduled_at ?? null
-            : null,
-        pickup_notes:
-          parsed.data.fulfillment_type === "pickup"
-            ? parsed.data.pickup_notes ?? null
-            : null,
-        message: parsed.data.message ?? null,
+        start_date: null,
+        end_date: null,
+        fulfillment_type: null,
         stock_deducted: false,
         stock_reserved: false,
         stock_restored: false,
+        handover_proof_urls: [],
+        return_proof_urls: [],
+        message: parsed.data.message ?? null,
       })
-      .select("*")
-      .single<Booking>();
+      .select("id")
+      .maybeSingle<{ id: string }>();
 
-    if (insertError || !insertedBooking) {
-      return { error: insertError?.message ?? "Could not create booking." };
+    if (insertError || !createdBooking) {
+      return { error: insertError?.message ?? "Failed to create booking request." };
     }
 
-    const actorName = getActorDisplayName(
-      auth.profile,
-      auth.user.email ?? "Renter",
-    );
-
+    const renterName = getActorDisplayName(auth.profile, auth.user.email);
     await addTimeline({
-      bookingId: insertedBooking.id,
+      bookingId: createdBooking.id,
       status: "pending",
       actorId: auth.user.id,
       actorRole: "renter",
       title: "Booking request submitted",
-      description: `${actorName} requested to book ${listing.title} for ${formatDateTime(startDate)} to ${formatDateTime(endDate)}. Fulfillment: ${parsed.data.fulfillment_type}.`,
+      description: `${renterName} requested to rent ${listing.title} for ${parsed.data.rental_units} ${parsed.data.pricing_period}(s), quantity: ${parsed.data.quantity}. Total: ${formatMoney(totalPrice)}.`,
       metadata: {
+        rental_units: parsed.data.rental_units,
+        pricing_period: parsed.data.pricing_period,
         quantity: parsed.data.quantity,
-        fulfillment_type: parsed.data.fulfillment_type,
-        total_price: pricing.totalPrice,
+        total_price: totalPrice,
       },
     });
 
     await createNotification({
       userId: listing.owner_id,
-      type: "booking_request",
-      title: `New booking request for ${listing.title}`,
-      body: `${actorName} submitted a booking request for ${listing.title}.`,
+      type: "booking_request_received",
+      title: "New booking request",
+      body: `New booking request for ${listing.title} - ${parsed.data.rental_units} ${parsed.data.pricing_period}(s), ${formatMoney(totalPrice)}.`,
       listingId: listing.id,
-      bookingId: insertedBooking.id,
+      bookingId: createdBooking.id,
       fromUserId: auth.user.id,
-      actionUrl: "/dashboard/requests",
+      actionUrl: `/dashboard/bookings/${createdBooking.id}`,
     });
 
-    let paymentUrl: string | null = null;
-
-    if (listing.instant_book && availableStock >= parsed.data.quantity) {
-      const accepted = await acceptBookingRequestInternal({
-        supabase: createAdminClient(),
-        bookingId: insertedBooking.id,
+    if (listing.instant_book) {
+      const acceptResult = await acceptBookingRequestInternal({
+        supabase: auth.supabase,
+        bookingId: createdBooking.id,
         actorId: listing.owner_id,
-        actorRole: "lister",
+        skipListerCheck: true,
       });
 
-      if (accepted.error) {
-        return accepted;
+      if (acceptResult.error) {
+        return {
+          success: "Booking request sent, but auto-accept failed. Lister can accept manually.",
+          bookingId: createdBooking.id,
+        };
       }
 
-      paymentUrl = accepted.paymentUrl ?? null;
+      return {
+        success: "Booking request sent and auto-accepted!",
+        bookingId: createdBooking.id,
+        paymentUrl: acceptResult.paymentUrl ?? null,
+      };
     }
 
     revalidateBookingViews();
-
-    return {
-      success: "Booking request sent!",
-      bookingId: insertedBooking.id,
-      paymentUrl,
-    };
+    return { success: "Booking request sent!", bookingId: createdBooking.id };
   } catch (error) {
     console.error("createBookingRequest failed:", error);
     return { error: "Something went wrong. Please try again." };
@@ -909,22 +697,14 @@ export async function acceptBookingRequest(
 ): Promise<BookingActionResponse> {
   try {
     const auth = await requireAuthenticatedUser();
-
     if (!auth) {
       return { error: "You must be signed in to accept a booking." };
-    }
-
-    const booking = await getBookingRecord(auth.supabase, bookingId);
-
-    if (booking.lister_id !== auth.user.id) {
-      return { error: "You are not allowed to accept this booking." };
     }
 
     return await acceptBookingRequestInternal({
       supabase: auth.supabase,
       bookingId,
       actorId: auth.user.id,
-      actorRole: "lister",
     });
   } catch (error) {
     console.error("acceptBookingRequest failed:", error);
@@ -938,24 +718,20 @@ export async function declineBookingRequest(
 ): Promise<ActionResponse> {
   try {
     const auth = await requireAuthenticatedUser();
-
     if (!auth) {
       return { error: "You must be signed in to decline a booking." };
     }
 
     const booking = await getBookingRecord(auth.supabase, bookingId);
-
     if (booking.lister_id !== auth.user.id) {
-      return { error: "You are not allowed to decline this booking." };
+      return { error: "Only the lister can decline this booking." };
     }
-
     if (booking.status !== "pending") {
       return { error: "Only pending bookings can be declined." };
     }
 
-    const declineReason =
-      normalizeText(reason) ?? "Lister declined the booking request.";
     const now = new Date().toISOString();
+    const declineReason = normalizeText(reason) ?? "Declined by lister.";
     const { error: updateError } = await auth.supabase
       .from("bookings")
       .update({
@@ -976,23 +752,23 @@ export async function declineBookingRequest(
       previousStatus: "pending",
       actorId: auth.user.id,
       actorRole: "lister",
-      title: "Booking declined by lister",
-      description: declineReason,
+      title: "Booking declined",
+      description: `Lister declined the request. Reason: ${declineReason}`,
+      metadata: { reason: declineReason },
     });
 
     await createNotification({
       userId: booking.renter_id,
       type: "booking_declined",
       title: "Booking request declined",
-      body: declineReason,
+      body: `Your booking request was declined. Reason: ${declineReason}`,
       listingId: booking.listing_id,
       bookingId: booking.id,
       fromUserId: auth.user.id,
-      actionUrl: "/dashboard/my-rentals",
+      actionUrl: `/dashboard/bookings/${booking.id}`,
     });
 
     revalidateBookingViews();
-
     return { success: "Booking request declined." };
   } catch (error) {
     console.error("declineBookingRequest failed:", error);
@@ -1006,9 +782,14 @@ export async function confirmPayment(
 ): Promise<ActionResponse> {
   try {
     const auth = await requireAuthenticatedUser();
-
     if (!auth) {
       return { error: "You must be signed in to confirm payment." };
+    }
+
+    const booking = await getBookingRecord(auth.supabase, bookingId);
+    const role = getRoleForBooking(booking, auth.user.id);
+    if (!role) {
+      return { error: "You are not allowed to confirm this booking payment." };
     }
 
     return await confirmPaymentInternal({
@@ -1027,337 +808,161 @@ export async function confirmPaymentFromWebhook(
   paymentId?: string,
 ): Promise<ActionResponse> {
   try {
+    const admin = createAdminClient();
     return await confirmPaymentInternal({
-      supabase: createAdminClient(),
+      supabase: admin,
       bookingId,
       paymentId,
     });
   } catch (error) {
     console.error("confirmPaymentFromWebhook failed:", error);
-    return { error: "Something went wrong. Please try again." };
+    return { error: "Could not confirm payment from webhook." };
   }
 }
 
-export async function markOutForDelivery(
-  bookingId: string,
-  notes?: string,
-): Promise<ActionResponse> {
-  try {
-    const auth = await requireAuthenticatedUser();
-
-    if (!auth) {
-      return { error: "You must be signed in to update delivery status." };
-    }
-
-    const booking = await getBookingRecord(auth.supabase, bookingId);
-
-    if (booking.lister_id !== auth.user.id) {
-      return { error: "You are not allowed to update this booking." };
-    }
-
-    if (booking.status !== "confirmed") {
-      return { error: "Only confirmed bookings can be marked out for delivery." };
-    }
-
-    if (booking.fulfillment_type !== "delivery") {
-      return { error: "This booking is not a delivery order." };
-    }
-
-    const { error: updateError } = await auth.supabase
-      .from("bookings")
-      .update({
-        status: "out_for_delivery",
-        delivery_notes: appendNote(booking.delivery_notes, notes),
-      })
-      .eq("id", booking.id);
-
-    if (updateError) {
-      return { error: updateError.message };
-    }
-
-    await addTimeline({
-      bookingId: booking.id,
-      status: "out_for_delivery",
-      previousStatus: "confirmed",
-      actorId: auth.user.id,
-      actorRole: "lister",
-      title: "Item out for delivery",
-      description: `Lister has dispatched the item for delivery to ${booking.delivery_address ?? "the delivery address"}, ${booking.delivery_city ?? ""}.`.trim(),
-      metadata: {
-        delivery_address: booking.delivery_address ?? null,
-      },
-    });
-
-    await createNotification({
-      userId: booking.renter_id,
-      type: "booking_out_for_delivery",
-      title: "Your item is on its way",
-      body: "Your item is on its way!",
-      listingId: booking.listing_id,
-      bookingId: booking.id,
-      fromUserId: auth.user.id,
-      actionUrl: "/dashboard/my-rentals",
-    });
-
-    revalidateBookingViews();
-
-    return { success: "Booking marked out for delivery." };
-  } catch (error) {
-    console.error("markOutForDelivery failed:", error);
-    return { error: "Something went wrong. Please try again." };
-  }
-}
-
-export async function markItemHandedOver(
-  bookingId: string,
-  notes?: string,
-): Promise<ActionResponse> {
-  try {
-    const auth = await requireAuthenticatedUser();
-
-    if (!auth) {
-      return { error: "You must be signed in to hand over the item." };
-    }
-
-    const booking = await getBookingRecord(auth.supabase, bookingId);
-
-    if (booking.lister_id !== auth.user.id) {
-      return { error: "You are not allowed to update this booking." };
-    }
-
-    if (booking.fulfillment_type === "delivery") {
-      if (booking.status !== "out_for_delivery") {
-        return { error: "Delivery bookings must be out for delivery first." };
-      }
-
-      const deliveredAt = new Date().toISOString();
-      const { error: updateError } = await auth.supabase
-        .from("bookings")
-        .update({
-          status: "active",
-          delivered_at: deliveredAt,
-          delivery_notes: appendNote(booking.delivery_notes, notes),
-        })
-        .eq("id", booking.id);
-
-      if (updateError) {
-        return { error: updateError.message };
-      }
-
-      await addTimeline({
-        bookingId: booking.id,
-        status: "active",
-        previousStatus: "out_for_delivery",
-        actorId: auth.user.id,
-        actorRole: "lister",
-        title: "Item delivered",
-        description: "Item has been delivered to the renter.",
-      });
-    } else {
-      if (booking.status !== "confirmed") {
-        return { error: "Pickup bookings must be confirmed before handover." };
-      }
-
-      const pickedUpAt = new Date().toISOString();
-      const { error: updateError } = await auth.supabase
-        .from("bookings")
-        .update({
-          status: "active",
-          picked_up_at: pickedUpAt,
-          pickup_notes: appendNote(booking.pickup_notes, notes),
-        })
-        .eq("id", booking.id);
-
-      if (updateError) {
-        return { error: updateError.message };
-      }
-
-      await addTimeline({
-        bookingId: booking.id,
-        status: "active",
-        previousStatus: "confirmed",
-        actorId: auth.user.id,
-        actorRole: "lister",
-        title: "Item picked up",
-        description: "Renter has picked up the item.",
-      });
-    }
-
-    await createNotification({
-      userId: booking.renter_id,
-      type: "rental_started",
-      title: "Rental period has started",
-      body: `Rental period has started! Return date: ${formatDateTime(booking.end_date)}.`,
-      listingId: booking.listing_id,
-      bookingId: booking.id,
-      fromUserId: auth.user.id,
-      actionUrl: "/dashboard/my-rentals",
-    });
-
-    revalidateBookingViews();
-
-    return { success: "Item handover recorded." };
-  } catch (error) {
-    console.error("markItemHandedOver failed:", error);
-    return { error: "Something went wrong. Please try again." };
-  }
-}
-
-export async function initiateReturn(
+export async function markReceivedByRenter(
   prevState: ActionResponse | FormData | null,
   formDataArg?: FormData,
 ): Promise<ActionResponse> {
   try {
     const auth = await requireAuthenticatedUser();
-
     if (!auth) {
-      return { error: "You must be signed in to schedule a return." };
+      return { error: "You must be signed in to mark handover." };
     }
 
     const formData = getFormData(prevState, formDataArg);
+    if (!formData) {
+      return { error: "Missing handover form data." };
+    }
 
+    const bookingId = normalizeText(formData.get("booking_id")?.toString());
+    if (!bookingId) {
+      return { error: "booking_id is required." };
+    }
+
+    const booking = await getBookingRecord(auth.supabase, bookingId);
+    if (booking.lister_id !== auth.user.id) {
+      return { error: "Only the lister can mark item handover." };
+    }
+    if (booking.status !== "confirmed") {
+      return { error: "Only confirmed bookings can start rental period." };
+    }
+
+    const proofFiles = formData
+      .getAll("proof_photos")
+      .filter((entry): entry is File => entry instanceof File && entry.size > 0);
+    const notes = normalizeText(formData.get("notes")?.toString());
+    const photoUrls = await uploadProofPhotos(booking.id, "handover", proofFiles);
+
+    const rpcData = await callRpcWithFallbacks<unknown>(
+      auth.supabase,
+      "start_rental_period",
+      [
+        {
+          p_booking_id: booking.id,
+          p_user_id: auth.user.id,
+          p_photo_urls: photoUrls,
+          p_notes: notes ?? null,
+        },
+        {
+          booking_id: booking.id,
+          user_id: auth.user.id,
+          photo_urls: photoUrls,
+          notes: notes ?? null,
+        },
+      ],
+    );
+
+    let rentalEndsAt = extractRpcDateTime(rpcData);
+    if (!rentalEndsAt) {
+      const { data: refreshed } = await auth.supabase
+        .from("bookings")
+        .select("rental_ends_at")
+        .eq("id", booking.id)
+        .maybeSingle<{ rental_ends_at: string | null }>();
+      rentalEndsAt = refreshed?.rental_ends_at ?? null;
+    }
+
+    revalidateBookingViews();
+    return {
+      success: `Item marked as received! Rental period started. Return deadline: ${formatDateTime(rentalEndsAt)}.`,
+    };
+  } catch (error) {
+    console.error("markReceivedByRenter failed:", error);
+    return {
+      error:
+        error instanceof Error
+          ? error.message
+          : "Could not start rental period. Please try again.",
+    };
+  }
+}
+
+export async function markReturnedToLister(
+  prevState: ActionResponse | FormData | null,
+  formDataArg?: FormData,
+): Promise<ActionResponse> {
+  try {
+    const auth = await requireAuthenticatedUser();
+    if (!auth) {
+      return { error: "You must be signed in to mark return." };
+    }
+
+    const formData = getFormData(prevState, formDataArg);
     if (!formData) {
       return { error: "Missing return form data." };
     }
 
-    const parsed = returnItemSchema.safeParse({
-      booking_id: formData.get("booking_id"),
-      return_method: formData.get("return_method"),
-      return_scheduled_at: formData.get("return_scheduled_at"),
-      return_notes: normalizeText(formData.get("return_notes")?.toString()),
-    });
-
-    if (!parsed.success) {
-      return {
-        error: parsed.error.issues[0]?.message ?? "Invalid return request.",
-      };
-    }
-
-    const booking = await getBookingRecord(auth.supabase, parsed.data.booking_id);
-    const actorRole = getRoleForBooking(booking, auth.user.id);
-
-    if (!actorRole) {
-      return { error: "You are not allowed to update this booking." };
-    }
-
-    if (booking.status !== "active") {
-      return { error: "Only active bookings can initiate a return." };
-    }
-
-    const { error: updateError } = await auth.supabase
-      .from("bookings")
-      .update({
-        return_method: parsed.data.return_method,
-        return_scheduled_at: parsed.data.return_scheduled_at,
-        return_notes: parsed.data.return_notes ?? null,
-      })
-      .eq("id", booking.id);
-
-    if (updateError) {
-      return { error: updateError.message };
-    }
-
-    await addTimeline({
-      bookingId: booking.id,
-      status: "active",
-      previousStatus: "active",
-      actorId: auth.user.id,
-      actorRole,
-      title: "Return initiated",
-      description: `Return scheduled via ${parsed.data.return_method} on ${formatDateTime(parsed.data.return_scheduled_at)}.${parsed.data.return_notes ? ` ${parsed.data.return_notes}` : ""}`,
-      metadata: {
-        return_method: parsed.data.return_method,
-        return_scheduled_at: parsed.data.return_scheduled_at,
-      },
-    });
-
-    const recipientId =
-      actorRole === "renter" ? booking.lister_id : booking.renter_id;
-
-    await createNotification({
-      userId: recipientId,
-      type: "return_scheduled",
-      title: "Return scheduled",
-      body: `Return has been scheduled for ${formatDateTime(parsed.data.return_scheduled_at)}.`,
-      listingId: booking.listing_id,
-      bookingId: booking.id,
-      fromUserId: auth.user.id,
-      actionUrl:
-        actorRole === "renter"
-          ? "/dashboard/requests"
-          : "/dashboard/my-rentals",
-    });
-
-    revalidateBookingViews();
-
-    return { success: "Return scheduled." };
-  } catch (error) {
-    console.error("initiateReturn failed:", error);
-    return { error: "Something went wrong. Please try again." };
-  }
-}
-
-export async function markItemReturned(
-  bookingId: string,
-): Promise<ActionResponse> {
-  try {
-    const auth = await requireAuthenticatedUser();
-
-    if (!auth) {
-      return { error: "You must be signed in to confirm the return." };
+    const bookingId = normalizeText(formData.get("booking_id")?.toString());
+    if (!bookingId) {
+      return { error: "booking_id is required." };
     }
 
     const booking = await getBookingRecord(auth.supabase, bookingId);
-
-    if (booking.lister_id !== auth.user.id) {
-      return { error: "You are not allowed to update this booking." };
+    if (booking.renter_id !== auth.user.id) {
+      return { error: "Only the renter can mark item return." };
     }
-
     if (booking.status !== "active") {
-      return { error: "Only active bookings can be marked returned." };
+      return { error: "Only active rentals can be marked returned." };
     }
 
-    const returnedAt = new Date().toISOString();
-    const { error: updateError } = await auth.supabase
-      .from("bookings")
-      .update({
-        status: "returned",
-        returned_at: returnedAt,
-      })
-      .eq("id", booking.id);
+    const proofFiles = formData
+      .getAll("proof_photos")
+      .filter((entry): entry is File => entry instanceof File && entry.size > 0);
+    const notes = normalizeText(formData.get("notes")?.toString());
+    const photoUrls = await uploadProofPhotos(booking.id, "return", proofFiles);
 
-    if (updateError) {
-      return { error: updateError.message };
-    }
-
-    await addTimeline({
-      bookingId: booking.id,
-      status: "returned",
-      previousStatus: "active",
-      actorId: auth.user.id,
-      actorRole: "lister",
-      title: "Item returned",
-      description:
-        "Lister has received the returned item. Awaiting condition inspection.",
-    });
-
-    await createNotification({
-      userId: booking.renter_id,
-      type: "item_returned",
-      title: "Returned item received",
-      body: "Your returned item has been received. The lister will inspect it shortly.",
-      listingId: booking.listing_id,
-      bookingId: booking.id,
-      fromUserId: auth.user.id,
-      actionUrl: "/dashboard/my-rentals",
-    });
+    await callRpcWithFallbacks(
+      auth.supabase,
+      "mark_item_returned_by_renter",
+      [
+        {
+          p_booking_id: booking.id,
+          p_user_id: auth.user.id,
+          p_photo_urls: photoUrls,
+          p_notes: notes ?? null,
+        },
+        {
+          booking_id: booking.id,
+          user_id: auth.user.id,
+          photo_urls: photoUrls,
+          notes: notes ?? null,
+        },
+      ],
+    );
 
     revalidateBookingViews();
-
-    return { success: "Item marked as returned." };
+    return {
+      success: "Item marked as returned! Waiting for lister to inspect.",
+    };
   } catch (error) {
-    console.error("markItemReturned failed:", error);
-    return { error: "Something went wrong. Please try again." };
+    console.error("markReturnedToLister failed:", error);
+    return {
+      error:
+        error instanceof Error
+          ? error.message
+          : "Could not mark item return. Please try again.",
+    };
   }
 }
 
@@ -1367,13 +972,11 @@ export async function confirmReturnAndComplete(
 ): Promise<ActionResponse> {
   try {
     const auth = await requireAuthenticatedUser();
-
     if (!auth) {
-      return { error: "You must be signed in to complete the booking." };
+      return { error: "You must be signed in to complete booking." };
     }
 
     const formData = getFormData(prevState, formDataArg);
-
     if (!formData) {
       return { error: "Missing completion form data." };
     }
@@ -1385,7 +988,6 @@ export async function confirmReturnAndComplete(
         formData.get("return_condition_notes")?.toString(),
       ),
     });
-
     if (!parsed.success) {
       return {
         error: parsed.error.issues[0]?.message ?? "Invalid return confirmation.",
@@ -1393,39 +995,29 @@ export async function confirmReturnAndComplete(
     }
 
     const booking = await getBookingRecord(auth.supabase, parsed.data.booking_id);
-
     if (booking.lister_id !== auth.user.id) {
-      return { error: "You are not allowed to complete this booking." };
+      return { error: "Only the lister can complete this booking." };
     }
-
     if (booking.status !== "returned") {
       return { error: "Only returned bookings can be completed." };
     }
 
-    const { error: bookingUpdateError } = await auth.supabase
-      .from("bookings")
-      .update({
-        return_condition: parsed.data.return_condition,
-        return_condition_notes: parsed.data.return_condition_notes ?? null,
-        status: "completed",
-      })
-      .eq("id", booking.id);
-
-    if (bookingUpdateError) {
-      return { error: bookingUpdateError.message };
+    if ((booking.stock_reserved || booking.stock_deducted) && !booking.stock_restored) {
+      await returnStock(auth.supabase, booking, auth.user.id);
     }
 
-    await returnStock(auth.supabase, booking, auth.user.id);
-
-    const { error: stockUpdateError } = await auth.supabase
+    const { error: updateError } = await auth.supabase
       .from("bookings")
       .update({
+        status: "completed",
+        return_condition: parsed.data.return_condition,
+        return_condition_notes: parsed.data.return_condition_notes ?? null,
         stock_restored: true,
       })
       .eq("id", booking.id);
 
-    if (stockUpdateError) {
-      return { error: stockUpdateError.message };
+    if (updateError) {
+      return { error: updateError.message };
     }
 
     const { error: payoutError } = await auth.supabase.from("payouts").insert({
@@ -1437,11 +1029,13 @@ export async function confirmReturnAndComplete(
       reference_number: booking.id,
       notes: "Auto-created after booking completion.",
     });
-
     if (payoutError) {
       return { error: payoutError.message };
     }
 
+    const notesText = parsed.data.return_condition_notes
+      ? ` ${parsed.data.return_condition_notes}`
+      : "";
     await addTimeline({
       bookingId: booking.id,
       status: "completed",
@@ -1449,7 +1043,7 @@ export async function confirmReturnAndComplete(
       actorId: auth.user.id,
       actorRole: "lister",
       title: "Rental completed",
-      description: `Item condition: ${parsed.data.return_condition}. ${parsed.data.return_condition_notes ?? "No issues reported."} Stock has been restored. Payout is being processed.`,
+      description: `Item condition: ${parsed.data.return_condition}.${notesText} Stock restored. Payout of ${formatMoney(booking.lister_payout)} is being processed.`,
       metadata: {
         return_condition: parsed.data.return_condition,
         payout_amount: booking.lister_payout,
@@ -1460,28 +1054,15 @@ export async function confirmReturnAndComplete(
       parsed.data.return_condition === "damaged" ||
       parsed.data.return_condition === "missing_parts"
     ) {
-      await addTimeline({
-        bookingId: booking.id,
-        status: "completed",
-        previousStatus: "returned",
-        actorId: auth.user.id,
-        actorRole: "lister",
-        title: "Condition issue reported",
-        description: `Lister reported: ${parsed.data.return_condition}. Notes: ${parsed.data.return_condition_notes ?? "No additional notes."}. Deposit may be affected.`,
-        metadata: {
-          return_condition: parsed.data.return_condition,
-        },
-      });
-
       await createNotification({
         userId: booking.renter_id,
         type: "return_condition_issue",
-        title: "Condition issue reported",
-        body: `Your returned item was marked as ${parsed.data.return_condition}. The lister may claim part of the deposit.`,
+        title: "Return condition flagged",
+        body: `Your returned item was marked as ${parsed.data.return_condition}.`,
         listingId: booking.listing_id,
         bookingId: booking.id,
         fromUserId: auth.user.id,
-        actionUrl: "/dashboard/my-rentals",
+        actionUrl: `/dashboard/bookings/${booking.id}`,
       });
     }
 
@@ -1494,7 +1075,7 @@ export async function confirmReturnAndComplete(
         listingId: booking.listing_id,
         bookingId: booking.id,
         fromUserId: booking.renter_id,
-        actionUrl: "/dashboard/requests",
+        actionUrl: `/dashboard/bookings/${booking.id}`,
       }),
       createNotification({
         userId: booking.renter_id,
@@ -1504,12 +1085,11 @@ export async function confirmReturnAndComplete(
         listingId: booking.listing_id,
         bookingId: booking.id,
         fromUserId: booking.lister_id,
-        actionUrl: "/dashboard/my-rentals",
+        actionUrl: `/dashboard/bookings/${booking.id}`,
       }),
     ]);
 
     revalidateBookingViews();
-
     return { success: "Booking completed successfully." };
   } catch (error) {
     console.error("confirmReturnAndComplete failed:", error);
@@ -1523,63 +1103,41 @@ export async function cancelBooking(
 ): Promise<ActionResponse> {
   try {
     const auth = await requireAuthenticatedUser();
-
     if (!auth) {
       return { error: "You must be signed in to cancel a booking." };
     }
 
     const booking = await getBookingRecord(auth.supabase, bookingId);
     const actorRole = getRoleForBooking(booking, auth.user.id);
-
     if (!actorRole) {
       return { error: "You are not allowed to cancel this booking." };
     }
 
-    if (booking.status === "active" || booking.status === "out_for_delivery") {
+    if (booking.status === "active" || booking.status === "returned") {
       return {
-        error:
-          "Cannot cancel an active booking. Please use the dispute process instead.",
+        error: "Cannot cancel. Please raise a dispute if there's an issue.",
       };
     }
 
-    if (booking.status === "returned" || booking.status === "completed") {
-      return { error: "This booking cannot be cancelled." };
-    }
-
-    if (!CANCELLABLE_STATUSES.has(booking.status)) {
+    if (
+      booking.status !== "pending" &&
+      booking.status !== "awaiting_payment" &&
+      booking.status !== "confirmed"
+    ) {
       return { error: "This booking can no longer be cancelled." };
     }
 
-    let stockReleased = false;
-    let stockMessage = "";
-
-    if (
-      booking.status === "awaiting_payment" &&
-      booking.stock_reserved &&
-      !booking.stock_restored
-    ) {
+    let stockRestored = booking.stock_restored;
+    if ((booking.stock_reserved || booking.stock_deducted) && !booking.stock_restored) {
       await releaseStock(auth.supabase, booking, auth.user.id);
-      stockReleased = true;
-      stockMessage = " Reserved stock was released after cancellation.";
-    } else if (
-      booking.status === "confirmed" &&
-      booking.stock_deducted &&
-      !booking.stock_restored
-    ) {
-      await releaseStock(auth.supabase, booking, auth.user.id);
-      stockReleased = true;
-      stockMessage =
-        " Confirmed stock allocation was released after cancellation.";
+      stockRestored = true;
     }
 
-    const cancelStatus =
+    const cancelStatus: BookingStatus =
       actorRole === "renter" ? "cancelled_by_renter" : "cancelled_by_lister";
-    const actorName = getActorDisplayName(
-      actorRole === "renter" ? booking.renter : booking.lister,
-      auth.user.email,
-    );
     const cancellationReason = normalizeText(reason) ?? "No reason provided.";
     const now = new Date().toISOString();
+
     const { error: updateError } = await auth.supabase
       .from("bookings")
       .update({
@@ -1587,7 +1145,7 @@ export async function cancelBooking(
         cancelled_at: now,
         cancelled_by: auth.user.id,
         cancellation_reason: cancellationReason,
-        stock_restored: stockReleased ? true : booking.stock_restored,
+        stock_restored: stockRestored,
       })
       .eq("id", booking.id);
 
@@ -1602,51 +1160,30 @@ export async function cancelBooking(
       actorId: auth.user.id,
       actorRole,
       title: "Booking cancelled",
-      description: `${actorName} cancelled the booking. Reason: ${cancellationReason}.${stockMessage}`,
+      description: `${getActorDisplayName(actorRole === "renter" ? booking.renter : booking.lister, auth.user.email)} cancelled the booking. Reason: ${cancellationReason}`,
       metadata: {
-        cancelled_by: actorRole,
-        stock_released: stockReleased,
         cancelled_from_status: booking.status,
+        stock_released: stockRestored,
       },
     });
 
+    const otherUserId = actorRole === "renter" ? booking.lister_id : booking.renter_id;
     await createNotification({
-      userId: actorRole === "renter" ? booking.lister_id : booking.renter_id,
+      userId: otherUserId,
       type: "booking_cancelled",
       title: "Booking cancelled",
-      body: `${actorName} cancelled the booking. Reason: ${cancellationReason}.`,
+      body: `The booking was cancelled. Reason: ${cancellationReason}`,
       listingId: booking.listing_id,
       bookingId: booking.id,
       fromUserId: auth.user.id,
-      actionUrl:
-        actorRole === "renter"
-          ? "/dashboard/requests"
-          : "/dashboard/my-rentals",
+      actionUrl: `/dashboard/bookings/${booking.id}`,
     });
 
     revalidateBookingViews();
-
     return { success: "Booking cancelled." };
   } catch (error) {
     console.error("cancelBooking failed:", error);
     return { error: "Something went wrong. Please try again." };
-  }
-}
-
-export async function expireUnpaidBookings(): Promise<ActionResponse> {
-  try {
-    const admin = createAdminClient();
-    const result = await callRpcWithFallbacks<unknown>(admin, "expire_unpaid_bookings", [
-      {},
-    ]);
-
-    const expiredCount = extractRpcNumber(result) ?? 0;
-    revalidateBookingViews();
-
-    return { success: `Expired ${expiredCount} unpaid bookings` };
-  } catch (error) {
-    console.error("expireUnpaidBookings failed:", error);
-    return { error: "Could not expire unpaid bookings." };
   }
 }
 
@@ -1656,20 +1193,17 @@ export async function raiseDispute(
 ): Promise<ActionResponse> {
   try {
     const auth = await requireAuthenticatedUser();
-
     if (!auth) {
       return { error: "You must be signed in to raise a dispute." };
     }
 
     const disputeReason = normalizeText(reason);
-
     if (!disputeReason) {
       return { error: "A dispute reason is required." };
     }
 
     const booking = await getBookingRecord(auth.supabase, bookingId);
     const actorRole = getRoleForBooking(booking, auth.user.id);
-
     if (!actorRole) {
       return { error: "You are not allowed to dispute this booking." };
     }
@@ -1678,18 +1212,10 @@ export async function raiseDispute(
       return { error: "Only active or returned bookings can be disputed." };
     }
 
-    const actorProfile = actorRole === "renter" ? booking.renter : booking.lister;
-    const actorName = getActorDisplayName(actorProfile, auth.user.email);
-    const appendedNotes = booking.admin_notes
-      ? `${booking.admin_notes}\n[Dispute] ${actorName}: ${disputeReason}`
-      : `[Dispute] ${actorName}: ${disputeReason}`;
     const previousStatus = booking.status;
     const { error: updateError } = await auth.supabase
       .from("bookings")
-      .update({
-        status: "disputed",
-        admin_notes: appendedNotes,
-      })
+      .update({ status: "disputed" })
       .eq("id", booking.id);
 
     if (updateError) {
@@ -1703,21 +1229,19 @@ export async function raiseDispute(
       actorId: auth.user.id,
       actorRole,
       title: "Dispute raised",
-      description: `${actorName} raised a dispute. Reason: ${disputeReason}`,
+      description: `${getActorDisplayName(actorRole === "renter" ? booking.renter : booking.lister, auth.user.email)} raised a dispute. Reason: ${disputeReason}`,
+      metadata: { reason: disputeReason },
     });
 
     await createNotification({
       userId: actorRole === "renter" ? booking.lister_id : booking.renter_id,
       type: "booking_disputed",
       title: "Dispute raised",
-      body: `${actorName} raised a dispute. Reason: ${disputeReason}`,
+      body: disputeReason,
       listingId: booking.listing_id,
       bookingId: booking.id,
       fromUserId: auth.user.id,
-      actionUrl:
-        actorRole === "renter"
-          ? "/dashboard/requests"
-          : "/dashboard/my-rentals",
+      actionUrl: `/dashboard/bookings/${booking.id}`,
     });
 
     const admin = createAdminClient();
@@ -1732,7 +1256,7 @@ export async function raiseDispute(
           userId: String((adminProfile as { id: string }).id),
           type: "booking_disputed",
           title: "Booking dispute requires review",
-          body: `${actorName} raised a dispute on booking ${booking.id}. Reason: ${disputeReason}`,
+          body: `Booking ${booking.id} was disputed. Reason: ${disputeReason}`,
           listingId: booking.listing_id,
           bookingId: booking.id,
           fromUserId: auth.user.id,
@@ -1742,55 +1266,9 @@ export async function raiseDispute(
     );
 
     revalidateBookingViews();
-
     return { success: "Dispute raised." };
   } catch (error) {
     console.error("raiseDispute failed:", error);
-    return { error: "Something went wrong. Please try again." };
-  }
-}
-
-export async function completeBooking(
-  bookingId: string,
-): Promise<ActionResponse> {
-  try {
-    const auth = await requireAuthenticatedUser();
-
-    if (!auth) {
-      return { error: "You must be signed in to update this booking." };
-    }
-
-    const booking = await getBookingRecord(auth.supabase, bookingId);
-
-    if (booking.lister_id !== auth.user.id) {
-      return { error: "You are not allowed to update this booking." };
-    }
-
-    if (
-      booking.status === "confirmed" ||
-      booking.status === "out_for_delivery"
-    ) {
-      return await markItemHandedOver(bookingId);
-    }
-
-    if (booking.status === "active") {
-      return await markItemReturned(bookingId);
-    }
-
-    if (booking.status === "returned") {
-      const completionForm = new FormData();
-      completionForm.set("booking_id", bookingId);
-      completionForm.set("return_condition", "good");
-      completionForm.set(
-        "return_condition_notes",
-        "Completed using the legacy one-click action.",
-      );
-      return await confirmReturnAndComplete(null, completionForm);
-    }
-
-    return { error: "This booking cannot be completed from its current state." };
-  } catch (error) {
-    console.error("completeBooking failed:", error);
     return { error: "Something went wrong. Please try again." };
   }
 }
@@ -1819,16 +1297,15 @@ export async function getIncomingRequests(
     }
 
     const { data, error } = await query;
-
     if (error) {
       throw error;
     }
 
     return (data ?? []).flatMap((booking) => {
-      const listing = unwrapRelation((booking as BookingRecord).listing);
-      const renter = unwrapRelation((booking as BookingRecord).renter);
-      const lister = unwrapRelation((booking as BookingRecord).lister);
-
+      const typed = booking as BookingRecord;
+      const listing = unwrapRelation(typed.listing);
+      const renter = unwrapRelation(typed.renter);
+      const lister = unwrapRelation(typed.lister);
       if (!listing || !renter || !lister) {
         return [];
       }
@@ -1865,16 +1342,15 @@ export async function getMyRentals(
     }
 
     const { data, error } = await query;
-
     if (error) {
       throw error;
     }
 
     return (data ?? []).flatMap((booking) => {
-      const listing = unwrapRelation((booking as BookingRecord).listing);
-      const renter = unwrapRelation((booking as BookingRecord).renter);
-      const lister = unwrapRelation((booking as BookingRecord).lister);
-
+      const typed = booking as BookingRecord;
+      const listing = unwrapRelation(typed.listing);
+      const renter = unwrapRelation(typed.renter);
+      const lister = unwrapRelation(typed.lister);
       if (!listing || !renter || !lister) {
         return [];
       }
@@ -1933,7 +1409,6 @@ export async function getBookingTimeline(
     );
 
     let actorMap = new Map<string, Profile>();
-
     if (actorIds.length > 0) {
       const { data: profiles } = await supabase
         .from("profiles")
@@ -1953,4 +1428,66 @@ export async function getBookingTimeline(
     console.error("getBookingTimeline failed:", error);
     return [];
   }
+}
+
+export async function expireUnpaidBookings(): Promise<ActionResponse> {
+  try {
+    const admin = createAdminClient();
+    await callRpcWithFallbacks(admin, "expire_unpaid_bookings", [{}]);
+    revalidateBookingViews();
+    return { success: "Expired unpaid bookings." };
+  } catch (error) {
+    console.error("expireUnpaidBookings failed:", error);
+    return { error: "Could not expire unpaid bookings." };
+  }
+}
+
+// Compatibility wrappers for existing UI until components are migrated.
+export async function markOutForDelivery(
+  bookingId: string,
+  _notes?: string,
+): Promise<ActionResponse> {
+  return markItemHandedOver(bookingId);
+}
+
+export async function markItemHandedOver(
+  bookingId: string,
+): Promise<ActionResponse> {
+  void bookingId;
+  return {
+    error:
+      "This action now requires photo proof. Use the handover proof submission flow.",
+  };
+}
+
+export async function initiateReturn(
+  prevState: ActionResponse | FormData | null,
+  formDataArg?: FormData,
+): Promise<ActionResponse> {
+  void prevState;
+  void formDataArg;
+  return {
+    error:
+      "Return scheduling has been replaced. Submit return proof photos to mark item returned.",
+  };
+}
+
+export async function markItemReturned(
+  bookingId: string,
+): Promise<ActionResponse> {
+  void bookingId;
+  return {
+    error:
+      "This action now requires return photo proof. Use the return proof submission flow.",
+  };
+}
+
+export async function completeBooking(
+  bookingId: string,
+): Promise<ActionResponse> {
+  void bookingId;
+  return {
+    error:
+      "Use condition inspection to complete booking after the renter marks return.",
+  };
 }

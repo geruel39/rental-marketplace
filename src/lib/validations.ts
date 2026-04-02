@@ -9,7 +9,6 @@ const stockAdjustmentTypeSchema = z.enum([
   "damaged",
   "lost",
 ]);
-const dateValueSchema = z.string().or(z.date());
 
 export const loginSchema = z.object({
   email: z.string().email("Invalid email"),
@@ -104,19 +103,8 @@ export const bookingRequestSchema = z.object({
     .number()
     .int()
     .min(1, "Must rent for at least 1 unit"),
-  start_date: dateValueSchema,
-  end_date: dateValueSchema,
   quantity: z.coerce.number().int().min(1).default(1),
   pricing_period: pricingPeriodSchema,
-  fulfillment_type: z.enum(["pickup", "delivery"]).default("pickup"),
-  delivery_address: z.string().min(5).optional(),
-  delivery_city: z.string().min(2).optional(),
-  delivery_state: z.string().optional(),
-  delivery_postal_code: z.string().min(3).optional(),
-  delivery_notes: z.string().max(500).optional(),
-  delivery_scheduled_at: z.string().optional(),
-  pickup_scheduled_at: z.string().optional(),
-  pickup_notes: z.string().max(500).optional(),
   message: z.string().max(500).optional(),
 });
 
