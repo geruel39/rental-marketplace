@@ -10,6 +10,7 @@ export type BookingStatus =
   | "pending"
   | "awaiting_payment"
   | "confirmed"
+  /** @deprecated Legacy status retained temporarily for backward compatibility. */
   | "out_for_delivery"
   | "active"
   | "returned"
@@ -17,7 +18,9 @@ export type BookingStatus =
   | "cancelled_by_renter"
   | "cancelled_by_lister"
   | "disputed";
+/** @deprecated Deprecated booking fulfillment flow. */
 export type FulfillmentType = "pickup" | "delivery";
+/** @deprecated Deprecated booking return flow. */
 export type ReturnMethod = "pickup_by_lister" | "dropoff_by_renter";
 export type ReturnCondition =
   | "excellent"
@@ -201,6 +204,7 @@ export interface Booking {
   lister_id: string;
   start_date: string;
   end_date: string;
+  rental_units: number;
   quantity: number;
   pricing_period: PricingPeriod;
   unit_price: number;
@@ -213,21 +217,41 @@ export interface Booking {
   total_price: number;
   lister_payout: number;
   status: BookingStatus;
-  fulfillment_type: FulfillmentType;
+  fulfillment_type?: string;
+  /** @deprecated Legacy delivery field retained for compatibility. */
   delivery_address?: string;
+  /** @deprecated Legacy delivery field retained for compatibility. */
   delivery_city?: string;
+  /** @deprecated Legacy delivery field retained for compatibility. */
   delivery_state?: string;
+  /** @deprecated Legacy delivery field retained for compatibility. */
   delivery_postal_code?: string;
+  /** @deprecated Legacy delivery field retained for compatibility. */
   delivery_latitude?: number;
+  /** @deprecated Legacy delivery field retained for compatibility. */
   delivery_longitude?: number;
+  /** @deprecated Legacy fulfillment scheduling field retained for compatibility. */
   delivery_scheduled_at?: string;
+  /** @deprecated Legacy fulfillment field retained for compatibility. */
   delivery_notes?: string;
+  /** @deprecated Legacy fulfillment field retained for compatibility. */
   delivered_at?: string;
+  /** @deprecated Legacy fulfillment scheduling field retained for compatibility. */
   pickup_scheduled_at?: string;
+  /** @deprecated Legacy fulfillment field retained for compatibility. */
   pickup_notes?: string;
+  /** @deprecated Legacy fulfillment field retained for compatibility. */
   picked_up_at?: string;
-  return_method?: ReturnMethod;
+  /** @deprecated Legacy return scheduling field retained for compatibility. */
+  return_method?: string;
+  /** @deprecated Legacy return scheduling field retained for compatibility. */
   return_scheduled_at?: string;
+  rental_started_at?: string;
+  rental_ends_at?: string;
+  handover_proof_urls: string[];
+  handover_at?: string;
+  handover_notes?: string;
+  return_proof_urls: string[];
   return_notes?: string;
   returned_at?: string;
   return_condition?: ReturnCondition;
@@ -450,6 +474,7 @@ export type BookingTimelineWithActor = BookingTimeline & {
   actor?: Profile;
 };
 
+/** @deprecated Deprecated delivery address model retained for compatibility. */
 export type DeliveryAddress = {
   address: string;
   city: string;
@@ -466,89 +491,92 @@ export const BOOKING_STATUS_CONFIG: Record<
     color: string;
     icon: string;
     description: string;
-    next_statuses: BookingStatus[];
+    next: BookingStatus[];
   }
 > = {
   pending: {
-    label: "Pending",
+    label: "Pending Review",
     color: "bg-yellow-100 text-yellow-800",
     icon: "Clock",
     description: "Waiting for lister to review",
-    next_statuses: [
-      "awaiting_payment",
-      "cancelled_by_lister",
-      "cancelled_by_renter",
-    ],
+    next: ["awaiting_payment", "cancelled_by_lister", "cancelled_by_renter"],
   },
   awaiting_payment: {
     label: "Awaiting Payment",
     color: "bg-orange-100 text-orange-800",
     icon: "CreditCard",
-    description: "Accepted — waiting for payment",
-    next_statuses: ["confirmed", "cancelled_by_renter", "cancelled_by_lister"],
+    description: "Accepted - waiting for renter to pay",
+    next: ["confirmed", "cancelled_by_renter", "cancelled_by_lister"],
   },
   confirmed: {
     label: "Confirmed",
     color: "bg-blue-100 text-blue-800",
     icon: "CheckCircle",
-    description: "Payment received — preparing item",
-    next_statuses: [
-      "out_for_delivery",
-      "active",
-      "cancelled_by_lister",
-      "disputed",
-    ],
+    description: "Paid - waiting for lister to hand over item",
+    next: ["active", "cancelled_by_lister", "disputed"],
   },
   out_for_delivery: {
-    label: "Out for Delivery",
-    color: "bg-purple-100 text-purple-800",
+    label: "In Transit",
+    color: "bg-blue-100 text-blue-800",
     icon: "Truck",
-    description: "Item is being delivered",
-    next_statuses: ["active"],
+    description: "Deprecated status from previous fulfillment flow",
+    next: ["active"],
   },
   active: {
-    label: "Active",
+    label: "Active Rental",
     color: "bg-green-100 text-green-800",
     icon: "Play",
-    description: "Rental period in progress",
-    next_statuses: ["returned", "disputed"],
+    description: "Item with renter - rental period running",
+    next: ["returned", "disputed"],
   },
   returned: {
     label: "Returned",
     color: "bg-indigo-100 text-indigo-800",
     icon: "RotateCcw",
-    description: "Item returned — awaiting condition check",
-    next_statuses: ["completed", "disputed"],
+    description: "Item returned - awaiting lister inspection",
+    next: ["completed", "disputed"],
   },
   completed: {
     label: "Completed",
-    color: "bg-green-100 text-green-800",
+    color: "bg-emerald-100 text-emerald-800",
     icon: "CheckCircle2",
-    description: "Rental completed successfully",
-    next_statuses: [],
+    description: "Rental completed",
+    next: [],
   },
   cancelled_by_renter: {
     label: "Cancelled",
     color: "bg-red-100 text-red-800",
     icon: "XCircle",
     description: "Cancelled by renter",
-    next_statuses: [],
+    next: [],
   },
   cancelled_by_lister: {
     label: "Declined",
     color: "bg-red-100 text-red-800",
     icon: "XCircle",
     description: "Declined by lister",
-    next_statuses: [],
+    next: [],
   },
   disputed: {
     label: "Disputed",
     color: "bg-red-100 text-red-800",
     icon: "AlertTriangle",
-    description: "Under dispute resolution",
-    next_statuses: ["completed", "cancelled_by_lister"],
+    description: "Under dispute - admin reviewing",
+    next: ["completed", "cancelled_by_lister"],
   },
 };
+
+export interface HandoverProofInput {
+  booking_id: string;
+  proof_photos: File[];
+  notes?: string;
+}
+
+export interface ReturnProofInput {
+  booking_id: string;
+  proof_photos: File[];
+  notes?: string;
+}
 
 export type ConversationWithDetails = Conversation & {
   other_user: Profile;
@@ -655,3 +683,4 @@ export interface ActionResponse {
   success?: string;
   error?: string;
 }
+
