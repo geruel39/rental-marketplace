@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { MapPin, Star, Truck } from "lucide-react";
+import { MapPin, Star } from "lucide-react";
 import { notFound } from "next/navigation";
 
 import { checkFavorites } from "@/actions/favorites";
@@ -19,19 +19,6 @@ import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
 import { createClient } from "@/lib/supabase/server";
 import { formatCurrency } from "@/lib/utils";
-
-const DELIVERY_METHODS_PREFIX = "__delivery_methods__:";
-
-function getDeliveryMethods(pickupInstructions: string | null, deliveryAvailable: boolean) {
-  if (pickupInstructions?.startsWith(DELIVERY_METHODS_PREFIX)) {
-    return pickupInstructions
-      .slice(DELIVERY_METHODS_PREFIX.length)
-      .split(",")
-      .filter((value) => value === "pickup" || value === "delivery");
-  }
-
-  return deliveryAvailable ? ["pickup", "delivery"] : ["pickup"];
-}
 
 interface ListingDetailPageProps {
   params: Promise<{ id: string }>;
@@ -132,10 +119,6 @@ export default async function ListingDetailPage({
     { label: "Weekly", value: data.listing.price_per_week },
     { label: "Monthly", value: data.listing.price_per_month },
   ].filter((row) => typeof row.value === "number");
-  const deliveryMethods = getDeliveryMethods(
-    data.listing.pickup_instructions,
-    data.listing.delivery_available,
-  );
   const displayedReviews = showAllReviews
     ? listingReviews.data
     : listingReviews.data.slice(0, 5);
@@ -217,28 +200,6 @@ export default async function ListingDetailPage({
             </section>
           ) : null}
 
-          {deliveryMethods.length > 0 ? (
-            <section className="space-y-4">
-              <h2 className="text-xl font-semibold">Pickup & Delivery</h2>
-              <div className="rounded-3xl border border-border/70 bg-card p-5 shadow-sm">
-                <p className="flex items-center gap-2 font-medium">
-                  <Truck className="size-4 text-primary" />
-                  {deliveryMethods.includes("delivery")
-                    ? "Delivery available"
-                    : "Pickup available"}
-                </p>
-                <div className="mt-3 flex flex-wrap gap-2 text-sm">
-                  {deliveryMethods.includes("pickup") ? (
-                    <Badge variant="outline">Pickup</Badge>
-                  ) : null}
-                  {deliveryMethods.includes("delivery") ? (
-                    <Badge variant="outline">Delivery</Badge>
-                  ) : null}
-                </div>
-              </div>
-            </section>
-          ) : null}
-
           <section className="space-y-4">
             <h2 className="text-xl font-semibold">Rules & Policies</h2>
             <div className="rounded-3xl border border-border/70 bg-card p-5 shadow-sm">
@@ -250,6 +211,9 @@ export default async function ListingDetailPage({
               <div className="flex flex-wrap gap-3 text-sm">
                 <Badge variant="outline">
                   Cancellation: {data.listing.cancellation_policy}
+                </Badge>
+                <Badge variant="outline">
+                  Item location: {location || "Not specified"}
                 </Badge>
                 <Badge variant="outline">
                   Minimum rental: {data.listing.minimum_rental_period}{" "}

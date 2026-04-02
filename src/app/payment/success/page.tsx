@@ -1,5 +1,4 @@
 import Link from "next/link";
-import { format } from "date-fns";
 import { CheckCircle2, Loader2, TriangleAlert } from "lucide-react";
 
 import { getBookingDetails } from "@/actions/bookings";
@@ -16,14 +15,6 @@ interface PaymentSuccessPageProps {
 
 function getSingleValue(value: string | string[] | undefined) {
   return Array.isArray(value) ? value[0] : value;
-}
-
-function formatDateTime(value?: string | null) {
-  if (!value) {
-    return "To be confirmed";
-  }
-
-  return format(new Date(value), "PPP p");
 }
 
 export default async function PaymentSuccessPage({
@@ -60,31 +51,21 @@ export default async function PaymentSuccessPage({
         <Card className="w-full border-border/70">
           <CardHeader className="text-center">
             <CheckCircle2 className="mx-auto size-12 text-emerald-600" />
-            <CardTitle className="text-2xl">Payment Successful!</CardTitle>
+            <CardTitle className="text-2xl">Payment Confirmed!</CardTitle>
           </CardHeader>
           <CardContent className="space-y-6">
             <BookingSummaryCard booking={booking} />
 
             <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-950">
-              {booking.fulfillment_type === "pickup" ? (
-                <p>
-                  Your pickup is scheduled for {formatDateTime(booking.pickup_scheduled_at)}.
-                  Location: {booking.listing.location}.
-                </p>
-              ) : (
-                <p>
-                  Your item will be delivered to{" "}
-                  {[booking.delivery_address, booking.delivery_city, booking.delivery_state, booking.delivery_postal_code]
-                    .filter(Boolean)
-                    .join(", ")}{" "}
-                  on {formatDateTime(booking.delivery_scheduled_at)}.
-                </p>
-              )}
+              <p>Your booking is confirmed. Contact the lister to arrange item handover.</p>
+              <p className="mt-2">
+                The rental period will begin once the lister confirms handover.
+              </p>
             </div>
 
             <div className="flex flex-wrap justify-center gap-3">
               <Button asChild>
-                <Link href={`/dashboard/bookings/${booking.id}`}>View Booking Details</Link>
+                <Link href={`/dashboard/bookings/${booking.id}`}>View Booking</Link>
               </Button>
               <Button asChild variant="outline">
                 <Link href="/dashboard/my-rentals">View My Rentals</Link>

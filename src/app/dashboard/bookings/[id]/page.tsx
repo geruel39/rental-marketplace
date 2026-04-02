@@ -3,55 +3,89 @@ import { Star } from "lucide-react";
 import Link from "next/link";
 import { redirect } from "next/navigation";
 
-import { getBookingDetails } from "@/actions/bookings";
+import {
+  cancelBooking,
+  getBookingDetails,
+  getBookingTimeline,
+  raiseDispute,
+} from "@/actions/bookings";
 import { BookingStatusBadge } from "@/components/bookings/booking-status-badge";
-import { PaymentButton } from "@/components/bookings/payment-button";
 import { BookingTimeline } from "@/components/bookings/booking-timeline";
+import { ConditionCheckForm } from "@/components/bookings/condition-check-form";
+import { HandoverDialog } from "@/components/bookings/handover-dialog";
+import { PaymentButton } from "@/components/bookings/payment-button";
 import { PaymentCountdown } from "@/components/bookings/payment-countdown";
-import { RequestActions } from "@/components/bookings/request-actions";
-import { RentalActions } from "@/components/bookings/rental-actions";
+import { RentalCountdown } from "@/components/bookings/rental-countdown";
+import { ReturnDialog } from "@/components/bookings/return-dialog";
 import { MessageProfileButton } from "@/components/profile/message-profile-button";
 import { TrustBadges } from "@/components/profile/trust-badges";
-import { ReviewCard } from "@/components/reviews/review-card";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Separator } from "@/components/ui/separator";
 import { createClient } from "@/lib/supabase/server";
-import { formatCurrency } from "@/lib/utils";
-import type { ReviewWithUsers } from "@/types";
+import { cn, formatCurrency, getInitials } from "@/lib/utils";
+import type { BookingTimelineWithActor } from "@/types";
 
 interface BookingDetailPageProps {
   params: Promise<{ id: string }>;
 }
 
-function formatDateRange(start: string, end: string) {
-  return `${format(new Date(start), "PPP")} -> ${format(new Date(end), "PPP")}`;
-}
-
 function formatDateTime(value?: string | null) {
-  if (!value) {
-    return "Not available";
-  }
-
+  if (!value) return "Not available";
   return format(new Date(value), "PPP p");
 }
 
-function paymentTone(status?: string | null) {
-  switch (status) {
-    case "completed":
-      return "bg-emerald-100 text-emerald-700";
-    case "expired":
-    case "failed":
-      return "bg-red-100 text-red-700";
+function formatDuration(units: number, period: string) {
+  return `${units} ${period}${units === 1 ? "" : "s"}`;
+}
+
+function getConditionTone(condition?: string | null) {
+  switch (condition) {
+    case "excellent":
+      return "bg-emerald-100 text-emerald-800";
+    case "good":
+      return "bg-blue-100 text-blue-800";
+    case "fair":
+      return "bg-yellow-100 text-yellow-800";
+    case "damaged":
+    case "missing_parts":
+      return "bg-red-100 text-red-800";
     default:
-      return "bg-slate-100 text-slate-700";
+      return "bg-muted text-muted-foreground";
   }
 }
 
-export default async function BookingDetailPage({
-  params,
-}: BookingDetailPageProps) {
+function PhotoGrid({ photos, alt }: { photos: string[]; alt: string }) {
+  if (!photos.length) {
+    return <p className="text-sm text-muted-foreground">No photos uploaded yet.</p>;
+  }
+
+  return (
+    <div className="grid grid-cols-2 gap-3 md:grid-cols-3">
+      {photos.map((url) => (
+        <a href={url} key={url} rel="noreferrer" target="_blank">
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img alt={alt} className="h-28 w-full rounded-xl border object-cover" src={url} />
+        </a>
+      ))}
+    </div>
+  );
+}
+
+function extractProofUrls(entry: BookingTimelineWithActor) {
+  const metadata = entry.metadata as Record<string, unknown> | undefined;
+  if (!metadata) return [];
+
+  const raw = metadata.photo_urls ?? metadata.proof_photos ?? metadata.proof_urls;
+  if (!Array.isArray(raw)) return [];
+
+  return raw.filter((value): value is string => typeof value === "string" && value.length > 0);
+}
+
+export default async function BookingDetailPage({ params }: BookingDetailPageProps) {
   const { id } = await params;
+
   const supabase = await createClient();
   const {
     data: { user },
@@ -68,13 +102,11 @@ export default async function BookingDetailPage({
     .maybeSingle<{ is_admin: boolean }>();
 
   const booking = await getBookingDetails(id);
-
   if (!booking) {
     redirect("/dashboard");
   }
 
-  const timeline = booking.timeline ?? [];
-
+  const timeline = await getBookingTimeline(booking.id);
   const isAdmin = profile?.is_admin ?? false;
   const isLister = booking.lister_id === user.id;
   const isRenter = booking.renter_id === user.id;
@@ -83,92 +115,81 @@ export default async function BookingDetailPage({
     redirect("/dashboard");
   }
 
-  const { data: reviews } = await supabase
-    .from("reviews")
-    .select(
-      `
-        *,
-        reviewer:profiles!reviews_reviewer_id_fkey(*),
-        reviewee:profiles!reviews_reviewee_id_fkey(*)
-      `,
-    )
-    .eq("booking_id", booking.id);
-
-  const reviewItems = (reviews ?? []) as ReviewWithUsers[];
   const otherParty = isLister ? booking.renter : booking.lister;
+  const otherPartyName = otherParty.display_name || otherParty.full_name;
+  const rentalUnits = booking.rental_units || booking.num_units || 1;
+  const canCancel =
+    booking.status === "pending" ||
+    booking.status === "awaiting_payment" ||
+    booking.status === "confirmed";
+  const canDispute = booking.status === "active" || booking.status === "returned";
+
+  const { data: payout } = isLister
+    ? await supabase
+        .from("payouts")
+        .select("status, amount, processed_at")
+        .eq("booking_id", booking.id)
+        .maybeSingle<{ status: string; amount: number; processed_at: string | null }>()
+    : { data: null };
+
+  const isLateReturn =
+    Boolean(booking.returned_at) &&
+    Boolean(booking.rental_ends_at) &&
+    new Date(booking.returned_at as string).getTime() > new Date(booking.rental_ends_at as string).getTime();
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-col gap-3 rounded-3xl border border-border/70 bg-background p-5 shadow-sm sm:flex-row sm:items-center sm:justify-between">
-        <div className="space-y-2">
-          <div className="flex flex-wrap items-center gap-2">
-            <h1 className="text-2xl font-semibold tracking-tight">
-              Booking #{booking.id.slice(0, 8)}
-            </h1>
-            <BookingStatusBadge status={booking.status} />
-            <Badge variant="outline">
-              {booking.fulfillment_type === "delivery" ? "🚚 Delivery" : "📦 Pickup"}
-            </Badge>
-          </div>
-          <p className="text-sm text-muted-foreground">
-            Created {formatDateTime(booking.created_at)}
-          </p>
+      <section className="rounded-2xl border border-border/70 bg-background p-5 shadow-sm">
+        <div className="flex flex-wrap items-center gap-3">
+          <h1 className="text-2xl font-semibold tracking-tight">Booking #{booking.id.slice(0, 8)}</h1>
+          <BookingStatusBadge size="md" status={booking.status} />
         </div>
-      </div>
+        <p className="mt-2 text-sm text-muted-foreground">
+          Created {formatDateTime(booking.created_at)} · {formatDuration(rentalUnits, booking.pricing_period)}
+        </p>
+      </section>
 
       <div className="grid gap-6 xl:grid-cols-3">
         <div className="space-y-6 xl:col-span-2">
-          <section className="rounded-3xl border border-border/70 bg-background p-5 shadow-sm">
-            <h2 className="text-lg font-semibold">Listing Info</h2>
-            <div className="mt-4 flex gap-4">
-              <div className="size-24 overflow-hidden rounded-2xl bg-muted">
+          <section className="rounded-2xl border border-border/70 bg-background p-5 shadow-sm">
+            <h2 className="text-lg font-semibold">Listing</h2>
+            <div className="mt-4 flex items-start gap-4">
+              <div className="size-24 overflow-hidden rounded-xl bg-muted">
                 {booking.listing.images[0] ? (
                   // eslint-disable-next-line @next/next/no-img-element
-                  <img
-                    alt={booking.listing.title}
-                    className="h-full w-full object-cover"
-                    src={booking.listing.images[0]}
-                  />
+                  <img alt={booking.listing.title} className="h-full w-full object-cover" src={booking.listing.images[0]} />
                 ) : null}
               </div>
-              <div className="space-y-2">
-                <Link
-                  className="text-lg font-medium transition-colors hover:text-primary hover:underline"
-                  href={`/listings/${booking.listing.id}`}
-                >
+              <div className="space-y-1">
+                <Link className="text-lg font-medium hover:text-brand-navy hover:underline" href={`/listings/${booking.listing.id}`}>
                   {booking.listing.title}
                 </Link>
                 <p className="text-sm text-muted-foreground">
-                  {formatCurrency(
-                    booking.listing[
-                      `price_per_${booking.listing.primary_pricing_period}` as keyof typeof booking.listing
-                    ] as number ?? 0,
-                  )}{" "}
-                  / {booking.listing.primary_pricing_period}
+                  {formatCurrency(booking.unit_price)} / {booking.pricing_period}
                 </p>
               </div>
             </div>
           </section>
 
-          <section className="rounded-3xl border border-border/70 bg-background p-5 shadow-sm">
-            <h2 className="text-lg font-semibold">Booking Details</h2>
-            <div className="mt-4 grid gap-4 md:grid-cols-2">
+          <section className="rounded-2xl border border-border/70 bg-background p-5 shadow-sm">
+            <h2 className="text-lg font-semibold">Rental Details</h2>
+            <div className="mt-4 grid gap-3 md:grid-cols-2">
               <div>
-                <p className="font-medium">Rental Period</p>
-                <p className="text-sm text-muted-foreground">
-                  {formatDateRange(booking.start_date, booking.end_date)}
-                </p>
+                <p className="font-medium">Rental duration</p>
+                <p className="text-sm text-muted-foreground">{formatDuration(rentalUnits, booking.pricing_period)}</p>
               </div>
               <div>
                 <p className="font-medium">Quantity</p>
-                <p className="text-sm text-muted-foreground">{booking.quantity}</p>
+                <p className="text-sm text-muted-foreground">
+                  {booking.quantity} item{booking.quantity === 1 ? "" : "s"}
+                </p>
               </div>
             </div>
 
-            <div className="mt-5 space-y-2 rounded-2xl border border-border/70 bg-muted/20 p-4 text-sm">
+            <div className="mt-4 space-y-2 rounded-xl border border-border/70 bg-muted/20 p-4 text-sm">
               <div className="flex items-center justify-between">
                 <span>
-                  {formatCurrency(booking.unit_price)} x {booking.num_units} x {booking.quantity}
+                  {formatCurrency(booking.unit_price)} × {rentalUnits} {booking.pricing_period}(s) × {booking.quantity}
                 </span>
                 <span>{formatCurrency(booking.subtotal)}</span>
               </div>
@@ -176,246 +197,232 @@ export default async function BookingDetailPage({
                 <span>Service fee</span>
                 <span>{formatCurrency(booking.service_fee_renter)}</span>
               </div>
-              <div className="flex items-center justify-between">
-                <span>Deposit</span>
-                <span>{formatCurrency(booking.deposit_amount)}</span>
-              </div>
-              <div className="flex items-center justify-between">
-                <span>Delivery fee</span>
-                <span>{formatCurrency(booking.delivery_fee)}</span>
-              </div>
-              <div className="flex items-center justify-between border-t border-border pt-2 font-semibold">
+              {booking.deposit_amount > 0 ? (
+                <div className="flex items-center justify-between">
+                  <span>Security deposit</span>
+                  <span>{formatCurrency(booking.deposit_amount)}</span>
+                </div>
+              ) : null}
+              <div className="flex items-center justify-between border-t border-border pt-2 font-semibold text-brand-navy">
                 <span>Total</span>
                 <span>{formatCurrency(booking.total_price)}</span>
               </div>
-              {isLister ? (
-                <div className="flex items-center justify-between border-t border-border pt-2">
-                  <span>Lister payout</span>
-                  <span>{formatCurrency(booking.lister_payout)}</span>
+            </div>
+          </section>
+
+          {booking.rental_started_at ? (
+            <section className="rounded-2xl border border-border/70 bg-background p-5 shadow-sm">
+              <h2 className="text-lg font-semibold">Rental Period</h2>
+              <div className="mt-4 grid gap-3 md:grid-cols-2">
+                <div>
+                  <p className="font-medium">Rental Started</p>
+                  <p className="text-sm text-muted-foreground">{formatDateTime(booking.rental_started_at)}</p>
+                </div>
+                <div>
+                  <p className="font-medium">Return Deadline</p>
+                  <p className="text-sm text-muted-foreground">{formatDateTime(booking.rental_ends_at)}</p>
+                </div>
+              </div>
+              {booking.rental_ends_at ? (
+                <div className="mt-4">
+                  <RentalCountdown rentalEndsAt={booking.rental_ends_at} rentalStartedAt={booking.rental_started_at} />
                 </div>
               ) : null}
+              {booking.returned_at ? (
+                <p className={cn("mt-3 text-sm", isLateReturn ? "text-red-700" : "text-emerald-700")}>
+                  Returned: {formatDateTime(booking.returned_at)} {isLateReturn ? "(Late)" : "(On time)"}
+                </p>
+              ) : null}
+            </section>
+          ) : null}
+
+          <section className="rounded-2xl border border-border/70 bg-background p-5 shadow-sm">
+            <h2 className="text-lg font-semibold">Proof Photos</h2>
+            <div className="mt-4 space-y-6">
+              <div className="space-y-2">
+                <h3 className="font-medium">Handover Proof</h3>
+                {booking.handover_proof_urls.length > 0 ? (
+                  <>
+                    <PhotoGrid alt="Handover proof" photos={booking.handover_proof_urls} />
+                    <p className="text-sm text-muted-foreground">
+                      Handover date: {formatDateTime(booking.handover_at)} {booking.handover_notes ? `· ${booking.handover_notes}` : ""}
+                    </p>
+                  </>
+                ) : (
+                  <p className="text-sm text-muted-foreground">Not yet handed over.</p>
+                )}
+              </div>
+
+              <div className="space-y-2">
+                <h3 className="font-medium">Return Proof</h3>
+                {booking.return_proof_urls.length > 0 ? (
+                  <>
+                    <PhotoGrid alt="Return proof" photos={booking.return_proof_urls} />
+                    <p className={cn("text-sm", isLateReturn ? "text-red-700" : "text-muted-foreground")}>
+                      Return date: {formatDateTime(booking.returned_at)}
+                      {booking.return_notes ? ` · ${booking.return_notes}` : ""}
+                      {isLateReturn ? " · Late return" : ""}
+                    </p>
+                  </>
+                ) : (
+                  <p className="text-sm text-muted-foreground">Not yet returned.</p>
+                )}
+              </div>
             </div>
           </section>
 
-          <section className="rounded-3xl border border-border/70 bg-background p-5 shadow-sm">
-            <h2 className="text-lg font-semibold">Fulfillment Details</h2>
-            <div className="mt-4 grid gap-4 md:grid-cols-2">
-              {booking.fulfillment_type === "delivery" ? (
-                <>
-                  <div className="md:col-span-2">
-                    <p className="font-medium">Delivery Address</p>
-                    <p className="text-sm text-muted-foreground">
-                      {[
-                        booking.delivery_address,
-                        booking.delivery_city,
-                        booking.delivery_state,
-                        booking.delivery_postal_code,
-                      ]
-                        .filter(Boolean)
-                        .join(", ")}
-                    </p>
-                  </div>
-                  <div>
-                    <p className="font-medium">Scheduled Delivery</p>
-                    <p className="text-sm text-muted-foreground">
-                      {formatDateTime(booking.delivery_scheduled_at)}
-                    </p>
-                  </div>
-                  <div>
-                    <p className="font-medium">Delivered At</p>
-                    <p className="text-sm text-muted-foreground">
-                      {formatDateTime(booking.delivered_at)}
-                    </p>
-                  </div>
-                  <div className="md:col-span-2">
-                    <p className="font-medium">Delivery Notes</p>
-                    <p className="text-sm whitespace-pre-line text-muted-foreground">
-                      {booking.delivery_notes || "None"}
-                    </p>
-                  </div>
-                </>
-              ) : (
-                <>
-                  <div>
-                    <p className="font-medium">Pickup Location</p>
-                    <p className="text-sm text-muted-foreground">{booking.listing.location}</p>
-                  </div>
-                  <div>
-                    <p className="font-medium">Scheduled Pickup</p>
-                    <p className="text-sm text-muted-foreground">
-                      {formatDateTime(booking.pickup_scheduled_at)}
-                    </p>
-                  </div>
-                  <div>
-                    <p className="font-medium">Picked Up At</p>
-                    <p className="text-sm text-muted-foreground">
-                      {formatDateTime(booking.picked_up_at)}
-                    </p>
-                  </div>
-                  <div>
-                    <p className="font-medium">Pickup Notes</p>
-                    <p className="text-sm whitespace-pre-line text-muted-foreground">
-                      {booking.pickup_notes || "None"}
-                    </p>
-                  </div>
-                </>
-              )}
-            </div>
-          </section>
-
-          {booking.return_method ||
-          booking.return_scheduled_at ||
-          booking.returned_at ||
-          booking.return_condition ? (
-            <section className="rounded-3xl border border-border/70 bg-background p-5 shadow-sm">
-              <h2 className="text-lg font-semibold">Return Details</h2>
-              <div className="mt-4 grid gap-4 md:grid-cols-2">
-                <div>
-                  <p className="font-medium">Return Method</p>
-                  <p className="text-sm text-muted-foreground">
-                    {booking.return_method?.replaceAll("_", " ") || "Not set"}
-                  </p>
-                </div>
-                <div>
-                  <p className="font-medium">Return Scheduled</p>
-                  <p className="text-sm text-muted-foreground">
-                    {formatDateTime(booking.return_scheduled_at)}
-                  </p>
-                </div>
-                <div>
-                  <p className="font-medium">Returned At</p>
-                  <p className="text-sm text-muted-foreground">
-                    {formatDateTime(booking.returned_at)}
-                  </p>
-                </div>
-                <div>
-                  <p className="font-medium">Return Condition</p>
-                  <p className="text-sm text-muted-foreground">
-                    {booking.return_condition?.replaceAll("_", " ") || "Not inspected"}
-                  </p>
-                </div>
-                <div className="md:col-span-2">
-                  <p className="font-medium">Return Notes</p>
-                  <p className="text-sm whitespace-pre-line text-muted-foreground">
-                    {booking.return_notes || booking.return_condition_notes || "None"}
-                  </p>
-                </div>
+          {booking.return_condition ? (
+            <section className="rounded-2xl border border-border/70 bg-background p-5 shadow-sm">
+              <h2 className="text-lg font-semibold">Return Condition</h2>
+              <div className="mt-4 space-y-3">
+                <span
+                  className={cn(
+                    "inline-flex rounded-full px-2.5 py-1 text-xs font-medium capitalize",
+                    getConditionTone(booking.return_condition),
+                  )}
+                >
+                  {booking.return_condition.replaceAll("_", " ")}
+                </span>
+                {booking.return_condition_notes ? (
+                  <p className="text-sm text-muted-foreground">{booking.return_condition_notes}</p>
+                ) : null}
               </div>
             </section>
           ) : null}
 
-          <section className="rounded-3xl border border-border/70 bg-background p-5 shadow-sm">
-            <h2 className="text-lg font-semibold">Payment Info</h2>
-            <div className="mt-4 space-y-3 text-sm">
-              <div className="flex flex-wrap items-center gap-2">
-                <Badge className={paymentTone(booking.hitpay_payment_status)} variant="secondary">
-                  {booking.hitpay_payment_status || "pending"}
-                </Badge>
-                {booking.paid_at ? (
-                  <span className="text-muted-foreground">
-                    Paid at {formatDateTime(booking.paid_at)}
-                  </span>
-                ) : null}
-              </div>
-              {booking.hitpay_payment_id ? (
-                <p className="text-muted-foreground">
-                  HitPay reference: {booking.hitpay_payment_id}
-                </p>
-              ) : null}
-              {booking.status === "awaiting_payment" && isRenter ? (
-                <div className="flex flex-wrap items-center gap-3">
-                  {booking.payment_expires_at ? (
-                    <PaymentCountdown expiresAt={booking.payment_expires_at} />
-                  ) : null}
-                  <PaymentButton
-                    bookingId={booking.id}
-                    paymentUrl={booking.hitpay_payment_url}
-                  />
-                </div>
-              ) : null}
-            </div>
-          </section>
+          <Separator />
 
-          <section className="rounded-3xl border border-border/70 bg-background p-5 shadow-sm">
-            <h2 className="text-lg font-semibold">Booking Timeline</h2>
-            <div className="mt-5">
-              <BookingTimeline currentUserId={user.id} timeline={timeline} />
-            </div>
+          <section className="space-y-4 rounded-2xl border border-border/70 bg-background p-5 shadow-sm">
+            <h2 className="text-lg font-semibold">Timeline</h2>
+            <BookingTimeline currentUserId={user.id} timeline={timeline} />
+            {timeline.some((entry) => extractProofUrls(entry).length > 0) ? (
+              <div className="space-y-3">
+                {timeline
+                  .filter((entry) => extractProofUrls(entry).length > 0)
+                  .map((entry) => (
+                    <div className="space-y-2 rounded-xl border border-border/70 bg-muted/20 p-3" key={entry.id}>
+                      <p className="text-sm font-medium">{entry.title}</p>
+                      <div className="grid grid-cols-4 gap-2">
+                        {extractProofUrls(entry).slice(0, 4).map((url) => (
+                          <a href={url} key={url} rel="noreferrer" target="_blank">
+                            {/* eslint-disable-next-line @next/next/no-img-element */}
+                            <img alt="Timeline proof" className="h-14 w-full rounded-md border object-cover" src={url} />
+                          </a>
+                        ))}
+                      </div>
+                    </div>
+                  ))}
+              </div>
+            ) : null}
           </section>
         </div>
 
         <div className="space-y-6">
-          <section className="rounded-3xl border border-border/70 bg-background p-5 shadow-sm">
-            <h2 className="text-lg font-semibold">
-              {isLister ? "Renter Info" : isRenter ? "Lister Info" : "Booking Party"}
-            </h2>
-            <div className="mt-4 flex items-start gap-4">
+          <section className="rounded-2xl border border-border/70 bg-background p-5 shadow-sm">
+            <h2 className="text-lg font-semibold">{isLister ? "Renter" : "Lister"}</h2>
+            <div className="mt-4 flex items-start gap-3">
               <Avatar size="lg">
-                <AvatarImage
-                  alt={otherParty.display_name || otherParty.full_name}
-                  src={otherParty.avatar_url ?? undefined}
-                />
-                <AvatarFallback>
-                  {(otherParty.display_name || otherParty.full_name).slice(0, 2).toUpperCase()}
-                </AvatarFallback>
+                <AvatarImage alt={otherPartyName} src={otherParty.avatar_url ?? undefined} />
+                <AvatarFallback>{getInitials(otherPartyName)}</AvatarFallback>
               </Avatar>
-              <div className="space-y-2">
-                <p className="font-medium">
-                  {otherParty.display_name || otherParty.full_name}
-                </p>
-                <p className="flex items-center gap-1 text-sm text-muted-foreground">
+              <div className="space-y-1">
+                <p className="font-medium">{otherPartyName}</p>
+                <p className="inline-flex items-center gap-1 text-sm text-muted-foreground">
                   <Star className="size-4 fill-current text-amber-500" />
-                  {isLister
-                    ? `${otherParty.rating_as_renter.toFixed(1)} renter rating`
-                    : `${otherParty.rating_as_lister.toFixed(1)} lister rating`}
+                  {isLister ? otherParty.rating_as_renter.toFixed(1) : otherParty.rating_as_lister.toFixed(1)}
                 </p>
               </div>
             </div>
             <div className="mt-4">
               <TrustBadges profile={otherParty} />
             </div>
-            <div className="mt-5 flex flex-wrap gap-2">
-              {!isAdmin ? (
-                <MessageProfileButton
-                  currentUserId={user.id}
-                  profileUserId={otherParty.id}
-                />
-              ) : null}
-              <Button asChild variant="outline">
+            <div className="mt-4 flex flex-wrap gap-2">
+              {!isAdmin ? <MessageProfileButton currentUserId={user.id} profileUserId={otherParty.id} /> : null}
+              <Button asChild size="sm" variant="outline">
                 <Link href={`/users/${otherParty.id}`}>View Profile</Link>
               </Button>
             </div>
           </section>
 
-          <section className="rounded-3xl border border-border/70 bg-background p-5 shadow-sm">
+          <section className="rounded-2xl border border-border/70 bg-background p-5 shadow-sm">
             <h2 className="text-lg font-semibold">Actions</h2>
-            <div className="mt-4">
-              {isLister ? (
-                <RequestActions booking={booking} />
-              ) : isRenter ? (
-                <RentalActions booking={booking} />
-              ) : (
-                <p className="text-sm text-muted-foreground">
-                  Admin view only. Actions are limited to the booking participants.
-                </p>
-              )}
+            <div className="mt-4 space-y-3">
+              {isLister && booking.status === "confirmed" ? <HandoverDialog booking={booking} /> : null}
+              {isLister && booking.status === "returned" ? <ConditionCheckForm booking={booking} /> : null}
+              {isRenter && booking.status === "awaiting_payment" ? (
+                <PaymentButton
+                  bookingId={booking.id}
+                  className="w-full bg-brand-navy text-white hover:bg-brand-steel"
+                  paymentUrl={booking.hitpay_payment_url}
+                />
+              ) : null}
+              {isRenter && booking.status === "active" ? <ReturnDialog booking={booking} /> : null}
+              {canCancel ? (
+                <form
+                  action={
+                    cancelBooking.bind(
+                      null,
+                      booking.id,
+                      "Cancelled from booking details page.",
+                    ) as unknown as (formData: FormData) => Promise<void>
+                  }
+                >
+                  <Button className="w-full" variant="outline">
+                    Cancel Booking
+                  </Button>
+                </form>
+              ) : null}
+              {canDispute ? (
+                <form
+                  action={
+                    raiseDispute.bind(
+                      null,
+                      booking.id,
+                      "Dispute raised from booking details page.",
+                    ) as unknown as (formData: FormData) => Promise<void>
+                  }
+                >
+                  <Button className="w-full" variant="outline">
+                    Raise Dispute
+                  </Button>
+                </form>
+              ) : null}
+              {booking.status === "completed" && ((isLister && !booking.lister_reviewed) || (isRenter && !booking.renter_reviewed)) ? (
+                <Button asChild className="w-full" variant="outline">
+                  <Link href="/dashboard/reviews">Leave Review</Link>
+                </Button>
+              ) : null}
             </div>
           </section>
 
-          {booking.status === "completed" ? (
-            <section className="rounded-3xl border border-border/70 bg-background p-5 shadow-sm">
-              <h2 className="text-lg font-semibold">Reviews</h2>
-              <div className="mt-4 space-y-4">
-                {reviewItems.length > 0 ? (
-                  reviewItems.map((review) => <ReviewCard key={review.id} review={review} />)
-                ) : (
-                  <p className="text-sm text-muted-foreground">
-                    No reviews have been left yet for this booking.
+          <section className="rounded-2xl border border-border/70 bg-background p-5 shadow-sm">
+            <h2 className="text-lg font-semibold">Payment</h2>
+            <div className="mt-4 space-y-2 text-sm">
+              <p>
+                Status:{" "}
+                <Badge variant="outline">
+                  {(booking.hitpay_payment_status || "pending").replaceAll("_", " ")}
+                </Badge>
+              </p>
+              {booking.status === "awaiting_payment" && booking.payment_expires_at ? (
+                <PaymentCountdown expiresAt={booking.payment_expires_at} />
+              ) : null}
+              {booking.paid_at ? <p className="text-muted-foreground">Paid at: {formatDateTime(booking.paid_at)}</p> : null}
+              {booking.hitpay_payment_id ? (
+                <p className="text-muted-foreground">HitPay reference: {booking.hitpay_payment_id}</p>
+              ) : null}
+
+              {isLister ? (
+                <div className="rounded-xl border border-border/70 bg-muted/20 p-3">
+                  <p className="font-medium">Payout</p>
+                  <p className="text-muted-foreground">Amount: {formatCurrency(booking.lister_payout)}</p>
+                  <p className="text-muted-foreground">
+                    Status: {payout?.status ? payout.status.replaceAll("_", " ") : booking.payout_at ? "completed" : "pending"}
                   </p>
-                )}
-              </div>
-            </section>
-          ) : null}
+                </div>
+              ) : null}
+            </div>
+          </section>
         </div>
       </div>
     </div>

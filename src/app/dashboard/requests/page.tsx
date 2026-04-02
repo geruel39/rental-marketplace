@@ -3,16 +3,34 @@ import { Receipt, Star } from "lucide-react";
 import Link from "next/link";
 import { redirect } from "next/navigation";
 
-import { getIncomingRequests } from "@/actions/bookings";
+import {
+  acceptBookingRequest,
+  cancelBooking,
+  declineBookingRequest,
+  getIncomingRequests,
+  raiseDispute,
+} from "@/actions/bookings";
 import { BookingStatusBadge } from "@/components/bookings/booking-status-badge";
-import { RequestActions } from "@/components/bookings/request-actions";
+import { ConditionCheckForm } from "@/components/bookings/condition-check-form";
+import { HandoverDialog } from "@/components/bookings/handover-dialog";
+import { PaymentCountdown } from "@/components/bookings/payment-countdown";
+import { RentalCountdown } from "@/components/bookings/rental-countdown";
 import { EmptyState } from "@/components/shared/empty-state";
+import {
+  AlertDialog,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { createClient } from "@/lib/supabase/server";
-import { formatCurrency, getInitials } from "@/lib/utils";
-import type { BookingWithDetails } from "@/types";
+import { cn, formatCurrency, getInitials } from "@/lib/utils";
+import type { BookingStatus, BookingWithDetails } from "@/types";
 
 type SearchParams = Record<string, string | string[] | undefined>;
 type FilterKey =
@@ -20,7 +38,6 @@ type FilterKey =
   | "pending"
   | "awaiting_payment"
   | "confirmed"
-  | "out_for_delivery"
   | "active"
   | "returned"
   | "completed"
@@ -32,7 +49,6 @@ const requestTabs: Array<{ key: FilterKey; label: string }> = [
   { key: "pending", label: "Pending" },
   { key: "awaiting_payment", label: "Awaiting Payment" },
   { key: "confirmed", label: "Confirmed" },
-  { key: "out_for_delivery", label: "In Transit" },
   { key: "active", label: "Active" },
   { key: "returned", label: "Returned" },
   { key: "completed", label: "Completed" },
@@ -45,47 +61,227 @@ function getSingleValue(value: string | string[] | undefined) {
 }
 
 function getFilter(value?: string): FilterKey {
-  return requestTabs.some((tab) => tab.key === value)
-    ? (value as FilterKey)
-    : "all";
+  return requestTabs.some((tab) => tab.key === value) ? (value as FilterKey) : "all";
 }
 
 function matchesFilter(booking: BookingWithDetails, filter: FilterKey) {
-  if (filter === "all") {
-    return true;
-  }
-
+  if (filter === "all") return true;
   if (filter === "cancelled") {
-    return (
-      booking.status === "cancelled_by_lister" ||
-      booking.status === "cancelled_by_renter"
-    );
+    return booking.status === "cancelled_by_lister" || booking.status === "cancelled_by_renter";
   }
-
   return booking.status === filter;
 }
 
-function formatDateRange(start: string, end: string) {
-  const startDate = new Date(start);
-  const endDate = new Date(end);
-
-  if (startDate.getFullYear() === endDate.getFullYear()) {
-    return `${format(startDate, "MMM d")} - ${format(endDate, "MMM d, yyyy")}`;
+function getEmptyDescription(filter: FilterKey) {
+  switch (filter) {
+    case "pending":
+      return "No pending requests. New booking requests will appear here.";
+    case "awaiting_payment":
+      return "No requests are waiting for renter payment.";
+    case "confirmed":
+      return "No confirmed bookings waiting for handover.";
+    case "active":
+      return "No active rentals right now.";
+    case "returned":
+      return "No returned rentals waiting for inspection.";
+    case "completed":
+      return "No completed bookings in this view.";
+    case "cancelled":
+      return "No cancelled bookings in this view.";
+    case "disputed":
+      return "No disputed bookings right now.";
+    default:
+      return "No incoming bookings yet.";
   }
-
-  return `${format(startDate, "MMM d, yyyy")} - ${format(endDate, "MMM d, yyyy")}`;
 }
 
-function formatDateTime(value?: string | null) {
-  if (!value) {
-    return "Not scheduled";
-  }
-
-  return format(new Date(value), "PPP p");
+function formatDuration(booking: BookingWithDetails) {
+  const units = booking.rental_units || booking.num_units || 1;
+  const period = booking.pricing_period;
+  return `${units} ${period}${units === 1 ? "" : "s"}`;
 }
 
-function getFulfillmentBadge(booking: BookingWithDetails) {
-  return booking.fulfillment_type === "delivery" ? "🚚 Delivery" : "📦 Pickup";
+function getConditionTone(condition?: string | null) {
+  switch (condition) {
+    case "excellent":
+      return "bg-emerald-100 text-emerald-800";
+    case "good":
+      return "bg-blue-100 text-blue-800";
+    case "fair":
+      return "bg-yellow-100 text-yellow-800";
+    case "damaged":
+    case "missing_parts":
+      return "bg-red-100 text-red-800";
+    default:
+      return "bg-muted text-muted-foreground";
+  }
+}
+
+function statusTitle(status: BookingStatus) {
+  return status.replaceAll("_", " ");
+}
+
+function RequestActions({ booking }: { booking: BookingWithDetails }) {
+  if (booking.status === "pending") {
+    return (
+      <div className="flex flex-wrap items-center justify-end gap-2">
+        <form
+          action={
+            acceptBookingRequest.bind(null, booking.id) as unknown as (formData: FormData) => Promise<void>
+          }
+        >
+          <Button className="bg-brand-navy text-white hover:bg-brand-steel" size="sm" type="submit">
+            Accept
+          </Button>
+        </form>
+
+        <AlertDialog>
+          <AlertDialogTrigger asChild>
+            <Button size="sm" variant="outline">
+              Decline
+            </Button>
+          </AlertDialogTrigger>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>Decline this booking request?</AlertDialogTitle>
+              <AlertDialogDescription>
+                This will cancel the request and notify the renter.
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel>Back</AlertDialogCancel>
+              <form
+                action={
+                  declineBookingRequest.bind(
+                    null,
+                    booking.id,
+                    "Declined by lister",
+                  ) as unknown as (formData: FormData) => Promise<void>
+                }
+              >
+                <Button type="submit" variant="destructive">
+                  Confirm Decline
+                </Button>
+              </form>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
+      </div>
+    );
+  }
+
+  if (booking.status === "awaiting_payment") {
+    const isExpired =
+      booking.payment_expires_at && new Date(booking.payment_expires_at).getTime() <= Date.now();
+
+    return (
+      <div className="space-y-2 text-right">
+        <p className="text-sm text-muted-foreground">Waiting for payment</p>
+        {booking.payment_expires_at ? (
+          <div className="inline-flex">
+            <PaymentCountdown expiresAt={booking.payment_expires_at} />
+          </div>
+        ) : null}
+        {isExpired ? (
+          <form
+            action={
+              cancelBooking.bind(
+                null,
+                booking.id,
+                "Payment window expired.",
+              ) as unknown as (formData: FormData) => Promise<void>
+            }
+          >
+            <Button size="sm" variant="outline">
+              Cancel
+            </Button>
+          </form>
+        ) : null}
+      </div>
+    );
+  }
+
+  if (booking.status === "confirmed") {
+    return (
+      <div className="flex justify-end">
+        <HandoverDialog booking={booking} />
+      </div>
+    );
+  }
+
+  if (booking.status === "active") {
+    return (
+      <div className="space-y-2 text-right">
+        <p className="text-sm text-muted-foreground">
+          {booking.returned_at ? "Return was submitted" : "Waiting for renter to return"}
+        </p>
+        <form
+          action={
+            raiseDispute.bind(
+              null,
+              booking.id,
+              "Issue reported by lister.",
+            ) as unknown as (formData: FormData) => Promise<void>
+          }
+        >
+          <Button size="sm" variant="outline">
+            Raise Dispute
+          </Button>
+        </form>
+      </div>
+    );
+  }
+
+  if (booking.status === "returned") {
+    return (
+      <div className="space-y-3">
+        <div className="flex justify-end">
+          <ConditionCheckForm booking={booking} />
+        </div>
+        {booking.return_proof_urls.length > 0 ? (
+          <div className="grid grid-cols-4 gap-2">
+            {booking.return_proof_urls.slice(0, 4).map((url) => (
+              <a href={url} key={url} rel="noreferrer" target="_blank">
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img alt="Return proof" className="h-12 w-full rounded-md border object-cover" src={url} />
+              </a>
+            ))}
+          </div>
+        ) : null}
+      </div>
+    );
+  }
+
+  if (booking.status === "completed") {
+    return (
+      <div className="space-y-2 text-right">
+        {booking.return_condition ? (
+          <span
+            className={cn(
+              "inline-flex rounded-full px-2 py-1 text-xs font-medium capitalize",
+              getConditionTone(booking.return_condition),
+            )}
+          >
+            {booking.return_condition.replaceAll("_", " ")}
+          </span>
+        ) : null}
+        {!booking.lister_reviewed ? (
+          <Button asChild size="sm" variant="outline">
+            <Link href="/dashboard/reviews">Leave Review</Link>
+          </Button>
+        ) : null}
+        <p className="text-xs text-muted-foreground">
+          Payout: {booking.payout_at ? `Processed ${format(new Date(booking.payout_at), "PPP")}` : "Pending"}
+        </p>
+      </div>
+    );
+  }
+
+  return (
+    <p className="text-right text-sm text-muted-foreground capitalize">
+      {statusTitle(booking.status)}
+    </p>
+  );
 }
 
 interface RequestsPageProps {
@@ -105,16 +301,14 @@ export default async function RequestsPage({ searchParams }: RequestsPageProps) 
   const resolvedSearchParams = await searchParams;
   const activeFilter = getFilter(getSingleValue(resolvedSearchParams.status));
   const bookings = await getIncomingRequests(user.id);
-  const filteredBookings = bookings.filter((booking) =>
-    matchesFilter(booking, activeFilter),
-  );
+  const filteredBookings = bookings.filter((booking) => matchesFilter(booking, activeFilter));
 
   return (
     <div className="space-y-6">
       <div className="space-y-2">
         <h1 className="text-2xl font-semibold tracking-tight">Incoming Requests</h1>
         <p className="text-sm text-muted-foreground">
-          Review new requests, manage fulfillment, and complete rentals as they move through the booking flow.
+          Review requests, confirm handover with photo proof, and complete inspections after return.
         </p>
       </div>
 
@@ -123,6 +317,7 @@ export default async function RequestsPage({ searchParams }: RequestsPageProps) 
           <Button
             key={tab.key}
             asChild
+            className={activeFilter === tab.key ? "bg-brand-navy text-white hover:bg-brand-steel" : ""}
             size="sm"
             variant={activeFilter === tab.key ? "default" : "ghost"}
           >
@@ -135,134 +330,80 @@ export default async function RequestsPage({ searchParams }: RequestsPageProps) 
         <EmptyState
           actionHref="/dashboard/my-listings"
           actionLabel="View My Listings"
-          description={`No bookings found in ${requestTabs.find((tab) => tab.key === activeFilter)?.label ?? "this"} right now.`}
+          description={getEmptyDescription(activeFilter)}
           icon={Receipt}
           title="No incoming bookings"
         />
       ) : (
         <div className="space-y-4">
-          {filteredBookings.map((booking) => (
-            <article
-              key={booking.id}
-              className="rounded-3xl border border-border/70 bg-background p-5 shadow-sm"
-            >
-              <div className="flex flex-col gap-5 xl:flex-row xl:items-start xl:justify-between">
-                <div className="flex min-w-0 flex-1 gap-4">
-                  <Link
-                    className="block size-24 shrink-0 overflow-hidden rounded-2xl bg-muted transition-opacity hover:opacity-90"
-                    href={`/listings/${booking.listing.id}`}
-                  >
-                    {booking.listing.images[0] ? (
-                      // eslint-disable-next-line @next/next/no-img-element
-                      <img
-                        alt={booking.listing.title}
-                        className="h-full w-full object-cover"
-                        src={booking.listing.images[0]}
-                      />
-                    ) : null}
-                  </Link>
+          {filteredBookings.map((booking) => {
+            const renterName = booking.renter.display_name || booking.renter.full_name;
 
-                  <div className="min-w-0 flex-1 space-y-4">
-                    <div className="space-y-2">
-                      <div className="flex flex-wrap items-center gap-2">
-                        <h2 className="text-lg font-semibold">
-                          <Link
-                            className="transition-colors hover:text-primary hover:underline"
-                            href={`/dashboard/bookings/${booking.id}`}
-                          >
-                            {booking.listing.title}
-                          </Link>
-                        </h2>
-                        <BookingStatusBadge status={booking.status} />
-                        <Badge variant="outline">{getFulfillmentBadge(booking)}</Badge>
+            return (
+              <article
+                key={booking.id}
+                className="rounded-2xl border border-border/70 bg-background p-4 shadow-sm"
+              >
+                <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+                  <div className="flex min-w-0 flex-1 items-start gap-3">
+                    <Link
+                      className="block size-[60px] shrink-0 overflow-hidden rounded-xl bg-muted"
+                      href={`/listings/${booking.listing.id}`}
+                    >
+                      {booking.listing.images[0] ? (
+                        // eslint-disable-next-line @next/next/no-img-element
+                        <img alt={booking.listing.title} className="h-full w-full object-cover" src={booking.listing.images[0]} />
+                      ) : null}
+                    </Link>
+
+                    <div className="min-w-0 flex-1 space-y-2">
+                      <p className="line-clamp-1 font-semibold">{booking.listing.title}</p>
+                      <p className="text-xs text-muted-foreground">Booking #{booking.id.slice(0, 8)}</p>
+
+                      <div className="flex flex-wrap items-center gap-2 text-sm">
+                        <Avatar size="sm">
+                          <AvatarImage alt={renterName} src={booking.renter.avatar_url ?? undefined} />
+                          <AvatarFallback>{getInitials(renterName)}</AvatarFallback>
+                        </Avatar>
+                        <span className="font-medium">{renterName}</span>
+                        <span className="inline-flex items-center gap-1 text-muted-foreground">
+                          <Star className="size-3.5 fill-current text-amber-500" />
+                          {booking.renter.rating_as_renter.toFixed(1)}
+                        </span>
                       </div>
+
                       <p className="text-sm text-muted-foreground">
-                        Booking ID: {booking.id.slice(0, 8)}
+                        {formatDuration(booking)} x {booking.quantity} item{booking.quantity === 1 ? "" : "s"}
                       </p>
+                      <p className="font-semibold text-brand-navy">{formatCurrency(booking.total_price)}</p>
+                      <BookingStatusBadge size="sm" status={booking.status} />
+
+                      {booking.status === "active" &&
+                      booking.rental_ends_at &&
+                      booking.rental_started_at ? (
+                        <RentalCountdown
+                          rentalEndsAt={booking.rental_ends_at}
+                          rentalStartedAt={booking.rental_started_at}
+                          variant="compact"
+                        />
+                      ) : null}
+
                       <Link
-                        className="inline-flex text-sm font-medium text-primary hover:underline"
+                        className="inline-flex text-sm font-medium text-brand-navy hover:underline"
                         href={`/dashboard/bookings/${booking.id}`}
                       >
-                        View Details -&gt;
+                        View Details →
                       </Link>
                     </div>
+                  </div>
 
-                    <div className="flex flex-wrap items-center gap-3">
-                      <Avatar size="lg">
-                        <AvatarImage
-                          alt={booking.renter.display_name || booking.renter.full_name}
-                          src={booking.renter.avatar_url ?? undefined}
-                        />
-                        <AvatarFallback>
-                          {getInitials(booking.renter.display_name || booking.renter.full_name)}
-                        </AvatarFallback>
-                      </Avatar>
-                      <div className="space-y-1">
-                        <p className="font-medium">
-                          {booking.renter.display_name || booking.renter.full_name}
-                        </p>
-                        <p className="flex items-center gap-1 text-sm text-muted-foreground">
-                          <Star className="size-4 fill-current text-amber-500" />
-                          {booking.renter.rating_as_renter.toFixed(1)} renter rating
-                        </p>
-                      </div>
-                    </div>
-
-                    <div className="grid gap-3 text-sm text-muted-foreground sm:grid-cols-2 lg:grid-cols-4">
-                      <div>
-                        <p className="font-medium text-foreground">Dates</p>
-                        <p>{formatDateRange(booking.start_date, booking.end_date)}</p>
-                      </div>
-                      <div>
-                        <p className="font-medium text-foreground">Quantity</p>
-                        <p>× {booking.quantity} items</p>
-                      </div>
-                      <div>
-                        <p className="font-medium text-foreground">Fulfillment</p>
-                        <p>
-                          {booking.fulfillment_type === "delivery"
-                            ? booking.delivery_city || "Delivery"
-                            : formatDateTime(booking.pickup_scheduled_at)}
-                        </p>
-                      </div>
-                      <div>
-                        <p className="font-medium text-foreground">Total</p>
-                        <p>{formatCurrency(booking.total_price)}</p>
-                      </div>
-                    </div>
-
-                    <details className="rounded-2xl border border-border/70 bg-muted/20 p-4 text-sm">
-                      <summary className="cursor-pointer font-medium text-foreground">
-                        View price breakdown
-                      </summary>
-                      <div className="mt-3 space-y-2 text-muted-foreground">
-                        <div className="flex items-center justify-between">
-                          <span>Subtotal</span>
-                          <span>{formatCurrency(booking.subtotal)}</span>
-                        </div>
-                        <div className="flex items-center justify-between">
-                          <span>Service fee</span>
-                          <span>{formatCurrency(booking.service_fee_renter)}</span>
-                        </div>
-                        <div className="flex items-center justify-between">
-                          <span>Deposit</span>
-                          <span>{formatCurrency(booking.deposit_amount)}</span>
-                        </div>
-                        <div className="flex items-center justify-between">
-                          <span>Delivery fee</span>
-                          <span>{formatCurrency(booking.delivery_fee)}</span>
-                        </div>
-                      </div>
-                    </details>
+                  <div className="w-full lg:w-[280px]">
+                    <RequestActions booking={booking} />
                   </div>
                 </div>
-
-                <div className="xl:w-80">
-                  <RequestActions booking={booking} />
-                </div>
-              </div>
-            </article>
-          ))}
+              </article>
+            );
+          })}
         </div>
       )}
     </div>

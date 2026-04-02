@@ -14,15 +14,17 @@ import { redirect } from "next/navigation";
 
 import { getIncomingRequests, getMyRentals } from "@/actions/bookings";
 import { getDashboardStats } from "@/actions/profile";
-import { BookingSummaryCard } from "@/components/bookings/booking-summary-card";
+import { BookingStatusBadge } from "@/components/bookings/booking-status-badge";
+import { RentalCountdown } from "@/components/bookings/rental-countdown";
 import { LowStockAlert } from "@/components/inventory/low-stock-alert";
 import { StockSummaryCard } from "@/components/inventory/stock-summary-card";
 import { NotificationList } from "@/components/notifications/notification-list";
 import { EmptyState } from "@/components/shared/empty-state";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { createClient } from "@/lib/supabase/server";
-import { cn, formatCurrency } from "@/lib/utils";
+import { cn, formatCurrency, getInitials } from "@/lib/utils";
 import type { BookingWithDetails, DashboardStats, Profile } from "@/types";
 
 interface StatsSectionProps {
@@ -189,12 +191,57 @@ function BookingList({
   return (
     <div className="space-y-3">
       {bookings.map((booking) => (
-        <BookingSummaryCard
+        <div
+          className="rounded-2xl border border-border/70 bg-background p-3 shadow-sm"
           key={booking.id}
-          booking={booking}
-          compact
-          currentUserId={currentUserId}
-        />
+        >
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <div className="min-w-0 space-y-2">
+              <div className="flex flex-wrap items-center gap-2">
+                <Link className="line-clamp-1 font-medium hover:text-brand-navy hover:underline" href={`/dashboard/bookings/${booking.id}`}>
+                  {booking.listing.title}
+                </Link>
+                <BookingStatusBadge size="sm" status={booking.status} />
+              </div>
+              <p className="text-sm text-muted-foreground">
+                {(booking.rental_units || booking.num_units || 1)} {booking.pricing_period}
+                {(booking.rental_units || booking.num_units || 1) === 1 ? "" : "s"} x {booking.quantity}
+              </p>
+              {booking.status === "active" && booking.rental_ends_at && booking.rental_started_at ? (
+                <RentalCountdown
+                  rentalEndsAt={booking.rental_ends_at}
+                  rentalStartedAt={booking.rental_started_at}
+                  variant="compact"
+                />
+              ) : null}
+            </div>
+            <div className="text-right">
+              <p className="font-semibold text-brand-navy">{formatCurrency(booking.total_price)}</p>
+              <p className="text-xs text-muted-foreground">Booking #{booking.id.slice(0, 8)}</p>
+            </div>
+          </div>
+
+          <div className="mt-3 flex items-center gap-2 text-sm text-muted-foreground">
+            <Avatar size="sm">
+              <AvatarImage
+                alt="Counterparty avatar"
+                src={(booking.renter_id === currentUserId ? booking.lister.avatar_url : booking.renter.avatar_url) ?? undefined}
+              />
+              <AvatarFallback>
+                {getInitials(
+                  booking.renter_id === currentUserId
+                    ? booking.lister.display_name || booking.lister.full_name
+                    : booking.renter.display_name || booking.renter.full_name,
+                )}
+              </AvatarFallback>
+            </Avatar>
+            <span>
+              {booking.renter_id === currentUserId
+                ? booking.lister.display_name || booking.lister.full_name
+                : booking.renter.display_name || booking.renter.full_name}
+            </span>
+          </div>
+        </div>
       ))}
     </div>
   );
@@ -215,21 +262,47 @@ async function ActionRequiredSection({
   ]);
   const actionItems = [
     ...incomingRequests
-      .filter((booking) => booking.status === "pending" || booking.status === "returned")
+      .filter(
+        (booking) =>
+          booking.status === "pending" ||
+          booking.status === "confirmed" ||
+          booking.status === "returned",
+      )
       .slice(0, 3)
       .map((booking) => ({
         booking,
         label:
           booking.status === "pending"
             ? "Review request"
-            : "Inspect returned item",
+            : booking.status === "confirmed"
+              ? "Confirm handover"
+              : "Inspect returned item",
       })),
     ...myRentals
-      .filter((booking) => booking.status === "awaiting_payment")
+      .filter((booking) => {
+        if (booking.status === "awaiting_payment") return true;
+        if (
+          booking.status === "active" &&
+          booking.rental_ends_at &&
+          booking.rental_started_at
+        ) {
+          const total = Math.max(
+            1,
+            new Date(booking.rental_ends_at).getTime() -
+              new Date(booking.rental_started_at).getTime(),
+          );
+          const remaining = new Date(booking.rental_ends_at).getTime() - Date.now();
+          return remaining > 0 && remaining / total < 0.2;
+        }
+        return false;
+      })
       .slice(0, 3)
       .map((booking) => ({
         booking,
-        label: "Complete payment",
+        label:
+          booking.status === "awaiting_payment"
+            ? "Complete payment"
+            : "Return item soon",
       })),
   ].slice(0, 6);
 
@@ -252,11 +325,23 @@ async function ActionRequiredSection({
             className="rounded-2xl border border-border/70 bg-background p-3 shadow-sm"
           >
             <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-              <BookingSummaryCard
-                booking={booking}
-                compact
-                currentUserId={userId}
-              />
+              <div className="space-y-2">
+                <div className="flex flex-wrap items-center gap-2">
+                  <p className="font-medium">{booking.listing.title}</p>
+                  <BookingStatusBadge size="sm" status={booking.status} />
+                </div>
+                <p className="text-sm text-muted-foreground">
+                  {(booking.rental_units || booking.num_units || 1)} {booking.pricing_period}
+                  {(booking.rental_units || booking.num_units || 1) === 1 ? "" : "s"} x {booking.quantity}
+                </p>
+                {booking.status === "active" && booking.rental_ends_at && booking.rental_started_at ? (
+                  <RentalCountdown
+                    rentalEndsAt={booking.rental_ends_at}
+                    rentalStartedAt={booking.rental_started_at}
+                    variant="compact"
+                  />
+                ) : null}
+              </div>
               <Button asChild className="shrink-0">
                 <Link href={`/dashboard/bookings/${booking.id}`}>{label}</Link>
               </Button>
