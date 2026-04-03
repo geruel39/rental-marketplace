@@ -149,13 +149,13 @@ function QuickActionsSection() {
         </p>
       </div>
       <div className="grid gap-3 sm:grid-cols-3">
-        <Button asChild>
+        <Button asChild className="bg-brand-navy text-white hover:bg-brand-steel">
           <Link href="/listings/new">Create Listing</Link>
         </Button>
-        <Button asChild variant="outline">
+        <Button asChild className="border-brand-navy/15 bg-white text-brand-navy hover:bg-brand-light hover:text-brand-navy" variant="outline">
           <Link href="/dashboard/inventory">Manage Inventory</Link>
         </Button>
-        <Button asChild variant="outline">
+        <Button asChild className="border-brand-navy/15 bg-white text-brand-navy hover:bg-brand-light hover:text-brand-navy" variant="outline">
           <Link href="/listings">Browse Listings</Link>
         </Button>
       </div>
