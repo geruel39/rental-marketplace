@@ -21,7 +21,7 @@ import type { ReportWithDetails } from "@/types";
 
 const typeTone: Record<string, string> = {
   fraud: "bg-red-600 text-white hover:bg-red-600",
-  harassment: "bg-orange-600 text-white hover:bg-orange-600",
+  harassment: "bg-brand-sky text-brand-dark hover:bg-brand-sky",
   safety: "bg-amber-500 text-black hover:bg-amber-500",
   spam: "bg-sky-600 text-white hover:bg-sky-600",
 };
@@ -81,7 +81,7 @@ export function AdminReportTable({
 
   return (
     <div className="space-y-4">
-      <div className="flex flex-wrap gap-2 rounded-2xl border border-orange-200/60 bg-white/90 p-2">
+      <div className="flex flex-wrap gap-2 rounded-2xl border border-border/70 bg-white p-2">
         {["open", "investigating", "resolved", "dismissed"].map((status) => (
           <Button
             key={status}
@@ -95,7 +95,7 @@ export function AdminReportTable({
         ))}
       </div>
 
-      <div className="rounded-3xl border border-orange-200/60 bg-white/90 shadow-sm">
+      <div className="rounded-3xl border border-border/70 bg-white shadow-sm">
         <Table>
           <TableHeader>
             <TableRow>
@@ -142,7 +142,7 @@ export function AdminReportTable({
                       </Badge>
                     </TableCell>
                     <TableCell className="whitespace-normal">
-                      <Link className="text-orange-700 hover:underline" href={getReportedHref(report)}>
+                      <Link className="text-brand-sky hover:text-brand-navy hover:underline" href={getReportedHref(report)}>
                         {getReportedLabel(report)}
                       </Link>
                     </TableCell>
@@ -218,3 +218,4 @@ export function AdminReportTable({
     </div>
   );
 }
+

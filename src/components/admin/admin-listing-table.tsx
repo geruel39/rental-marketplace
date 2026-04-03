@@ -125,7 +125,7 @@ export function AdminListingTable({
         </Tabs>
       </div>
 
-      <div className="rounded-3xl border border-orange-200/60 bg-white/90 shadow-sm">
+      <div className="rounded-3xl border border-border/70 bg-white shadow-sm">
         <Table>
           <TableHeader>
             <TableRow>
@@ -175,7 +175,7 @@ export function AdminListingTable({
                     </TableCell>
                     <TableCell className="whitespace-normal">
                       <Link
-                        className="text-sm text-orange-700 hover:underline"
+                        className="text-sm text-brand-sky hover:text-brand-navy hover:underline"
                         href={`/admin/users/${listing.owner.id}`}
                       >
                         {ownerName}
@@ -301,3 +301,4 @@ export function AdminListingTable({
     </div>
   );
 }
+

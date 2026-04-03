@@ -65,23 +65,23 @@ function getActorTone(role: BookingTimelineWithActor["actor_role"]) {
     case "lister":
       return {
         badgeClass: "border-emerald-200 bg-emerald-50 text-emerald-700",
-        dotClass: "bg-emerald-500",
+        dotClass: "bg-brand-navy",
       };
     case "renter":
       return {
         badgeClass: "border-blue-200 bg-blue-50 text-blue-700",
-        dotClass: "bg-blue-500",
+        dotClass: "bg-brand-navy",
       };
     case "admin":
       return {
-        badgeClass: "border-orange-200 bg-orange-50 text-orange-700",
-        dotClass: "bg-orange-500",
+        badgeClass: "border-brand-sky/30 bg-brand-sky/10 text-brand-sky",
+        dotClass: "bg-brand-navy",
       };
     case "system":
     default:
       return {
-        badgeClass: "border-slate-200 bg-slate-100 text-slate-700",
-        dotClass: "bg-slate-400",
+        badgeClass: "border-brand-steel/20 bg-brand-light text-brand-steel",
+        dotClass: "bg-brand-steel/50",
       };
   }
 }
@@ -109,21 +109,20 @@ export function BookingTimeline({
           <div key={entry.id} className="relative flex gap-4 pb-8 last:pb-0">
             <div className="relative flex w-8 shrink-0 justify-center">
               {index < timeline.length - 1 ? (
-                <span className="absolute top-7 bottom-0 left-1/2 w-px -translate-x-1/2 bg-border" />
+                <span className="absolute top-7 bottom-0 left-1/2 w-px -translate-x-1/2 bg-brand-navy/20" />
               ) : null}
               <span
                 className={cn(
                   "relative z-10 mt-1 flex size-4 items-center justify-center rounded-full border-4 border-background",
-                  tone.dotClass,
-                  isLatest && "animate-pulse",
+                  isLatest ? "bg-brand-sky ring-4 ring-brand-sky/20 animate-pulse" : tone.dotClass,
                 )}
               />
             </div>
 
             <div
               className={cn(
-                "min-w-0 flex-1 rounded-2xl border border-border/70 bg-background p-4 shadow-sm",
-                isLatest && "ring-1 ring-primary/20",
+                "min-w-0 flex-1 rounded-2xl border border-border/70 bg-white p-4 shadow-sm",
+                isLatest && "ring-1 ring-brand-sky/30",
               )}
             >
               <div className="flex flex-wrap items-start gap-2">
@@ -139,7 +138,7 @@ export function BookingTimeline({
               </div>
 
               <div className="mt-3 space-y-2">
-                <p className="font-semibold">{entry.title}</p>
+                <p className="text-brand-dark font-medium">{entry.title}</p>
                 {entry.description ? (
                   <p className="whitespace-pre-line text-sm leading-6 text-muted-foreground">
                     {entry.description}

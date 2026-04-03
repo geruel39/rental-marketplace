@@ -92,8 +92,8 @@ export function ProofPhotoUpload({
       <label
         className={cn(
           "flex cursor-pointer flex-col items-center justify-center rounded-2xl border-2 border-dashed px-4 py-8 text-center transition",
-          "border-brand-navy/40 hover:border-brand-navy hover:bg-brand-light",
-          isDragging && "border-brand-sky ring-2 ring-brand-sky/40",
+          "border-brand-navy/30 hover:border-brand-sky hover:bg-brand-sky/5",
+          isDragging && "border-brand-sky bg-brand-sky/5 ring-2 ring-brand-sky/40",
         )}
         htmlFor={inputId}
         onDragEnter={(event) => {
@@ -114,8 +114,8 @@ export function ProofPhotoUpload({
           }
         }}
       >
-        <Camera className="mb-2 size-6 text-brand-navy" />
-        <p className="text-sm font-medium">Click to upload or drag photos here</p>
+        <Camera className="text-brand-steel mb-2 size-6" />
+        <p className="text-brand-navy text-sm font-medium">Click to upload or drag photos here</p>
         <p className="mt-1 text-xs text-muted-foreground">Image files only, up to 10MB each</p>
         <input
           accept="image/*"

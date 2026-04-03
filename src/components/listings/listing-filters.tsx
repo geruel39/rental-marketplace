@@ -107,7 +107,7 @@ export function ListingFilters({
               Narrow listings by type, price, and availability.
             </p>
           </div>
-          <Button onClick={clearAllFilters} type="button" variant="ghost">
+          <Button className="text-brand-sky hover:bg-brand-light hover:text-brand-navy" onClick={clearAllFilters} type="button" variant="ghost">
             Clear All Filters
           </Button>
         </div>
@@ -130,7 +130,7 @@ export function ListingFilters({
                       })
                     }
                   />
-                  <span className="flex-1">{category.name}</span>
+                    <span className="flex-1 text-brand-dark">{category.name}</span>
                   {checked ? <Badge variant="secondary">Selected</Badge> : null}
                 </label>
               );
@@ -168,10 +168,10 @@ export function ListingFilters({
               />
             </div>
           </div>
-          <Button
-            className="w-full"
-            onClick={() =>
-              updateParams({
+            <Button
+              className="w-full border-brand-navy text-brand-navy hover:bg-brand-light"
+              onClick={() =>
+                updateParams({
                 minPrice: normalizeValue(minPrice),
                 maxPrice: normalizeValue(maxPrice),
               })
@@ -195,7 +195,7 @@ export function ListingFilters({
               value={city}
             />
             <Button
-              className="w-full"
+              className="w-full border-brand-navy text-brand-navy hover:bg-brand-light"
               onClick={() => updateParams({ city: normalizeValue(city) })}
               type="button"
               variant="outline"
@@ -227,7 +227,7 @@ export function ListingFilters({
           </Select>
         </div>
 
-        <div className="flex items-center justify-between rounded-xl border border-border/70 px-4 py-3">
+        <div className="flex items-center justify-between rounded-xl border border-border/70 bg-white px-4 py-3">
           <div>
             <Label className="text-sm font-medium">In Stock Only</Label>
             <p className="text-xs text-muted-foreground">
@@ -250,7 +250,7 @@ export function ListingFilters({
       <div className="md:hidden">
         <Sheet>
           <SheetTrigger asChild>
-            <Button className="w-full" type="button" variant="outline">
+            <Button className="w-full border-brand-navy text-brand-navy hover:bg-brand-light" type="button" variant="outline">
               <Filter className="size-4" />
               Filters
             </Button>
@@ -267,7 +267,7 @@ export function ListingFilters({
         </Sheet>
       </div>
 
-      <aside className="hidden w-64 shrink-0 rounded-2xl border border-border/70 bg-card p-5 md:block">
+      <aside className="hidden w-64 shrink-0 rounded-2xl border border-border/70 bg-white p-5 md:block">
         {renderFiltersContent()}
       </aside>
     </>

@@ -60,7 +60,7 @@ export function AdminCategoryTable({ categories }: { categories: CategoryRow[] }
       <div className="flex justify-end">
         <Dialog onOpenChange={setCreateOpen} open={createOpen}>
           <DialogTrigger asChild>
-            <Button className="bg-orange-600 text-white hover:bg-orange-700">
+            <Button className="bg-brand-navy text-white hover:bg-brand-steel">
               <Plus className="size-4" />
               Add Category
             </Button>
@@ -78,7 +78,7 @@ export function AdminCategoryTable({ categories }: { categories: CategoryRow[] }
         </Dialog>
       </div>
 
-      <div className="rounded-3xl border border-orange-200/60 bg-white/90 shadow-sm">
+      <div className="rounded-3xl border border-border/70 bg-white shadow-sm">
         <Table>
           <TableHeader>
             <TableRow>
@@ -169,3 +169,4 @@ export function AdminCategoryTable({ categories }: { categories: CategoryRow[] }
     </div>
   );
 }
+

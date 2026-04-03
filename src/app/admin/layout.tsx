@@ -39,37 +39,37 @@ export default async function AdminLayout({
     profile.display_name || profile.full_name || profile.email || user.email || "Admin";
 
   return (
-    <div className="min-h-[calc(100vh-4rem)] bg-orange-50/40">
+    <div className="min-h-[calc(100vh-4rem)] bg-brand-light">
       <AdminSidebar />
       <div className="lg:pl-72">
-        <div className="border-b border-orange-200/80 bg-gradient-to-r from-orange-100 via-orange-50 to-background">
+        <div className="border-b border-brand-navy/10 bg-brand-navy text-white">
           <div className="flex min-h-16 items-center justify-between gap-4 px-4 py-3 sm:px-6 lg:px-8">
             <div className="flex items-center gap-3">
-              <Badge className="bg-orange-600 text-white hover:bg-orange-600">
+              <Badge className="bg-brand-sky text-brand-dark hover:bg-brand-sky">
                 ADMIN
               </Badge>
               <div>
-                <p className="text-sm font-semibold text-orange-950">Admin Panel</p>
-                <p className="text-xs text-orange-800/80">
+                <p className="text-sm font-semibold text-white">Admin Panel</p>
+                <p className="text-xs text-white/75">
                   Platform controls and moderation tools
                 </p>
               </div>
             </div>
 
             <div className="flex items-center gap-3">
-              <div className="flex items-center gap-3 rounded-full border border-orange-200/80 bg-white/85 px-2 py-1.5 sm:px-3">
+              <div className="flex items-center gap-3 rounded-full border border-white/10 bg-white/10 px-2 py-1.5 sm:px-3">
                 <Avatar size="sm">
                   {profile.avatar_url ? (
                     <AvatarImage alt={displayName} src={profile.avatar_url} />
                   ) : null}
                   <AvatarFallback>{getInitials(displayName)}</AvatarFallback>
                 </Avatar>
-                <span className="hidden text-sm font-medium text-foreground sm:inline">
+                <span className="hidden text-sm font-medium text-white sm:inline">
                   {displayName}
                 </span>
               </div>
 
-              <Button asChild className="bg-orange-600 text-white hover:bg-orange-700">
+              <Button asChild className="bg-white text-brand-navy hover:bg-brand-light">
                 <Link href="/dashboard">Exit Admin</Link>
               </Button>
             </div>

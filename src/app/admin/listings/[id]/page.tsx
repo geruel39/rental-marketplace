@@ -149,7 +149,7 @@ export default async function AdminListingDetailPage({
         description="Inspect the full listing record, apply moderation decisions, and review platform activity attached to this item."
         action={
           <Link
-            className="inline-flex h-9 items-center justify-center rounded-md border border-orange-200 bg-white px-4 text-sm font-medium text-orange-700 shadow-xs transition-colors hover:bg-orange-50"
+            className="inline-flex h-9 items-center justify-center rounded-md border border-border bg-white px-4 text-sm font-medium text-brand-navy shadow-xs transition-colors hover:bg-brand-light"
             href="/admin/listings"
           >
             Back to listings
@@ -157,7 +157,7 @@ export default async function AdminListingDetailPage({
         }
       />
 
-      <Card className="border-orange-200/60 bg-white/90 shadow-sm">
+      <Card className="border-border/70 bg-white shadow-sm">
         <CardHeader>
           <CardTitle>Admin Toolbar</CardTitle>
           <CardDescription>Use moderation controls and review the latest admin actions.</CardDescription>
@@ -201,7 +201,7 @@ export default async function AdminListingDetailPage({
             />
           </div>
 
-          <div className="rounded-2xl border border-orange-100 bg-orange-50/30 p-4 text-sm text-muted-foreground">
+          <div className="rounded-2xl border border-brand-navy/10 bg-brand-light p-4 text-sm text-muted-foreground">
             <p className="font-medium text-foreground">Moderation notes</p>
             <p className="mt-2">{listing.moderation_notes || "No moderation notes recorded."}</p>
           </div>
@@ -214,7 +214,7 @@ export default async function AdminListingDetailPage({
               auditEntries.map((entry) => (
                 <div
                   key={entry.id}
-                  className="rounded-2xl border border-orange-100 bg-orange-50/20 p-4 text-sm"
+                  className="rounded-2xl border border-brand-navy/10 bg-brand-light p-4 text-sm"
                 >
                   <p className="font-medium text-foreground">{entry.action.replaceAll("_", " ")}</p>
                   <p className="mt-1 text-muted-foreground">{formatDate(entry.created_at)}</p>
@@ -226,7 +226,7 @@ export default async function AdminListingDetailPage({
       </Card>
 
       <div className="grid gap-6 xl:grid-cols-[1.25fr_0.75fr]">
-        <Card className="border-orange-200/60 bg-white/90 shadow-sm">
+        <Card className="border-border/70 bg-white shadow-sm">
           <CardHeader>
             <CardTitle>{listing.title}</CardTitle>
             <CardDescription>
@@ -258,7 +258,7 @@ export default async function AdminListingDetailPage({
         </Card>
 
         <div className="space-y-6">
-          <Card className="border-orange-200/60 bg-white/90 shadow-sm">
+          <Card className="border-border/70 bg-white shadow-sm">
             <CardHeader>
               <CardTitle>Owner Info</CardTitle>
             </CardHeader>
@@ -271,7 +271,7 @@ export default async function AdminListingDetailPage({
             </CardContent>
           </Card>
 
-          <Card className="border-orange-200/60 bg-white/90 shadow-sm">
+          <Card className="border-border/70 bg-white shadow-sm">
             <CardHeader>
               <CardTitle>Inventory</CardTitle>
               <CardDescription>Latest stock movements and listing inventory state.</CardDescription>
@@ -289,7 +289,7 @@ export default async function AdminListingDetailPage({
               {inventoryMovements.slice(0, 5).map((movement) => (
                 <div
                   key={movement.id}
-                  className="rounded-2xl border border-orange-100 bg-orange-50/20 p-3"
+                  className="rounded-2xl border border-brand-navy/10 bg-brand-light p-3"
                 >
                   <p className="font-medium capitalize text-foreground">
                     {movement.movement_type.replaceAll("_", " ")}
@@ -311,7 +311,7 @@ export default async function AdminListingDetailPage({
         </TabsList>
 
         <TabsContent value="reviews">
-          <Card className="border-orange-200/60 bg-white/90 shadow-sm">
+          <Card className="border-border/70 bg-white shadow-sm">
             <CardHeader>
               <CardTitle>Listing Reviews</CardTitle>
             </CardHeader>
@@ -357,7 +357,7 @@ export default async function AdminListingDetailPage({
         </TabsContent>
 
         <TabsContent value="bookings">
-          <Card className="border-orange-200/60 bg-white/90 shadow-sm">
+          <Card className="border-border/70 bg-white shadow-sm">
             <CardHeader>
               <CardTitle>Booking History</CardTitle>
             </CardHeader>
@@ -408,9 +408,10 @@ export default async function AdminListingDetailPage({
 
 function DetailCard({ label, value }: { label: string; value: string }) {
   return (
-    <div className="rounded-2xl border border-orange-100 bg-orange-50/20 p-4">
+    <div className="rounded-2xl border border-brand-navy/10 bg-brand-light p-4">
       <p className="text-sm text-muted-foreground">{label}</p>
       <p className="mt-1 text-lg font-semibold text-foreground">{value}</p>
     </div>
   );
 }
+

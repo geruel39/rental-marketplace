@@ -63,7 +63,7 @@ export function AdminBookingTable({
 
   return (
     <div className="space-y-4">
-      <div className="flex flex-wrap gap-2 rounded-2xl border border-orange-200/60 bg-white/90 p-2">
+      <div className="flex flex-wrap gap-2 rounded-2xl border border-border/70 bg-white p-2">
         {[
           "all",
           "pending",
@@ -87,7 +87,7 @@ export function AdminBookingTable({
         ))}
       </div>
 
-      <div className="rounded-3xl border border-orange-200/60 bg-white/90 shadow-sm">
+      <div className="rounded-3xl border border-border/70 bg-white shadow-sm">
         <Table>
           <TableHeader>
             <TableRow>
@@ -150,7 +150,7 @@ export function AdminBookingTable({
                           booking={booking}
                           onComplete={() => router.refresh()}
                           trigger={
-                            <Button className="bg-orange-600 text-white hover:bg-orange-700" size="sm">
+                            <Button className="bg-brand-navy text-white hover:bg-brand-steel" size="sm">
                               Resolve Dispute
                             </Button>
                           }
@@ -171,3 +171,4 @@ export function AdminBookingTable({
     </div>
   );
 }
+

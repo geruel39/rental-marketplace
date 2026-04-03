@@ -127,7 +127,7 @@ export default async function AdminInventoryPage({
           { label: "Zero stock listings", value: zeroStock },
           { label: "Low stock listings", value: lowStock },
         ].map((stat) => (
-          <Card key={stat.label} className="border-orange-200/60 bg-white/90 shadow-sm">
+          <Card key={stat.label} className="border-border/70 bg-white shadow-sm">
             <CardHeader className="pb-2">
               <CardTitle className="text-sm font-medium text-muted-foreground">{stat.label}</CardTitle>
             </CardHeader>
@@ -138,13 +138,13 @@ export default async function AdminInventoryPage({
         ))}
       </div>
 
-      <div className="flex flex-wrap gap-2 rounded-2xl border border-orange-200/60 bg-white/90 p-2">
+      <div className="flex flex-wrap gap-2 rounded-2xl border border-border/70 bg-white p-2">
         <LinkTab href="/admin/inventory" isActive={filter === "all"} label="All" />
         <LinkTab href="/admin/inventory?filter=out" isActive={filter === "out"} label="Out of Stock" />
         <LinkTab href="/admin/inventory?filter=low" isActive={filter === "low"} label="Low Stock" />
       </div>
 
-      <div className="rounded-3xl border border-orange-200/60 bg-white/90 shadow-sm">
+      <div className="rounded-3xl border border-border/70 bg-white shadow-sm">
         <Table>
           <TableHeader>
             <TableRow>
@@ -217,10 +217,11 @@ function LinkTab({
 }) {
   return (
     <Link
-      className={`inline-flex h-8 items-center rounded-md px-3 text-sm ${isActive ? "bg-orange-600 text-white" : "text-foreground hover:bg-accent"}`}
+      className={`inline-flex h-8 items-center rounded-md px-3 text-sm ${isActive ? "bg-brand-navy text-white" : "text-foreground hover:bg-accent"}`}
       href={href}
     >
       {label}
     </Link>
   );
 }
+

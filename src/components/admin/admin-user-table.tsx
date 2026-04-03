@@ -213,7 +213,7 @@ export function AdminUserTable({
         </Tabs>
       </div>
 
-      <div className="rounded-3xl border border-orange-200/60 bg-white/90 shadow-sm">
+      <div className="rounded-3xl border border-border/70 bg-white shadow-sm">
         <Table>
           <TableHeader>
             <TableRow>
@@ -309,7 +309,7 @@ export function AdminUserTable({
                     </TableCell>
                     <TableCell>
                       {user.is_admin ? (
-                        <Badge className="bg-orange-600 text-white hover:bg-orange-600">
+                        <Badge className="bg-brand-sky text-brand-dark hover:bg-brand-sky">
                           Admin
                         </Badge>
                       ) : (
@@ -387,3 +387,4 @@ export function AdminUserTable({
     </div>
   );
 }
+

@@ -104,9 +104,10 @@ export function RegisterForm() {
   });
 
   return (
-    <Card className="w-full max-w-2xl border-border/70 shadow-sm">
+    <Card className="w-full max-w-2xl border-border/70 bg-white shadow">
       <CardHeader className="space-y-2 text-center">
-        <CardTitle className="text-2xl">Create your account</CardTitle>
+        <p className="text-brand-navy text-2xl font-bold">RentHub</p>
+        <CardTitle className="text-brand-navy text-2xl">Create your account</CardTitle>
         <p className="text-sm text-muted-foreground">
           Join RentHub to list items, accept bookings, and rent from others.
         </p>
@@ -166,8 +167,8 @@ export function RegisterForm() {
                 className={cn(
                   "rounded-xl border p-4 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
                   accountType === "individual"
-                    ? "border-primary bg-primary/5"
-                    : "border-border hover:bg-muted/40",
+                    ? "border-brand-navy bg-brand-navy/5"
+                    : "border-border hover:bg-brand-light",
                 )}
                 onClick={() =>
                   form.setValue("account_type", "individual", {
@@ -176,7 +177,7 @@ export function RegisterForm() {
                 }
                 type="button"
               >
-                <UserRound className="mb-3 size-5 text-primary" />
+                <UserRound className="text-brand-steel mb-3 size-5" />
                 <div className="font-medium">Individual</div>
                 <p className="mt-1 text-sm text-muted-foreground">
                   Rent and list as a personal account.
@@ -186,8 +187,8 @@ export function RegisterForm() {
                 className={cn(
                   "rounded-xl border p-4 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
                   accountType === "business"
-                    ? "border-primary bg-primary/5"
-                    : "border-border hover:bg-muted/40",
+                    ? "border-brand-navy bg-brand-navy/5"
+                    : "border-border hover:bg-brand-light",
                 )}
                 onClick={() =>
                   form.setValue("account_type", "business", {
@@ -196,7 +197,7 @@ export function RegisterForm() {
                 }
                 type="button"
               >
-                <Building2 className="mb-3 size-5 text-primary" />
+                <Building2 className="text-brand-steel mb-3 size-5" />
                 <div className="font-medium">Business</div>
                 <p className="mt-1 text-sm text-muted-foreground">
                   Showcase inventory as a company or shop.
@@ -303,7 +304,7 @@ export function RegisterForm() {
             </div>
           </div>
 
-          <label className="flex items-start gap-3 rounded-lg border border-border p-4">
+          <label className="flex items-start gap-3 rounded-lg border border-border bg-white p-4">
             <Checkbox
               checked={acceptTerms}
               onCheckedChange={(checked) =>
@@ -324,14 +325,18 @@ export function RegisterForm() {
             </div>
           </label>
 
-          <Button className="w-full" disabled={isPending} type="submit">
+          <Button
+            className="w-full bg-brand-navy text-white hover:bg-brand-steel"
+            disabled={isPending}
+            type="submit"
+          >
             {isPending ? "Creating account..." : "Create account"}
           </Button>
         </form>
 
         <p className="text-center text-sm text-muted-foreground">
           Already have an account?{" "}
-          <Link className="font-medium text-foreground underline" href="/login">
+          <Link className="text-brand-sky hover:text-brand-navy font-medium underline" href="/login">
             Sign in
           </Link>
         </p>

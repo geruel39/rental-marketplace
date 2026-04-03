@@ -89,20 +89,20 @@ export default async function Home() {
   }
 
   return (
-    <div className="bg-background">
-      <section className="bg-gradient-to-br from-sky-700 via-blue-700 to-violet-700 text-white">
+    <div className="bg-brand-light">
+      <section className="bg-gradient-to-br from-brand-navy to-brand-steel text-white">
         <div className="mx-auto max-w-7xl px-4 py-20 sm:px-6 lg:px-8">
           <div className="mx-auto max-w-4xl text-center">
             <h1 className="text-4xl font-semibold tracking-tight sm:text-6xl">
               Rent Anything From Anyone
             </h1>
-            <p className="mt-4 text-lg text-blue-100 sm:text-xl">
+            <p className="mt-4 text-lg text-white/80 sm:text-xl">
               The peer-to-peer marketplace for renting everyday items.
             </p>
             <div className="mt-8">
               <SearchBar categories={categories} />
             </div>
-            <div className="mt-8 flex flex-wrap items-center justify-center gap-3 text-sm text-blue-100">
+            <div className="mt-8 flex flex-wrap items-center justify-center gap-3 text-sm text-white/80">
               {trustIndicators.map((item) => (
                 <span
                   key={item}
@@ -119,7 +119,7 @@ export default async function Home() {
       <section className="mx-auto max-w-7xl px-4 py-16 sm:px-6 lg:px-8">
         <div className="mb-8 flex items-center justify-between gap-4">
           <div>
-            <h2 className="text-2xl font-semibold tracking-tight">
+            <h2 className="text-brand-dark text-2xl font-semibold tracking-tight">
               Browse by Category
             </h2>
             <p className="mt-2 text-sm text-muted-foreground">
@@ -132,7 +132,7 @@ export default async function Home() {
           {categories.map((category) => (
             <Link
               key={category.id}
-              className="rounded-2xl border border-border/70 bg-card p-4 text-center transition-colors hover:bg-muted/40"
+              className="rounded-2xl border border-border/70 bg-white p-4 text-center transition-all hover:border-brand-sky/50 hover:shadow-lg"
               href={`/listings?category=${category.slug}`}
             >
               <div className="text-2xl">{category.icon ?? "📦"}</div>
@@ -145,7 +145,7 @@ export default async function Home() {
       <section className="mx-auto max-w-7xl px-4 py-6 sm:px-6 lg:px-8">
         <div className="mb-8 flex items-end justify-between gap-4">
           <div>
-            <h2 className="text-2xl font-semibold tracking-tight">
+            <h2 className="text-brand-dark text-2xl font-semibold tracking-tight">
               Recently Listed
             </h2>
             <p className="mt-2 text-sm text-muted-foreground">
@@ -167,20 +167,18 @@ export default async function Home() {
 
       <section className="mx-auto max-w-7xl px-4 py-16 sm:px-6 lg:px-8">
         <div className="mb-8">
-          <h2 className="text-2xl font-semibold tracking-tight">How It Works</h2>
+            <h2 className="text-brand-dark text-2xl font-semibold tracking-tight">How It Works</h2>
         </div>
         <div className="grid gap-4 md:grid-cols-3">
           {steps.map((step) => {
-            const Icon = step.icon;
-
             return (
-              <Card key={step.title} className="border-border/70">
+              <Card key={step.title} className="border-border/70 bg-white">
                 <CardContent className="space-y-4 p-6">
-                  <div className="flex size-12 items-center justify-center rounded-2xl bg-primary/10 text-primary">
-                    <Icon className="size-6" />
+                  <div className="bg-brand-navy flex size-12 items-center justify-center rounded-full text-white">
+                    <span className="text-sm font-semibold">{step.title.split(".")[0]}</span>
                   </div>
                   <div>
-                    <h3 className="font-semibold">{step.title}</h3>
+                    <h3 className="font-semibold text-brand-dark">{step.title.slice(3)}</h3>
                     <p className="mt-2 text-sm text-muted-foreground">
                       {step.description}
                     </p>
@@ -193,13 +191,13 @@ export default async function Home() {
       </section>
 
       <section className="mx-auto max-w-7xl px-4 py-16 sm:px-6 lg:px-8">
-        <div className="rounded-3xl border border-border/70 bg-muted/40 px-6 py-12 text-center sm:px-10">
+        <div className="bg-brand-navy rounded-3xl border border-brand-navy px-6 py-12 text-center text-white sm:px-10">
           <h2 className="text-3xl font-semibold tracking-tight">Ready to start?</h2>
-          <p className="mt-3 text-muted-foreground">
+          <p className="mt-3 text-white/80">
             Build trust, manage rentals, and turn unused items into earnings.
           </p>
           <div className="mt-6">
-            <Button asChild size="lg">
+            <Button asChild className="bg-brand-sky text-brand-dark hover:bg-brand-sky/90" size="lg">
               <Link href={isLoggedIn ? "/dashboard" : "/register"}>
                 {isLoggedIn ? "Go to Dashboard" : "Sign Up"}
               </Link>

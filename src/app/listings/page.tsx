@@ -91,9 +91,9 @@ async function ListingsContent({
     : new Set<string>();
 
   return (
-    <main className="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
+    <main className="bg-brand-light mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
       <div className="mb-6 space-y-2">
-        <h1 className="text-3xl font-semibold tracking-tight">Browse Listings</h1>
+        <h1 className="text-brand-dark text-3xl font-semibold tracking-tight">Browse Listings</h1>
         <p className="text-muted-foreground">
           Find tools, gear, and everyday items available to rent near you.
         </p>
@@ -113,7 +113,7 @@ async function ListingsContent({
         />
 
         <div className="min-w-0 flex-1 space-y-6">
-          <div className="flex flex-col gap-3 rounded-2xl border border-border/70 bg-card p-4 sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex flex-col gap-3 rounded-2xl border border-border/70 bg-white p-4 sm:flex-row sm:items-center sm:justify-between">
             <div>
               <h2 className="text-lg font-semibold">
                 {results.totalCount} listing{results.totalCount === 1 ? "" : "s"} found
@@ -147,13 +147,13 @@ export default function ListingsPage({ searchParams }: ListingsPageProps) {
   return (
     <Suspense
       fallback={
-        <main className="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
+        <main className="bg-brand-light mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
           <div className="mb-6 space-y-2">
             <div className="h-9 w-52 rounded-md bg-accent" />
             <div className="h-5 w-80 rounded-md bg-accent" />
           </div>
           <div className="flex flex-col gap-6 md:flex-row md:items-start">
-            <div className="hidden w-64 shrink-0 rounded-2xl border border-border/70 bg-card p-5 md:block">
+            <div className="hidden w-64 shrink-0 rounded-2xl border border-border/70 bg-white p-5 md:block">
               <div className="space-y-3">
                 <div className="h-5 w-20 rounded-md bg-accent" />
                 <div className="h-10 w-full rounded-md bg-accent" />
@@ -162,7 +162,7 @@ export default function ListingsPage({ searchParams }: ListingsPageProps) {
               </div>
             </div>
             <div className="min-w-0 flex-1 space-y-6">
-              <div className="rounded-2xl border border-border/70 bg-card p-4">
+              <div className="rounded-2xl border border-border/70 bg-white p-4">
                 <div className="h-10 w-full rounded-md bg-accent sm:w-56" />
               </div>
               <ListingGridSkeleton />

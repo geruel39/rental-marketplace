@@ -141,7 +141,7 @@ export function PlatformSettingsForm({
 
   return (
     <div className="space-y-6">
-      <Card className="border-orange-200/60 bg-white/90 shadow-sm">
+      <Card className="border-border/70 bg-white shadow-sm">
         <CardHeader>
           <CardTitle>Fees</CardTitle>
         </CardHeader>
@@ -176,7 +176,7 @@ export function PlatformSettingsForm({
         </CardContent>
       </Card>
 
-      <Card className="border-orange-200/60 bg-white/90 shadow-sm">
+      <Card className="border-border/70 bg-white shadow-sm">
         <CardHeader>
           <CardTitle>Listings</CardTitle>
         </CardHeader>
@@ -208,7 +208,7 @@ export function PlatformSettingsForm({
               value={state.min_description_length}
             />
           </div>
-          <div className="flex items-start justify-between gap-4 rounded-2xl border border-orange-100 bg-orange-50/40 p-4">
+          <div className="flex items-start justify-between gap-4 rounded-2xl border border-brand-navy/10 bg-brand-light p-4">
             <SettingHint
               label="New listings require admin approval"
               metadata={metadata}
@@ -222,7 +222,7 @@ export function PlatformSettingsForm({
         </CardContent>
       </Card>
 
-      <Card className="border-orange-200/60 bg-white/90 shadow-sm">
+      <Card className="border-border/70 bg-white shadow-sm">
         <CardHeader>
           <CardTitle>Platform</CardTitle>
         </CardHeader>
@@ -287,7 +287,7 @@ export function PlatformSettingsForm({
 
       <div className="flex justify-end">
         <Button
-          className="bg-orange-600 text-white hover:bg-orange-700"
+          className="bg-brand-navy text-white hover:bg-brand-steel"
           disabled={isPending || !hasChanges}
           onClick={handleSave}
           type="button"
@@ -298,3 +298,4 @@ export function PlatformSettingsForm({
     </div>
   );
 }
+

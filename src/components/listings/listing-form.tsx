@@ -6,7 +6,7 @@ import {
   useTransition,
 } from "react";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { Check, Info } from "lucide-react";
+import { Info } from "lucide-react";
 import dynamic from "next/dynamic";
 import { useForm, useWatch } from "react-hook-form";
 import { toast } from "sonner";
@@ -131,7 +131,6 @@ const fieldHelpText = {
   lowStockThreshold: "You will get alerted when available stock falls to this number or lower.",
   map: "Tap the map to drop a pin for the primary pickup or meetup location.",
   locationDescription: "Optional extra context such as building, landmark, or neighborhood.",
-  deliveryMethods: "Choose whether renters can pick up the item, request delivery, or both.",
   cancellationPolicy: "Sets how flexible cancellations are for renters before the booking starts.",
 } as const;
 
@@ -239,32 +238,6 @@ function FieldLabel({
   );
 }
 
-function DeliveryMethodButton({
-  active,
-  label,
-  onClick,
-}: {
-  active: boolean;
-  label: string;
-  onClick: () => void;
-}) {
-  return (
-    <button
-      className={cn(
-        "flex items-center justify-center gap-2 rounded-xl border px-4 py-3 text-sm font-medium transition",
-        active
-          ? "border-primary bg-primary/10 text-primary"
-          : "border-border bg-background text-foreground hover:border-primary/50",
-      )}
-      onClick={onClick}
-      type="button"
-    >
-      <Check className={cn("size-4", active ? "opacity-100" : "opacity-30")} />
-      {label}
-    </button>
-  );
-}
-
 export function ListingForm({ listing, categories }: ListingFormProps) {
   const [error, setError] = useState<string | null>(null);
   const [images, setImages] = useState<string[]>(listing?.images ?? []);
@@ -313,8 +286,6 @@ export function ListingForm({ listing, categories }: ListingFormProps) {
     }) as "flexible" | "moderate" | "strict" | undefined) ?? "flexible";
   const latitude = useWatch({ control: form.control, name: "latitude" });
   const longitude = useWatch({ control: form.control, name: "longitude" });
-  const deliveryMethods =
-    useWatch({ control: form.control, name: "delivery_methods" }) ?? [];
 
   const selectedPricingLabel = useMemo(
     () =>
@@ -339,17 +310,6 @@ export function ListingForm({ listing, categories }: ListingFormProps) {
         ) : null}
       </div>
     );
-  }
-
-  function toggleDeliveryMethod(method: DeliveryMethod) {
-    const nextMethods = deliveryMethods.includes(method)
-      ? deliveryMethods.filter((value) => value !== method)
-      : [...deliveryMethods, method];
-
-    form.setValue("delivery_methods", nextMethods, {
-      shouldDirty: true,
-      shouldValidate: true,
-    });
   }
 
   const onSubmit = form.handleSubmit((values, event) => {
@@ -419,9 +379,9 @@ export function ListingForm({ listing, categories }: ListingFormProps) {
 
   return (
     <TooltipProvider>
-      <Card className="border-border/70">
+      <Card className="border-border/70 bg-white">
         <CardHeader className="space-y-2">
-          <CardTitle>{listing ? "Edit Listing" : "Create Listing"}</CardTitle>
+          <CardTitle className="text-brand-dark">{listing ? "Edit Listing" : "Create Listing"}</CardTitle>
           <p className="text-sm text-muted-foreground">
             Add photos, pricing, stock, and a clear pickup pin before publishing.
           </p>
@@ -723,34 +683,6 @@ export function ListingForm({ listing, categories }: ListingFormProps) {
                 {errors.location_description ? (
                   <p className="text-sm text-destructive">
                     {errors.location_description.message}
-                  </p>
-                ) : null}
-              </div>
-            </section>
-
-            <section className="space-y-4">
-              {renderSectionHeading("Delivery")}
-              <div className="space-y-2">
-                <FieldLabel
-                  hint={fieldHelpText.deliveryMethods}
-                  label="Fulfillment options"
-                  required
-                />
-                <div className="grid gap-3 sm:grid-cols-2">
-                  <DeliveryMethodButton
-                    active={deliveryMethods.includes("pickup")}
-                    label="Pickup"
-                    onClick={() => toggleDeliveryMethod("pickup")}
-                  />
-                  <DeliveryMethodButton
-                    active={deliveryMethods.includes("delivery")}
-                    label="Delivery"
-                    onClick={() => toggleDeliveryMethod("delivery")}
-                  />
-                </div>
-                {errors.delivery_methods ? (
-                  <p className="text-sm text-destructive">
-                    {errors.delivery_methods.message}
                   </p>
                 ) : null}
               </div>

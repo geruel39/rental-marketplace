@@ -19,7 +19,7 @@ function TrustBadge({
 }) {
   return (
     <Badge
-      className={verified ? "border-emerald-200 bg-emerald-50 text-emerald-700" : ""}
+      className={verified ? "border-brand-sky/30 bg-brand-sky/10 text-brand-sky" : "text-muted-foreground"}
       variant={verified ? "outline" : "secondary"}
     >
       {verified ? <CheckCircle2 className="size-3.5" /> : icon}

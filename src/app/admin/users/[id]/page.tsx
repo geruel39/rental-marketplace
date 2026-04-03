@@ -59,7 +59,7 @@ export default async function AdminUserDetailPage({
         }
       />
 
-      <Card className="border-orange-200/60 bg-white/90 shadow-sm">
+      <Card className="border-border/70 bg-white shadow-sm">
         <CardContent className="flex flex-col gap-6 p-6 lg:flex-row lg:items-start lg:justify-between">
           <div className="flex min-w-0 gap-4">
             <Avatar className="size-20" size="lg">
@@ -82,7 +82,7 @@ export default async function AdminUserDetailPage({
                     {profile.is_suspended ? "Suspended" : "Active"}
                   </Badge>
                   {profile.is_admin ? (
-                    <Badge className="bg-orange-600 text-white hover:bg-orange-600">
+                    <Badge className="bg-brand-sky text-brand-dark hover:bg-brand-sky">
                       Admin
                     </Badge>
                   ) : null}
@@ -107,7 +107,7 @@ export default async function AdminUserDetailPage({
             </div>
           </div>
 
-          <div className="min-w-0 rounded-2xl border border-orange-100 bg-orange-50/40 p-4 text-sm text-muted-foreground lg:w-[360px]">
+          <div className="min-w-0 rounded-2xl border border-brand-navy/10 bg-brand-light p-4 text-sm text-muted-foreground lg:w-[360px]">
             {profile.is_suspended ? (
               <p>
                 Suspended reason: {profile.suspended_reason ?? "No reason recorded"}
@@ -119,7 +119,7 @@ export default async function AdminUserDetailPage({
         </CardContent>
       </Card>
 
-      <Card className="border-orange-200/60 bg-white/90 shadow-sm">
+      <Card className="border-border/70 bg-white shadow-sm">
         <CardHeader>
           <CardTitle>Admin Actions</CardTitle>
           <CardDescription>Moderate this account and keep internal notes in sync.</CardDescription>
@@ -141,7 +141,7 @@ export default async function AdminUserDetailPage({
 
         <TabsContent value="overview">
           <div className="grid gap-6 lg:grid-cols-2">
-            <Card className="border-orange-200/60 bg-white/90 shadow-sm">
+            <Card className="border-border/70 bg-white shadow-sm">
               <CardHeader>
                 <CardTitle>Profile Details</CardTitle>
               </CardHeader>
@@ -155,7 +155,7 @@ export default async function AdminUserDetailPage({
               </CardContent>
             </Card>
 
-            <Card className="border-orange-200/60 bg-white/90 shadow-sm">
+            <Card className="border-border/70 bg-white shadow-sm">
               <CardHeader>
                 <CardTitle>Trust & Reputation</CardTitle>
               </CardHeader>
@@ -404,7 +404,7 @@ export default async function AdminUserDetailPage({
 
 function DetailRow({ label, value }: { label: string; value: string }) {
   return (
-    <div className="flex items-start justify-between gap-4 border-b border-orange-100/80 pb-3 last:border-b-0 last:pb-0">
+    <div className="flex items-start justify-between gap-4 border-b border-brand-navy/10 pb-3 last:border-b-0 last:pb-0">
       <span className="text-muted-foreground">{label}</span>
       <span className="text-right font-medium text-foreground">{value}</span>
     </div>
@@ -425,7 +425,7 @@ function DataTableCard({
   hasData: boolean;
 }) {
   return (
-    <Card className="border-orange-200/60 bg-white/90 shadow-sm">
+    <Card className="border-border/70 bg-white shadow-sm">
       <CardHeader>
         <CardTitle>{title}</CardTitle>
         <CardDescription>{description}</CardDescription>
@@ -440,10 +440,11 @@ function DataTableCard({
 function ButtonLink({ href, label }: { href: string; label: string }) {
   return (
     <Link
-      className="inline-flex h-9 items-center justify-center rounded-md border border-orange-200 bg-white px-4 text-sm font-medium text-orange-700 shadow-xs transition-colors hover:bg-orange-50"
+      className="inline-flex h-9 items-center justify-center rounded-md border border-border bg-white px-4 text-sm font-medium text-brand-navy shadow-xs transition-colors hover:bg-brand-light"
       href={href}
     >
       {label}
     </Link>
   );
 }
+

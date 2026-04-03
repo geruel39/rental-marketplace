@@ -169,7 +169,7 @@ export function BookingWidget({ listing, isOwner, isLoggedIn }: BookingWidgetPro
   const disabledForm = isOutOfStock || !pricingOptions.length || isOwner;
 
   return (
-    <aside className="w-full rounded-3xl border border-border bg-card p-5 shadow-sm md:sticky md:top-20">
+    <aside className="w-full rounded-3xl border border-border bg-white p-5 shadow-sm md:sticky md:top-20">
       {state?.error ? (
         <Alert className="mb-4" variant="destructive">
           <AlertDescription>{state.error}</AlertDescription>
@@ -179,7 +179,7 @@ export function BookingWidget({ listing, isOwner, isLoggedIn }: BookingWidgetPro
       <form className="space-y-6" onSubmit={form.handleSubmit(onSubmit)}>
         <section className="space-y-3">
           <div className="flex items-end gap-2">
-            <p className="text-3xl font-semibold">{formatCurrency(unitPrice)}</p>
+            <p className="text-brand-navy text-2xl font-bold">{formatCurrency(unitPrice)}</p>
             <p className="text-sm text-muted-foreground">/{selectedPricing?.short ?? listing.primary_pricing_period}</p>
           </div>
           <div className="flex flex-wrap gap-2">
@@ -188,8 +188,8 @@ export function BookingWidget({ listing, isOwner, isLoggedIn }: BookingWidgetPro
                 className={cn(
                   "rounded-full border px-3 py-1 text-xs transition",
                   pricingPeriod === option.value
-                    ? "bg-brand-navy text-white border-brand-navy"
-                    : "bg-background text-foreground border-border hover:border-brand-navy",
+                    ? "border-brand-navy bg-brand-navy text-white"
+                    : "border-border bg-brand-light text-brand-dark hover:border-brand-steel hover:text-brand-steel",
                 )}
                 disabled={disabledForm || isPending}
                 key={option.value}
@@ -215,6 +215,7 @@ export function BookingWidget({ listing, isOwner, isLoggedIn }: BookingWidgetPro
           <Label>How long do you want to rent?</Label>
           <div className="flex items-center gap-2">
             <Button
+              className="border-brand-navy text-brand-navy hover:bg-brand-navy/10 hover:text-brand-navy"
               disabled={disabledForm || isPending || rentalUnits <= minRentalUnits}
               onClick={() => updateRentalUnits(rentalUnits - 1)}
               size="icon"
@@ -230,6 +231,7 @@ export function BookingWidget({ listing, isOwner, isLoggedIn }: BookingWidgetPro
               {...form.register("rental_units", { valueAsNumber: true, min: minRentalUnits })}
             />
             <Button
+              className="border-brand-navy text-brand-navy hover:bg-brand-navy/10 hover:text-brand-navy"
               disabled={disabledForm || isPending}
               onClick={() => updateRentalUnits(rentalUnits + 1)}
               size="icon"
@@ -251,6 +253,7 @@ export function BookingWidget({ listing, isOwner, isLoggedIn }: BookingWidgetPro
             <Label>How many items?</Label>
             <div className="flex items-center gap-2">
               <Button
+                className="border-brand-navy text-brand-navy hover:bg-brand-navy/10 hover:text-brand-navy"
                 disabled={disabledForm || isPending || quantity <= 1}
                 onClick={() => updateQuantity(quantity - 1)}
                 size="icon"
@@ -271,6 +274,7 @@ export function BookingWidget({ listing, isOwner, isLoggedIn }: BookingWidgetPro
                 })}
               />
               <Button
+                className="border-brand-navy text-brand-navy hover:bg-brand-navy/10 hover:text-brand-navy"
                 disabled={disabledForm || isPending || quantity >= maxQuantity}
                 onClick={() => updateQuantity(quantity + 1)}
                 size="icon"
@@ -283,7 +287,7 @@ export function BookingWidget({ listing, isOwner, isLoggedIn }: BookingWidgetPro
           </section>
         ) : null}
 
-        <section className="space-y-2 rounded-2xl border border-border/70 bg-muted/20 p-4">
+        <section className="space-y-2 rounded-2xl border border-border/70 bg-brand-light p-4">
           <p className="text-sm text-muted-foreground">
             {formatCurrency(unitPrice)} × {rentalUnits} {periodLabel}
             {rentalUnits > 1 ? "s" : ""} × {quantity} = {formatCurrency(subtotal)}
@@ -319,7 +323,7 @@ export function BookingWidget({ listing, isOwner, isLoggedIn }: BookingWidgetPro
 
         <section className="space-y-2">
           {!isLoggedIn ? (
-            <Button asChild className="w-full" variant="outline">
+            <Button asChild className="w-full border-brand-navy text-brand-navy hover:bg-brand-light" variant="outline">
               <Link href="/login">Login to Book</Link>
             </Button>
           ) : isOwner ? (

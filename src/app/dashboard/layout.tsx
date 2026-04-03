@@ -25,7 +25,7 @@ export default async function DashboardLayout({
     .maybeSingle<{ is_admin: boolean }>();
 
   return (
-    <div className="min-h-[calc(100vh-4rem)] bg-muted/30">
+    <div className="min-h-[calc(100vh-4rem)] bg-brand-light">
       <DashboardSidebar
         currentUserId={user.id}
         isAdmin={profile?.is_admin ?? false}

@@ -121,7 +121,7 @@ export default async function AdminBookingDetailPage({
         description="Inspect booking operations, payment state, dispute notes, and the full communication trail."
         action={
           <Link
-            className="inline-flex h-9 items-center justify-center rounded-md border border-orange-200 bg-white px-4 text-sm font-medium text-orange-700 shadow-xs transition-colors hover:bg-orange-50"
+            className="inline-flex h-9 items-center justify-center rounded-md border border-border bg-white px-4 text-sm font-medium text-brand-navy shadow-xs transition-colors hover:bg-brand-light"
             href="/admin/bookings"
           >
             Back to bookings
@@ -155,7 +155,7 @@ export default async function AdminBookingDetailPage({
 
       <div className="grid gap-6 xl:grid-cols-[1.15fr_0.85fr]">
         <div className="space-y-6">
-          <Card className="border-orange-200/60 bg-white/90 shadow-sm">
+          <Card className="border-border/70 bg-white shadow-sm">
             <CardHeader>
               <CardTitle>Booking Info</CardTitle>
             </CardHeader>
@@ -172,7 +172,7 @@ export default async function AdminBookingDetailPage({
             </CardContent>
           </Card>
 
-          <Card className="border-orange-200/60 bg-white/90 shadow-sm">
+          <Card className="border-border/70 bg-white shadow-sm">
             <CardHeader>
               <CardTitle>Pricing Breakdown</CardTitle>
             </CardHeader>
@@ -186,7 +186,7 @@ export default async function AdminBookingDetailPage({
             </CardContent>
           </Card>
 
-          <Card className="border-orange-200/60 bg-white/90 shadow-sm">
+          <Card className="border-border/70 bg-white shadow-sm">
             <CardHeader>
               <CardTitle>Message History</CardTitle>
               <CardDescription>Admin-visible conversation thread between renter and lister.</CardDescription>
@@ -198,9 +198,9 @@ export default async function AdminBookingDetailPage({
                 (messages as Message[]).map((message) => (
                   <div
                     key={message.id}
-                    className="rounded-2xl border border-orange-100 bg-orange-50/20 p-4"
+                    className="rounded-2xl border border-brand-navy/10 bg-brand-light p-4"
                   >
-                    <p className="text-xs font-medium uppercase tracking-[0.16em] text-orange-700">
+                    <p className="text-xs font-medium uppercase tracking-[0.16em] text-brand-navy">
                       {message.sender_id === booking.renter.id ? "Renter" : "Lister"} ·{" "}
                       {formatDate(message.created_at)}
                     </p>
@@ -215,7 +215,7 @@ export default async function AdminBookingDetailPage({
         </div>
 
         <div className="space-y-6">
-          <Card className="border-orange-200/60 bg-white/90 shadow-sm">
+          <Card className="border-border/70 bg-white shadow-sm">
             <CardHeader>
               <CardTitle>Listing Info</CardTitle>
             </CardHeader>
@@ -250,7 +250,7 @@ export default async function AdminBookingDetailPage({
             value={booking.lister.display_name || booking.lister.full_name || booking.lister.email}
           />
 
-          <Card className="border-orange-200/60 bg-white/90 shadow-sm">
+          <Card className="border-border/70 bg-white shadow-sm">
             <CardHeader>
               <CardTitle>Payment Info</CardTitle>
             </CardHeader>
@@ -263,7 +263,7 @@ export default async function AdminBookingDetailPage({
             </CardContent>
           </Card>
 
-          <Card className="border-orange-200/60 bg-white/90 shadow-sm">
+          <Card className="border-border/70 bg-white shadow-sm">
             <CardHeader>
               <CardTitle>Stock Status</CardTitle>
             </CardHeader>
@@ -273,7 +273,7 @@ export default async function AdminBookingDetailPage({
             </CardContent>
           </Card>
 
-          <Card className="border-orange-200/60 bg-white/90 shadow-sm">
+          <Card className="border-border/70 bg-white shadow-sm">
             <CardHeader>
               <CardTitle>Admin Notes</CardTitle>
             </CardHeader>
@@ -282,7 +282,7 @@ export default async function AdminBookingDetailPage({
             </CardContent>
           </Card>
 
-          <Card className="border-orange-200/60 bg-white/90 shadow-sm">
+          <Card className="border-border/70 bg-white shadow-sm">
             <CardHeader>
               <CardTitle>Timeline</CardTitle>
             </CardHeader>
@@ -290,7 +290,7 @@ export default async function AdminBookingDetailPage({
               {timelineEvents.map((event) => (
                 <div
                   key={`${event.label}-${event.date}`}
-                  className="rounded-2xl border border-orange-100 bg-orange-50/20 p-3"
+                  className="rounded-2xl border border-brand-navy/10 bg-brand-light p-3"
                 >
                   <p className="font-medium text-foreground">{event.label}</p>
                   <p className="text-sm text-muted-foreground">{formatDate(event.date)}</p>
@@ -306,7 +306,7 @@ export default async function AdminBookingDetailPage({
 
 function DetailCard({ label, value }: { label: string; value: string }) {
   return (
-    <div className="rounded-2xl border border-orange-100 bg-orange-50/20 p-4">
+    <div className="rounded-2xl border border-brand-navy/10 bg-brand-light p-4">
       <p className="text-sm text-muted-foreground">{label}</p>
       <p className="mt-1 text-lg font-semibold text-foreground">{value}</p>
     </div>
@@ -315,7 +315,7 @@ function DetailCard({ label, value }: { label: string; value: string }) {
 
 function DetailRow({ label, value }: { label: string; value: string }) {
   return (
-    <div className="flex items-start justify-between gap-4 border-b border-orange-100 pb-3 last:border-b-0 last:pb-0">
+    <div className="flex items-start justify-between gap-4 border-b border-brand-navy/10 pb-3 last:border-b-0 last:pb-0">
       <span className="text-muted-foreground">{label}</span>
       <span className="text-right font-medium text-foreground">{value}</span>
     </div>
@@ -334,7 +334,7 @@ function ProfileCard({
   href: string;
 }) {
   return (
-    <Card className="border-orange-200/60 bg-white/90 shadow-sm">
+    <Card className="border-border/70 bg-white shadow-sm">
       <CardHeader>
         <CardTitle>{title}</CardTitle>
       </CardHeader>
@@ -348,3 +348,4 @@ function ProfileCard({
     </Card>
   );
 }
+

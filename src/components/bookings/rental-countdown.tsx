@@ -22,7 +22,7 @@ export function RentalCountdown({
   rentalStartedAt,
   variant = "full",
 }: RentalCountdownProps) {
-  const [now, setNow] = useState(Date.now());
+  const [now, setNow] = useState(() => Date.now());
   const endDate = useMemo(() => new Date(rentalEndsAt), [rentalEndsAt]);
   const startDate = useMemo(() => new Date(rentalStartedAt), [rentalStartedAt]);
 
@@ -75,7 +75,7 @@ export function RentalCountdown({
       <p
         className={cn(
           variant === "compact" ? "text-xs" : "text-sm",
-          "font-medium text-brand-navy",
+          "font-mono font-medium text-brand-navy",
           warning && "text-yellow-700",
           isOverdue && "text-red-700",
         )}

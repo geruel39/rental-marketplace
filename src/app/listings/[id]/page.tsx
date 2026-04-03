@@ -124,7 +124,7 @@ export default async function ListingDetailPage({
     : listingReviews.data.slice(0, 5);
 
   return (
-    <main className="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
+    <main className="bg-brand-light mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
       <div className="grid gap-8 lg:grid-cols-[minmax(0,2fr)_minmax(320px,1fr)] lg:items-start">
         <div className="space-y-8">
           <ImageGallery images={data.listing.images} />
@@ -140,7 +140,7 @@ export default async function ListingDetailPage({
             <div className="space-y-3">
               <div className="flex flex-wrap items-start justify-between gap-3">
                 <div className="space-y-2">
-                  <h1 className="text-3xl font-semibold tracking-tight sm:text-4xl">
+                  <h1 className="text-brand-dark text-3xl font-semibold tracking-tight sm:text-4xl">
                     {data.listing.title}
                   </h1>
                   <p className="text-sm text-muted-foreground">
@@ -179,18 +179,18 @@ export default async function ListingDetailPage({
           <Separator />
 
           <section className="space-y-3">
-            <h2 className="text-xl font-semibold">Description</h2>
+            <h2 className="text-brand-dark text-xl font-semibold">Description</h2>
             <p className="leading-7 text-muted-foreground">{data.listing.description}</p>
           </section>
 
           {detailItems.length > 0 ? (
             <section className="space-y-4">
-              <h2 className="text-xl font-semibold">Item Details</h2>
+              <h2 className="text-brand-dark text-xl font-semibold">Item Details</h2>
               <div className="grid gap-4 sm:grid-cols-2">
                 {detailItems.map((item) => (
                   <div
                     key={item.label}
-                    className="rounded-2xl border border-border/70 bg-card p-4 shadow-sm"
+                    className="rounded-2xl border border-border/70 bg-white p-4 shadow-sm"
                   >
                     <p className="text-sm font-medium text-muted-foreground">{item.label}</p>
                     <p className="mt-1 font-medium">{item.value}</p>
@@ -201,8 +201,8 @@ export default async function ListingDetailPage({
           ) : null}
 
           <section className="space-y-4">
-            <h2 className="text-xl font-semibold">Rules & Policies</h2>
-            <div className="rounded-3xl border border-border/70 bg-card p-5 shadow-sm">
+            <h2 className="text-brand-dark text-xl font-semibold">Rules & Policies</h2>
+            <div className="rounded-3xl border border-border/70 bg-white p-5 shadow-sm">
               {data.listing.rules ? (
                 <p className="mb-4 leading-7 text-muted-foreground">{data.listing.rules}</p>
               ) : (
@@ -227,7 +227,7 @@ export default async function ListingDetailPage({
           <Separator />
 
           <section className="space-y-4">
-            <h2 className="text-xl font-semibold">Lister</h2>
+            <h2 className="text-brand-dark text-xl font-semibold">Lister</h2>
             <ProfileCard compact profile={data.owner} />
           </section>
 
@@ -235,7 +235,7 @@ export default async function ListingDetailPage({
 
           <section className="space-y-4">
             <div className="flex flex-wrap items-center gap-3">
-              <h2 className="text-xl font-semibold">Reviews</h2>
+              <h2 className="text-brand-dark text-xl font-semibold">Reviews</h2>
               <div className="flex items-center gap-2 text-muted-foreground">
                 <Star className="size-4 fill-current text-amber-500" />
                 <span>
@@ -246,7 +246,7 @@ export default async function ListingDetailPage({
             </div>
 
             {reviewCount === 0 ? (
-              <div className="rounded-3xl border border-dashed border-border bg-muted/20 px-6 py-10 text-center text-muted-foreground">
+              <div className="rounded-3xl border border-dashed border-border bg-white px-6 py-10 text-center text-muted-foreground">
                 No reviews yet
               </div>
             ) : (
@@ -259,7 +259,7 @@ export default async function ListingDetailPage({
                   />
                 ))}
                 {listingReviews.totalCount > 5 && !showAllReviews ? (
-                  <Button asChild variant="outline">
+                  <Button asChild className="border-brand-navy text-brand-navy hover:bg-brand-light" variant="outline">
                     <Link href={`/listings/${id}?reviews=all#reviews`}>
                       View All Reviews
                     </Link>
@@ -271,7 +271,7 @@ export default async function ListingDetailPage({
 
           {data.similarListings.length > 0 ? (
             <section className="space-y-4">
-              <h2 className="text-xl font-semibold">Similar Items</h2>
+              <h2 className="text-brand-dark text-xl font-semibold">Similar Items</h2>
               <ListingGrid listings={data.similarListings} />
             </section>
           ) : null}
@@ -286,8 +286,8 @@ export default async function ListingDetailPage({
           />
 
           {pricingRows.length > 1 ? (
-            <div className="mt-4 hidden rounded-3xl border border-border/70 bg-card p-5 shadow-sm lg:block">
-              <h3 className="mb-3 font-semibold">More Pricing</h3>
+            <div className="mt-4 hidden rounded-3xl border border-border/70 bg-white p-5 shadow-sm lg:block">
+              <h3 className="text-brand-dark mb-3 font-semibold">More Pricing</h3>
               <div className="space-y-2 text-sm text-muted-foreground">
                 {pricingRows.map((row) => (
                   <div key={row.label} className="flex items-center justify-between gap-3">

@@ -58,7 +58,7 @@ export function PayoutProcessDialog({
         </DialogHeader>
 
         <div className="space-y-4">
-          <div className="rounded-2xl border border-orange-100 bg-orange-50/30 p-4 text-sm">
+          <div className="rounded-2xl border border-brand-navy/10 bg-brand-light p-4 text-sm">
             <p className="font-medium text-foreground">{listerName}</p>
             <p className="text-muted-foreground">{payout.lister.email}</p>
             <p className="mt-2 text-muted-foreground">
@@ -69,7 +69,7 @@ export function PayoutProcessDialog({
             </p>
           </div>
 
-          <div className="rounded-2xl border border-orange-100 bg-white p-4 text-sm">
+          <div className="rounded-2xl border border-brand-navy/10 bg-white p-4 text-sm">
             <p className="font-medium text-foreground">Payout settings</p>
             {bank ? (
               <div className="mt-2 space-y-1 text-muted-foreground">
@@ -119,7 +119,7 @@ export function PayoutProcessDialog({
             Cancel
           </Button>
           <Button
-            className="bg-orange-600 text-white hover:bg-orange-700"
+            className="bg-brand-navy text-white hover:bg-brand-steel"
             disabled={isPending || !referenceNumber.trim()}
             onClick={() =>
               startTransition(async () => {
@@ -137,3 +137,4 @@ export function PayoutProcessDialog({
     </Dialog>
   );
 }
+

@@ -83,7 +83,7 @@ export function FavoriteButton({
       className={cn(
         "transition-colors",
         optimisticFavorite
-          ? "border-rose-200 bg-rose-50 text-rose-600 hover:bg-rose-100 hover:text-rose-700"
+          ? "border-red-200 bg-red-50 text-red-500 hover:bg-red-100 hover:text-red-500"
           : "",
         className,
       )}
@@ -93,7 +93,12 @@ export function FavoriteButton({
       type="button"
       variant={variant}
     >
-      <Heart className={cn("size-4", optimisticFavorite ? "fill-current" : "")} />
+      <Heart
+        className={cn(
+          "size-4 hover:text-red-500",
+          optimisticFavorite && "fill-current text-red-500",
+        )}
+      />
     </Button>
   );
 }

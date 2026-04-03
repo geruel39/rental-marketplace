@@ -24,7 +24,7 @@ export function MobileNav() {
   const pathname = usePathname();
 
   return (
-    <nav className="fixed inset-x-0 bottom-0 z-40 border-t border-border bg-background lg:hidden">
+    <nav className="fixed inset-x-0 bottom-0 z-40 border-t border-border bg-white lg:hidden">
       <div className="grid grid-cols-5">
         {items.map((item) => {
           const Icon = item.icon;
@@ -37,7 +37,7 @@ export function MobileNav() {
               href={item.href}
               className={cn(
                 "flex flex-col items-center justify-center gap-1 rounded-sm px-2 py-3 text-[11px] font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
-                isActive ? "text-primary" : "text-muted-foreground",
+                isActive ? "text-brand-navy" : "text-brand-steel",
               )}
             >
               <Icon className="size-5" />

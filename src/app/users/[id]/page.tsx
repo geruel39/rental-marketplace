@@ -81,9 +81,9 @@ export default async function PublicProfilePage({
   const isOwnProfile = user?.id === profile.id;
 
   return (
-    <main className="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
+    <main className="bg-brand-light mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
       <div className="space-y-8">
-        <section className="rounded-3xl border border-border/70 bg-card p-6 shadow-sm">
+        <section className="rounded-3xl border border-border/70 bg-white p-6 shadow-sm">
           <div className="flex flex-col gap-6 lg:flex-row lg:items-start lg:justify-between">
             <div className="flex min-w-0 gap-4">
               <Avatar className="size-24" size="lg">
@@ -94,7 +94,7 @@ export default async function PublicProfilePage({
               <div className="min-w-0 space-y-3">
                 <div className="space-y-2">
                   <div className="flex flex-wrap items-center gap-2">
-                    <h1 className="text-3xl font-semibold tracking-tight">{displayName}</h1>
+                    <h1 className="text-brand-dark text-3xl font-semibold tracking-tight">{displayName}</h1>
                     <Badge variant="secondary">
                       {profile.account_type === "business" ? "Business" : "Individual"}
                     </Badge>
@@ -156,15 +156,15 @@ export default async function PublicProfilePage({
         />
 
         <div className="grid gap-4 md:grid-cols-3">
-          <div className="rounded-3xl border border-border/70 bg-card p-5 shadow-sm">
+          <div className="rounded-3xl border border-border/70 bg-white p-5 shadow-sm">
             <p className="text-sm text-muted-foreground">Listings</p>
             <p className="mt-2 text-3xl font-semibold">{publicProfile.listingsCount}</p>
           </div>
-          <div className="rounded-3xl border border-border/70 bg-card p-5 shadow-sm">
+          <div className="rounded-3xl border border-border/70 bg-white p-5 shadow-sm">
             <p className="text-sm text-muted-foreground">Rentals</p>
             <p className="mt-2 text-3xl font-semibold">{profile.total_rentals_completed}</p>
           </div>
-          <div className="rounded-3xl border border-border/70 bg-card p-5 shadow-sm">
+          <div className="rounded-3xl border border-border/70 bg-white p-5 shadow-sm">
             <p className="text-sm text-muted-foreground">Response Rate</p>
             <p className="mt-2 text-3xl font-semibold">{profile.response_rate}%</p>
           </div>

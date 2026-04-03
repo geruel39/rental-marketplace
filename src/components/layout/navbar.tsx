@@ -152,38 +152,38 @@ export async function Navbar() {
       : undefined);
 
   return (
-    <header className="sticky top-0 z-40 border-b border-border/70 bg-background/95 backdrop-blur">
+    <header className="sticky top-0 z-40 border-b border-border/70 bg-white/95 backdrop-blur">
       <div className="mx-auto flex h-16 max-w-7xl items-center gap-4 px-4 sm:px-6 lg:px-8">
         <div className="flex items-center gap-3">
           <Sheet>
             <SheetTrigger
               aria-label="Open navigation menu"
-              className="inline-flex size-9 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring lg:hidden"
+              className="inline-flex size-9 items-center justify-center rounded-md text-brand-navy transition-colors hover:bg-brand-light hover:text-brand-steel focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring lg:hidden"
             >
               <Menu className="size-5" />
               <span className="sr-only">Open navigation</span>
             </SheetTrigger>
             <SheetContent side="left" className="w-[85vw] max-w-sm">
-              <SheetHeader>
-                <SheetTitle>RentHub</SheetTitle>
+              <SheetHeader className="-mx-6 -mt-6 mb-4 bg-brand-navy px-6 py-5 text-white">
+                <SheetTitle className="text-white">RentHub</SheetTitle>
               </SheetHeader>
               <div className="space-y-6 px-4 pb-6">
                 <SearchBar />
                 <div className="space-y-3">
                   <div className="grid gap-2">
                     <SheetClose asChild>
-                      <Button asChild className="justify-start" variant="ghost">
+                      <Button asChild className="justify-start text-brand-navy hover:bg-brand-light hover:text-brand-steel" variant="ghost">
                         <Link href="/">Home</Link>
                       </Button>
                     </SheetClose>
                     <SheetClose asChild>
-                      <Button asChild className="justify-start" variant="ghost">
+                      <Button asChild className="justify-start text-brand-navy hover:bg-brand-light hover:text-brand-steel" variant="ghost">
                         <Link href="/listings">Browse Listings</Link>
                       </Button>
                     </SheetClose>
                   </div>
                   <SheetClose asChild>
-                    <Button asChild className="w-full justify-start">
+                    <Button asChild className="w-full justify-start bg-brand-navy text-white hover:bg-brand-steel">
                       <Link href="/listings/new">
                         <Plus className="size-4" />
                         List an Item
@@ -197,7 +197,9 @@ export async function Navbar() {
                         <SheetClose key={item.href} asChild>
                           <Button
                             asChild
-                            className="justify-start"
+                            className={item.href === "/register"
+                              ? "justify-start bg-brand-navy text-white hover:bg-brand-steel"
+                              : "justify-start text-brand-navy hover:bg-brand-light hover:text-brand-steel"}
                             variant={item.href === "/register" ? "default" : "ghost"}
                           >
                             <Link href={item.href}>{item.label}</Link>
@@ -209,7 +211,7 @@ export async function Navbar() {
                     <div className="grid gap-2">
                       {mobileDashboardSections.map((section) => (
                         <div key={section.title} className="space-y-2">
-                          <p className="px-1 text-xs font-semibold uppercase tracking-[0.18em] text-muted-foreground">
+                          <p className="px-1 text-xs font-semibold uppercase tracking-[0.18em] text-brand-navy/70">
                             {section.title}
                           </p>
                           <div className="grid gap-1">
@@ -220,7 +222,7 @@ export async function Navbar() {
                                 <SheetClose key={item.href} asChild>
                                   <Button
                                     asChild
-                                    className="justify-start"
+                                    className="justify-start text-brand-navy hover:bg-brand-light hover:text-brand-steel"
                                     variant="ghost"
                                   >
                                     <Link href={item.href}>
@@ -235,7 +237,11 @@ export async function Navbar() {
                         </div>
                       ))}
                       <SheetClose asChild>
-                        <Button asChild className="justify-start" variant="ghost">
+                        <Button
+                          asChild
+                          className="justify-start text-brand-navy hover:bg-brand-light hover:text-brand-steel"
+                          variant="ghost"
+                        >
                           <Link href={`/users/${user.id}`}>
                             <UserIcon className="size-4" />
                             My Profile
@@ -243,7 +249,11 @@ export async function Navbar() {
                         </Button>
                       </SheetClose>
                       <SheetClose asChild>
-                        <Button asChild className="justify-start" variant="ghost">
+                        <Button
+                          asChild
+                          className="justify-start text-brand-navy hover:bg-brand-light hover:text-brand-steel"
+                          variant="ghost"
+                        >
                           <a href="/auth/logout">
                             <LogOut className="size-4" />
                             Logout
@@ -258,7 +268,7 @@ export async function Navbar() {
           </Sheet>
 
           <Link
-            className="rounded-sm text-xl font-semibold tracking-tight focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            className="text-brand-navy rounded-sm text-xl font-bold tracking-tight focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
             href="/"
           >
             RentHub
@@ -272,19 +282,19 @@ export async function Navbar() {
         <div className="ml-auto hidden items-center gap-2 lg:flex">
           {!user ? (
             <>
-              <Button asChild variant="ghost">
+              <Button asChild className="bg-brand-navy text-white hover:bg-brand-steel">
                 <Link href="/listings/new">List an Item</Link>
               </Button>
-              <Button asChild variant="ghost">
+              <Button asChild className="border-brand-navy text-brand-navy hover:bg-brand-navy/10 hover:text-brand-steel" variant="outline">
                 <Link href="/login">Login</Link>
               </Button>
-              <Button asChild>
+              <Button asChild className="bg-brand-navy text-white hover:bg-brand-steel">
                 <Link href="/register">Sign Up</Link>
               </Button>
             </>
           ) : (
             <>
-              <Button asChild>
+              <Button asChild className="bg-brand-navy text-white hover:bg-brand-steel">
                 <Link href="/listings/new">List an Item</Link>
               </Button>
               <NotificationBell
@@ -328,7 +338,7 @@ export async function Navbar() {
                   {isAdmin ? (
                     <DropdownMenuItem asChild>
                       <Link href="/admin">
-                        <Shield className="size-4 text-orange-600" />
+                        <Shield className="size-4 text-brand-sky" />
                         Admin
                       </Link>
                     </DropdownMenuItem>

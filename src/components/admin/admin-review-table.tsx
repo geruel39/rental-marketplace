@@ -59,7 +59,7 @@ export function AdminReviewTable({
 
   return (
     <div className="space-y-4">
-      <div className="flex flex-wrap gap-2 rounded-2xl border border-orange-200/60 bg-white/90 p-2">
+      <div className="flex flex-wrap gap-2 rounded-2xl border border-border/70 bg-white p-2">
         {["all", "flagged", "hidden"].map((filter) => (
           <Button
             key={filter}
@@ -73,7 +73,7 @@ export function AdminReviewTable({
         ))}
       </div>
 
-      <div className="rounded-3xl border border-orange-200/60 bg-white/90 shadow-sm">
+      <div className="rounded-3xl border border-border/70 bg-white shadow-sm">
         <Table>
           <TableHeader>
             <TableRow>
@@ -164,3 +164,4 @@ export function AdminReviewTable({
     </div>
   );
 }
+

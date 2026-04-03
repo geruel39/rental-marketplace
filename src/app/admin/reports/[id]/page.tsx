@@ -81,7 +81,7 @@ export default async function AdminReportDetailPage({
       />
 
       <div className="grid gap-6 xl:grid-cols-[1fr_1fr]">
-        <Card className="border-orange-200/60 bg-white/90 shadow-sm">
+        <Card className="border-border/70 bg-white shadow-sm">
           <CardHeader>
             <CardTitle>Reporter</CardTitle>
           </CardHeader>
@@ -96,7 +96,7 @@ export default async function AdminReportDetailPage({
           </CardContent>
         </Card>
 
-        <Card className="border-orange-200/60 bg-white/90 shadow-sm">
+        <Card className="border-border/70 bg-white shadow-sm">
           <CardHeader>
             <CardTitle>Report Summary</CardTitle>
             <CardDescription>
@@ -116,7 +116,7 @@ export default async function AdminReportDetailPage({
         </Card>
       </div>
 
-      <Card className="border-orange-200/60 bg-white/90 shadow-sm">
+      <Card className="border-border/70 bg-white shadow-sm">
         <CardHeader>
           <CardTitle>Reported Entity</CardTitle>
         </CardHeader>
@@ -151,7 +151,7 @@ export default async function AdminReportDetailPage({
         </CardContent>
       </Card>
 
-      <Card className="border-orange-200/60 bg-white/90 shadow-sm">
+      <Card className="border-border/70 bg-white shadow-sm">
         <CardHeader>
           <CardTitle>Related Reports</CardTitle>
         </CardHeader>
@@ -162,7 +162,7 @@ export default async function AdminReportDetailPage({
             relatedReports.map((item) => (
               <Link
                 key={item.id}
-                className="block rounded-2xl border border-orange-100 bg-orange-50/20 p-4 transition-colors hover:bg-orange-50"
+                className="block rounded-2xl border border-brand-navy/10 bg-brand-light p-4 transition-colors hover:bg-brand-light"
                 href={`/admin/reports/${item.id}`}
               >
                 <p className="font-medium text-foreground">{item.report_type}</p>
@@ -175,3 +175,4 @@ export default async function AdminReportDetailPage({
     </div>
   );
 }
+

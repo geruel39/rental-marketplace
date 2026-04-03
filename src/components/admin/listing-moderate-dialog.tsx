@@ -58,7 +58,7 @@ export function ListingModerateDialog({
           </DialogDescription>
         </DialogHeader>
 
-        <div className="flex gap-4 rounded-2xl border border-orange-100 bg-orange-50/30 p-4">
+        <div className="flex gap-4 rounded-2xl border border-brand-navy/10 bg-brand-light p-4">
           <div className="size-20 overflow-hidden rounded-xl bg-muted">
             {listing.images[0] ? (
               // eslint-disable-next-line @next/next/no-img-element
@@ -115,3 +115,4 @@ export function ListingModerateDialog({
     </Dialog>
   );
 }
+

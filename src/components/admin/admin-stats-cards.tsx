@@ -30,12 +30,12 @@ const toneClasses: Record<StatCardConfig["tone"], string> = {
   blue: "border-blue-200/70 bg-blue-50 text-blue-700",
   green: "border-emerald-200/70 bg-emerald-50 text-emerald-700",
   red: "border-red-200/70 bg-red-50 text-red-700",
-  orange: "border-orange-200/70 bg-orange-50 text-orange-700",
+  orange: "border-border/70 bg-brand-light text-brand-navy",
 };
 
 function StatCard({ title, value, subtitle, href, icon: Icon, tone }: StatCardConfig) {
   const content = (
-    <Card className="gap-0 overflow-hidden border-orange-200/50 bg-white/90 py-0 shadow-sm">
+    <Card className="gap-0 overflow-hidden border-border/70 bg-white py-0 shadow-sm">
       <CardContent className="flex items-start justify-between gap-4 p-5">
         <div className="space-y-2">
           <p className="text-xs font-semibold uppercase tracking-[0.18em] text-muted-foreground">
@@ -142,3 +142,5 @@ export function AdminStatsCards({ stats }: { stats: AdminDashboardStats }) {
     </div>
   );
 }
+
+

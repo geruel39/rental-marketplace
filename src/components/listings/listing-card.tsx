@@ -66,7 +66,7 @@ export function ListingCard({
         className="block rounded-xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
         href={`/listings/${listing.id}`}
       >
-        <Card className="overflow-hidden border-border/70 transition-all duration-200 group-hover:-translate-y-0.5 group-hover:shadow-lg">
+        <Card className="overflow-hidden border-border/70 bg-white transition-all duration-200 group-hover:-translate-y-0.5 group-hover:border-brand-sky/30 group-hover:shadow-md">
           <div className="relative aspect-[4/3] overflow-hidden bg-muted">
             {image ? (
               // eslint-disable-next-line @next/next/no-img-element
@@ -92,7 +92,7 @@ export function ListingCard({
 
           <CardContent className="space-y-3 p-4">
             <div className="space-y-1">
-              <h3 className="line-clamp-1 font-semibold">{listing.title}</h3>
+              <h3 className="line-clamp-1 font-semibold text-brand-dark">{listing.title}</h3>
               <div className="flex items-center gap-1 text-sm text-muted-foreground">
                 <MapPin className="size-3.5 shrink-0" />
                 <span className="truncate">{location || "Location not specified"}</span>
@@ -100,7 +100,7 @@ export function ListingCard({
             </div>
 
             <div className="flex items-baseline gap-1">
-              <span className="text-lg font-semibold">
+              <span className="text-brand-navy text-lg font-bold">
                 {primaryPrice ? formatCurrency(primaryPrice) : "Custom"}
               </span>
               <span className="text-sm text-muted-foreground">

@@ -66,7 +66,7 @@ export default async function AdminReportsPage({
 
       <div className="grid gap-4 md:grid-cols-3">
         {stats.map((stat) => (
-          <Card key={stat.label} className="border-orange-200/60 bg-white/90 shadow-sm">
+          <Card key={stat.label} className="border-border/70 bg-white shadow-sm">
             <CardHeader className="pb-2">
               <CardTitle className="text-sm font-medium text-muted-foreground">{stat.label}</CardTitle>
             </CardHeader>
@@ -87,3 +87,4 @@ export default async function AdminReportsPage({
     </div>
   );
 }
+

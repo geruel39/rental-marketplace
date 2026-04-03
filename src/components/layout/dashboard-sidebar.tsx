@@ -113,9 +113,9 @@ export function DashboardSidebar({
   const effectivePath = bookingRouteTarget ?? pathname;
 
   return (
-    <aside className="hidden w-64 shrink-0 border-r border-border/70 bg-background lg:fixed lg:top-16 lg:bottom-0 lg:left-0 lg:block">
+    <aside className="hidden w-64 shrink-0 border-r border-border/70 bg-white lg:fixed lg:top-16 lg:bottom-0 lg:left-0 lg:block">
       <div className="flex h-full flex-col overflow-y-auto p-4 pb-6">
-        <Button asChild className="mb-6 w-full justify-start">
+        <Button asChild className="mb-6 w-full justify-start bg-brand-navy text-white hover:bg-brand-steel">
           <Link href="/listings/new">
             <Plus className="size-4" />
             Create Listing
@@ -125,7 +125,7 @@ export function DashboardSidebar({
         <nav className="space-y-6">
           {dashboardSections.map((section) => (
             <div key={section.title} className="space-y-2">
-              <h2 className="px-3 text-xs font-semibold uppercase tracking-[0.18em] text-muted-foreground">
+              <h2 className="px-3 text-xs font-semibold uppercase tracking-[0.18em] text-brand-navy/70">
                 {section.title}
               </h2>
               <div className="space-y-1">
@@ -140,13 +140,18 @@ export function DashboardSidebar({
                       key={item.href}
                       href={item.href}
                       className={cn(
-                        "flex items-center gap-3 rounded-lg px-3 py-2 text-sm transition-colors",
+                        "flex items-center gap-3 border-l-2 border-transparent rounded-r-lg px-3 py-2 text-sm transition-colors",
                         isActive
-                          ? "bg-primary text-primary-foreground"
-                          : "text-muted-foreground hover:bg-muted hover:text-foreground",
+                          ? "border-brand-navy bg-brand-navy/10 text-brand-navy"
+                          : "text-foreground hover:bg-brand-light hover:text-brand-steel",
                       )}
                     >
-                      <Icon className="size-4" />
+                      <Icon
+                        className={cn(
+                          "size-4 text-brand-steel",
+                          isActive && "text-brand-navy",
+                        )}
+                      />
                       {item.label}
                     </Link>
                   );
@@ -157,21 +162,26 @@ export function DashboardSidebar({
 
           {isAdmin ? (
             <div className="space-y-2">
-              <Separator className="bg-orange-200/70" />
-              <h2 className="px-3 pt-2 text-xs font-semibold uppercase tracking-[0.18em] text-orange-700">
+              <Separator className="bg-border" />
+              <h2 className="px-3 pt-2 text-xs font-semibold uppercase tracking-[0.18em] text-brand-navy/70">
                 Admin
               </h2>
               <div className="space-y-1">
                 <Link
                   href="/admin"
                   className={cn(
-                    "flex items-center gap-3 rounded-lg px-3 py-2 text-sm transition-colors",
+                    "flex items-center gap-3 border-l-2 border-transparent rounded-r-lg px-3 py-2 text-sm transition-colors",
                     pathname === "/admin" || pathname.startsWith("/admin/")
-                      ? "bg-orange-600 text-white"
-                      : "text-orange-700 hover:bg-orange-100 hover:text-orange-900",
+                      ? "border-brand-navy bg-brand-navy/10 text-brand-navy"
+                      : "text-foreground hover:bg-brand-light hover:text-brand-steel",
                   )}
                 >
-                  <Shield className="size-4" />
+                  <Shield
+                    className={cn(
+                      "size-4 text-brand-steel",
+                      (pathname === "/admin" || pathname.startsWith("/admin/")) && "text-brand-navy",
+                    )}
+                  />
                   Admin Panel
                 </Link>
               </div>

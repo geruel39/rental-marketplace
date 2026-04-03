@@ -88,7 +88,7 @@ export default async function AdminAuditLogPage({
     <div className="space-y-6">
       <AdminPageHeader
         action={(
-          <Button className="bg-orange-600 text-white hover:bg-orange-700" type="button" variant="default">
+          <Button className="bg-brand-navy text-white hover:bg-brand-steel" type="button" variant="default">
             Export
           </Button>
         )}
@@ -96,7 +96,7 @@ export default async function AdminAuditLogPage({
         description="Inspect administrative actions across moderation, payouts, settings, and operational decisions."
       />
 
-      <form className="grid gap-4 rounded-3xl border border-orange-200/60 bg-white/90 p-5 shadow-sm md:grid-cols-4">
+      <form className="grid gap-4 rounded-3xl border border-border/70 bg-white p-5 shadow-sm md:grid-cols-4">
         <div className="space-y-2">
           <Label htmlFor="adminId">Admin user</Label>
           <Select defaultValue={adminId} name="adminId">
@@ -143,7 +143,7 @@ export default async function AdminAuditLogPage({
         <input name="page" type="hidden" value="1" />
 
         <div className="md:col-span-4 flex flex-wrap items-center gap-3">
-          <Button className="bg-orange-600 text-white hover:bg-orange-700" type="submit">
+          <Button className="bg-brand-navy text-white hover:bg-brand-steel" type="submit">
             Apply Filters
           </Button>
           <Button asChild type="button" variant="outline">
@@ -160,3 +160,5 @@ export default async function AdminAuditLogPage({
     </div>
   );
 }
+
+

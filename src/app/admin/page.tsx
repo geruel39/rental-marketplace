@@ -74,8 +74,8 @@ export default async function AdminPage() {
       />
 
       {maintenanceMode ? (
-        <Alert className="border-orange-300 bg-orange-50 text-orange-950">
-          <ShieldAlert className="text-orange-700" />
+        <Alert className="border-brand-navy/20 bg-brand-light text-brand-dark">
+          <ShieldAlert className="text-brand-navy" />
           <AlertTitle>Maintenance mode is enabled</AlertTitle>
           <AlertDescription>
             The platform is currently in maintenance mode. Review platform settings before
@@ -87,7 +87,7 @@ export default async function AdminPage() {
       <AdminStatsCards stats={stats} />
 
       <div className="grid gap-6 xl:grid-cols-[1.1fr_0.9fr]">
-        <Card className="border-orange-200/60 bg-white/90 shadow-sm">
+        <Card className="border-border/70 bg-white shadow-sm">
           <CardHeader>
             <CardTitle>Action Required</CardTitle>
             <CardDescription>Priority queues that need an admin decision soon.</CardDescription>
@@ -96,16 +96,16 @@ export default async function AdminPage() {
             {actionItems.map((item) => (
               <div
                 key={item.label}
-                className="flex items-center justify-between gap-4 rounded-2xl border border-orange-100 bg-orange-50/40 p-4"
+                className="flex items-center justify-between gap-4 rounded-2xl border border-brand-navy/10 bg-brand-light p-4"
               >
                 <div className="space-y-2">
                   <p className="text-sm font-medium text-foreground">{item.label}</p>
-                  <Badge className="bg-orange-600 text-white hover:bg-orange-600">
+                  <Badge className="bg-brand-sky text-brand-dark hover:bg-brand-sky">
                     {item.count.toLocaleString()}
                   </Badge>
                 </div>
                 <Link
-                  className="inline-flex items-center gap-1 text-sm font-medium text-orange-700 transition-colors hover:text-orange-900"
+                  className="inline-flex items-center gap-1 text-sm font-medium text-brand-sky transition-colors hover:text-brand-navy"
                   href={item.href}
                 >
                   View
@@ -116,7 +116,7 @@ export default async function AdminPage() {
           </CardContent>
         </Card>
 
-        <Card className="border-orange-200/60 bg-white/90 shadow-sm">
+        <Card className="border-border/70 bg-white shadow-sm">
           <CardHeader>
             <CardTitle>Recent Activity</CardTitle>
             <CardDescription>The latest admin audit log events across the platform.</CardDescription>
@@ -134,7 +134,7 @@ export default async function AdminPage() {
                 return (
                   <div
                     key={entry.id}
-                    className="rounded-2xl border border-orange-100 bg-orange-50/30 p-4"
+                    className="rounded-2xl border border-brand-navy/10 bg-brand-light p-4"
                   >
                     <p className="text-sm font-medium text-foreground">
                       {adminName} performed {formatActionLabel(entry.action)}
@@ -142,7 +142,7 @@ export default async function AdminPage() {
                     <p className="mt-1 text-sm text-muted-foreground">
                       {entry.target_type} #{entry.target_id}
                     </p>
-                    <p className="mt-2 text-xs font-medium uppercase tracking-[0.16em] text-orange-700">
+                    <p className="mt-2 text-xs font-medium uppercase tracking-[0.16em] text-brand-navy">
                       {formatRelativeTime(entry.created_at)}
                     </p>
                   </div>
@@ -155,3 +155,4 @@ export default async function AdminPage() {
     </div>
   );
 }
+

@@ -18,5 +18,9 @@ export default async function RegisterPage() {
     redirect("/dashboard");
   }
 
-  return <RegisterForm />;
+  return (
+    <div className="w-full bg-brand-light">
+      <RegisterForm />
+    </div>
+  );
 }

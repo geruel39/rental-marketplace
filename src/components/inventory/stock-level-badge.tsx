@@ -23,7 +23,10 @@ export function StockLevelBadge({
 
   if (quantityAvailable === 0) {
     return (
-      <Badge className={cn("shadow-sm", sizeClass)} variant="destructive">
+      <Badge
+        className={cn("border-red-200 bg-red-100 text-red-800 shadow-sm", sizeClass)}
+        variant="outline"
+      >
         Out of Stock
       </Badge>
     );
@@ -31,9 +34,9 @@ export function StockLevelBadge({
 
   if (quantityAvailable <= threshold) {
     return (
-      <Badge
+        <Badge
         className={cn(
-          "border-amber-200 bg-amber-100 text-amber-800 shadow-sm",
+          "border-yellow-200 bg-yellow-100 text-yellow-800 shadow-sm",
           sizeClass,
         )}
         variant="outline"

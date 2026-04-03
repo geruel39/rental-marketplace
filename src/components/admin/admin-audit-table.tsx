@@ -49,7 +49,7 @@ export function AdminAuditTable({ entries }: { entries: AuditRow[] }) {
   const [expandedId, setExpandedId] = useState<string | null>(null);
 
   return (
-    <div className="rounded-3xl border border-orange-200/60 bg-white/90 shadow-sm">
+    <div className="rounded-3xl border border-border/70 bg-white shadow-sm">
       <Table>
         <TableHeader>
           <TableRow>
@@ -97,12 +97,12 @@ export function AdminAuditTable({ entries }: { entries: AuditRow[] }) {
                   </TableCell>
                   <TableCell className="font-medium text-foreground">{formatAction(entry.action)}</TableCell>
                   <TableCell>
-                    <Badge className="bg-orange-100 text-orange-800 hover:bg-orange-100">
+                    <Badge className="bg-brand-light text-brand-navy hover:bg-brand-light">
                       {entry.target_type}
                     </Badge>
                   </TableCell>
                   <TableCell>
-                    <Link className="text-orange-700 hover:underline" href={getTargetHref(entry)}>
+                    <Link className="text-brand-sky hover:text-brand-navy hover:underline" href={getTargetHref(entry)}>
                       {entry.target_id}
                     </Link>
                   </TableCell>
@@ -139,3 +139,4 @@ export function AdminAuditTable({ entries }: { entries: AuditRow[] }) {
     </div>
   );
 }
+

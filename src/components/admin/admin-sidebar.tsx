@@ -60,14 +60,14 @@ export function AdminSidebar() {
   const pathname = usePathname();
 
   return (
-    <aside className="hidden w-72 shrink-0 border-r border-orange-200/70 bg-gradient-to-b from-orange-50 via-background to-background lg:fixed lg:top-16 lg:bottom-0 lg:left-0 lg:block">
+    <aside className="bg-brand-dark text-brand-light hidden w-72 shrink-0 border-r border-white/10 lg:fixed lg:top-16 lg:bottom-0 lg:left-0 lg:block">
       <div className="flex h-full flex-col overflow-y-auto p-4 pb-6">
-        <div className="mb-6 rounded-2xl border border-orange-200/80 bg-white/90 p-4 shadow-sm">
-          <Badge className="bg-orange-600 text-white hover:bg-orange-600">
+        <div className="mb-6 rounded-2xl border border-white/10 bg-white/5 p-4 shadow-sm">
+          <Badge className="bg-brand-sky text-brand-dark hover:bg-brand-sky">
             ADMIN
           </Badge>
-          <p className="mt-3 text-sm font-semibold text-foreground">Super Admin Panel</p>
-          <p className="mt-1 text-sm text-muted-foreground">
+          <p className="mt-3 text-sm font-semibold text-white">Super Admin Panel</p>
+          <p className="mt-1 text-sm text-brand-light/70">
             Moderate the marketplace, review reports, and manage platform operations.
           </p>
         </div>
@@ -75,7 +75,7 @@ export function AdminSidebar() {
         <nav className="space-y-6">
           {adminSections.map((section) => (
             <div key={section.title} className="space-y-2">
-              <h2 className="px-3 text-xs font-semibold uppercase tracking-[0.18em] text-orange-700/80">
+              <h2 className="px-3 text-xs font-semibold uppercase tracking-[0.18em] text-brand-light/50">
                 {section.title}
               </h2>
               <div className="space-y-1">
@@ -93,8 +93,8 @@ export function AdminSidebar() {
                       className={cn(
                         "flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm transition-colors",
                         isActive
-                          ? "bg-orange-600 text-white shadow-sm"
-                          : "text-muted-foreground hover:bg-orange-100/80 hover:text-foreground",
+                          ? "bg-brand-navy text-white shadow-sm"
+                          : "text-brand-light/70 hover:bg-white/10 hover:text-white",
                       )}
                     >
                       <Icon className="size-4" />
@@ -110,7 +110,7 @@ export function AdminSidebar() {
         <div className="mt-auto pt-6">
           <Link
             href="/dashboard"
-            className="flex items-center gap-3 rounded-xl border border-orange-200/80 bg-white/90 px-3 py-2.5 text-sm font-medium text-orange-700 transition-colors hover:bg-orange-50"
+            className="flex items-center gap-3 rounded-xl border border-white/10 bg-white/5 px-3 py-2.5 text-sm font-medium text-brand-light transition-colors hover:bg-white/10"
           >
             <ArrowLeft className="size-4" />
             Back to Marketplace

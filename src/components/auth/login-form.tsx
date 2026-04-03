@@ -69,9 +69,10 @@ export function LoginForm() {
   };
 
   return (
-    <Card className="w-full max-w-md border-border/70 shadow-sm">
+    <Card className="w-full max-w-md border-border/70 bg-white shadow">
       <CardHeader className="space-y-2 text-center">
-        <CardTitle className="text-2xl">Welcome back</CardTitle>
+        <p className="text-brand-navy text-2xl font-bold">RentHub</p>
+        <CardTitle className="text-2xl text-brand-navy">Welcome back</CardTitle>
         <p className="text-sm text-muted-foreground">
           Sign in to manage listings, bookings, and inventory.
         </p>
@@ -131,7 +132,7 @@ export function LoginForm() {
 
             <div className="flex justify-end">
               <button
-                className="text-sm font-medium text-primary underline-offset-4 hover:underline"
+                className="text-brand-sky hover:text-brand-navy text-sm font-medium underline-offset-4 hover:underline"
                 onClick={() => {
                   setShowForgotPassword((current) => !current);
                   setResetEmail(form.getValues("email"));
@@ -143,10 +144,10 @@ export function LoginForm() {
             </div>
 
             {showForgotPassword ? (
-              <div className="space-y-3 rounded-2xl border border-border/70 bg-muted/30 p-4">
+              <div className="space-y-3 rounded-2xl border border-border/70 bg-brand-light p-4">
                 <div className="space-y-1">
                   <p className="flex items-center gap-2 text-sm font-medium">
-                    <KeyRound className="size-4 text-primary" />
+                    <KeyRound className="text-brand-sky size-4" />
                     Reset your password
                   </p>
                   <p className="text-sm text-muted-foreground">
@@ -176,7 +177,7 @@ export function LoginForm() {
                     value={resetEmail}
                   />
                   <Button
-                    className="w-full"
+                    className="w-full border-brand-navy text-brand-navy hover:bg-brand-light"
                     disabled={isResetPending}
                     onClick={() => {
                       const formData = new FormData();
@@ -194,7 +195,11 @@ export function LoginForm() {
               </div>
             ) : null}
 
-            <Button className="w-full" disabled={isPending} type="submit">
+            <Button
+              className="w-full bg-brand-navy text-white hover:bg-brand-steel"
+              disabled={isPending}
+              type="submit"
+            >
               {isPending ? "Signing In..." : "Sign In"}
             </Button>
           </form>
@@ -213,7 +218,7 @@ export function LoginForm() {
           </div>
 
           <Button
-            className="w-full"
+            className="w-full bg-white hover:bg-brand-light"
             disabled={isGooglePending}
             onClick={onGoogleClick}
             type="button"
@@ -226,7 +231,7 @@ export function LoginForm() {
 
         <p className="text-center text-sm text-muted-foreground">
           Don&apos;t have an account?{" "}
-          <Link className="font-medium text-foreground underline" href="/register">
+          <Link className="text-brand-sky hover:text-brand-navy font-medium underline" href="/register">
             Sign up
           </Link>
         </p>

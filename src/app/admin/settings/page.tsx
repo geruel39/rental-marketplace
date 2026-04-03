@@ -70,8 +70,8 @@ export default async function AdminSettingsPage() {
         description="Adjust platform-wide fees, listing rules, and operational switches."
       />
 
-      <Alert className="border-orange-300 bg-orange-50 text-orange-950">
-        <AlertTriangle className="text-orange-700" />
+      <Alert className="border-brand-navy/20 bg-brand-light text-brand-dark">
+        <AlertTriangle className="text-brand-navy" />
         <AlertTitle>Changes take effect immediately</AlertTitle>
         <AlertDescription>
           Review each update carefully before saving, especially maintenance mode and fee changes.
@@ -82,3 +82,4 @@ export default async function AdminSettingsPage() {
     </div>
   );
 }
+

@@ -65,7 +65,7 @@ export function DisputeResolveDialog({
           </DialogDescription>
         </DialogHeader>
 
-        <div className="rounded-2xl border border-orange-100 bg-orange-50/30 p-4 text-sm">
+        <div className="rounded-2xl border border-brand-navy/10 bg-brand-light p-4 text-sm">
           <p className="font-medium text-foreground">{booking.listing.title}</p>
           <p className="text-muted-foreground">
             {formatDate(booking.start_date)} - {formatDate(booking.end_date)} · Qty {booking.quantity}
@@ -123,7 +123,7 @@ export function DisputeResolveDialog({
             Cancel
           </Button>
           <Button
-            className="bg-orange-600 text-white hover:bg-orange-700"
+            className="bg-brand-navy text-white hover:bg-brand-steel"
             disabled={isPending || details.trim().length < 3}
             onClick={() =>
               startTransition(async () => {
@@ -141,3 +141,4 @@ export function DisputeResolveDialog({
     </Dialog>
   );
 }
+

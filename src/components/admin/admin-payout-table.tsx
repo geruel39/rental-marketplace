@@ -92,7 +92,7 @@ export function AdminPayoutTable({
   return (
     <div className="space-y-4">
       <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-        <div className="flex flex-wrap gap-2 rounded-2xl border border-orange-200/60 bg-white/90 p-2">
+        <div className="flex flex-wrap gap-2 rounded-2xl border border-border/70 bg-white p-2">
           {["all", "pending", "completed", "failed"].map((tab) => (
             <Button
               key={tab}
@@ -107,7 +107,7 @@ export function AdminPayoutTable({
         </div>
 
         <div className="flex items-center gap-3">
-          <div className="rounded-2xl border border-orange-200 bg-orange-50 px-4 py-2 text-sm">
+          <div className="rounded-2xl border border-border bg-brand-light px-4 py-2 text-sm">
             Pending total: <span className="font-semibold">{formatCurrency(totalPendingAmount)}</span>
           </div>
           <Button onClick={exportPendingCsv} type="button" variant="outline">
@@ -117,7 +117,7 @@ export function AdminPayoutTable({
         </div>
       </div>
 
-      <div className="rounded-3xl border border-orange-200/60 bg-white/90 shadow-sm">
+      <div className="rounded-3xl border border-border/70 bg-white shadow-sm">
         <Table>
           <TableHeader>
             <TableRow>
@@ -187,7 +187,7 @@ export function AdminPayoutTable({
                           onComplete={() => router.refresh()}
                           payout={payout}
                           trigger={
-                            <Button className="bg-orange-600 text-white hover:bg-orange-700" size="sm">
+                            <Button className="bg-brand-navy text-white hover:bg-brand-steel" size="sm">
                               Process
                             </Button>
                           }
@@ -221,3 +221,4 @@ export function AdminPayoutTable({
     </div>
   );
 }
+

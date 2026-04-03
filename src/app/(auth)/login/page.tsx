@@ -18,5 +18,9 @@ export default async function LoginPage() {
     redirect("/dashboard");
   }
 
-  return <LoginForm />;
+  return (
+    <div className="w-full bg-brand-light">
+      <LoginForm />
+    </div>
+  );
 }

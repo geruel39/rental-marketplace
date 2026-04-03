@@ -14,7 +14,7 @@ export function AdminChart({ data }: AdminChartProps) {
 
   return (
     <div className="space-y-5">
-      <div className="rounded-2xl border border-dashed border-orange-200 bg-orange-50/60 p-4 text-sm text-orange-900">
+      <div className="rounded-2xl border border-dashed border-border bg-brand-light p-4 text-sm text-brand-dark">
         Revenue chart - integrate charting library for production. `recharts` would be a
         good fit once interactive analytics are needed.
       </div>
@@ -23,12 +23,12 @@ export function AdminChart({ data }: AdminChartProps) {
         {data.map((item) => (
           <div
             key={item.month}
-            className="flex min-h-40 flex-col justify-end rounded-2xl border border-orange-100 bg-white/90 p-3 shadow-sm"
+            className="flex min-h-40 flex-col justify-end rounded-2xl border border-brand-navy/10 bg-white p-3 shadow-sm"
           >
             <div className="flex flex-1 items-end">
-              <div className="w-full rounded-xl bg-orange-100 p-1">
+              <div className="w-full rounded-xl bg-brand-light p-1">
                 <div
-                  className="rounded-lg bg-gradient-to-t from-orange-600 to-orange-400 transition-all"
+                  className="rounded-lg bg-gradient-to-t from-brand-navy to-brand-sky transition-all"
                   style={{
                     height: `${Math.max(12, Math.round((item.revenue / maxRevenue) * 120))}px`,
                   }}
@@ -49,3 +49,5 @@ export function AdminChart({ data }: AdminChartProps) {
     </div>
   );
 }
+
+

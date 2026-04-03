@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { TrendingUp } from "lucide-react";
 
 import { getAdminDashboardStats } from "@/actions/admin";
@@ -237,15 +238,15 @@ export default async function AdminAnalyticsPage() {
         title="Analytics"
         description="Track growth, revenue performance, inventory efficiency, and the marketplace operators driving the most value."
         action={
-          <Button asChild className="bg-orange-600 text-white hover:bg-orange-700">
-            <a href="/admin/reports">Review reports</a>
+          <Button asChild className="bg-brand-navy text-white hover:bg-brand-steel">
+            <Link href="/admin/reports">Review reports</Link>
           </Button>
         }
       />
 
       <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
         {metricCards.map((card) => (
-          <Card key={card.title} className="border-orange-200/60 bg-white/90 shadow-sm">
+          <Card key={card.title} className="border-border/70 bg-white shadow-sm">
             <CardHeader>
               <CardTitle>{card.title}</CardTitle>
             </CardHeader>
@@ -260,10 +261,10 @@ export default async function AdminAnalyticsPage() {
         ))}
       </div>
 
-      <Card className="border-orange-200/60 bg-white/90 shadow-sm">
+      <Card className="border-border/70 bg-white shadow-sm">
         <CardHeader>
           <div className="flex items-center gap-2">
-            <TrendingUp className="size-5 text-orange-600" />
+            <TrendingUp className="size-5 text-brand-steel" />
             <CardTitle>Revenue Trend</CardTitle>
           </div>
           <CardDescription>Platform fee revenue across the last 12 months.</CardDescription>
@@ -274,7 +275,7 @@ export default async function AdminAnalyticsPage() {
       </Card>
 
       <div className="grid gap-6 xl:grid-cols-2">
-        <Card className="border-orange-200/60 bg-white/90 shadow-sm">
+        <Card className="border-border/70 bg-white shadow-sm">
           <CardHeader>
             <CardTitle>Top Categories</CardTitle>
             <CardDescription>Categories with the highest active supply of listings.</CardDescription>
@@ -283,7 +284,7 @@ export default async function AdminAnalyticsPage() {
             {topCategories.map((category, index) => (
               <div
                 key={category.id}
-                className="flex items-center justify-between rounded-2xl border border-orange-100 bg-orange-50/30 p-4"
+                className="flex items-center justify-between rounded-2xl border border-brand-navy/10 bg-brand-light p-4"
               >
                 <div>
                   <p className="text-sm font-medium text-foreground">
@@ -293,7 +294,7 @@ export default async function AdminAnalyticsPage() {
                     {category.listingCount.toLocaleString()} listings
                   </p>
                 </div>
-                <Badge className="bg-orange-600 text-white hover:bg-orange-600">
+                <Badge className="bg-brand-sky text-brand-dark hover:bg-brand-sky">
                   {category.listingCount}
                 </Badge>
               </div>
@@ -301,7 +302,7 @@ export default async function AdminAnalyticsPage() {
           </CardContent>
         </Card>
 
-        <Card className="border-orange-200/60 bg-white/90 shadow-sm">
+        <Card className="border-border/70 bg-white shadow-sm">
           <CardHeader>
             <CardTitle>Top Listers</CardTitle>
             <CardDescription>Listers ranked by completed booking payout volume.</CardDescription>
@@ -317,7 +318,7 @@ export default async function AdminAnalyticsPage() {
               return (
                 <div
                   key={entry.listerId}
-                  className="flex items-center justify-between rounded-2xl border border-orange-100 bg-orange-50/30 p-4"
+                  className="flex items-center justify-between rounded-2xl border border-brand-navy/10 bg-brand-light p-4"
                 >
                   <div>
                     <p className="text-sm font-medium text-foreground">
@@ -339,3 +340,5 @@ export default async function AdminAnalyticsPage() {
     </div>
   );
 }
+
+
