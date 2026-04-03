@@ -168,31 +168,49 @@ body {
   font-family: var(--font-sans);
 }
 
+a[href],
+button,
+[role="button"],
+summary,
+select,
+label[for],
+input[type="checkbox"],
+input[type="radio"] {
+  cursor: pointer;
+}
+
+button:disabled,
+input:disabled,
+select:disabled,
+textarea:disabled {
+  cursor: not-allowed;
+}
+
 html {
-  scrollbar-color: #737373 #1f1f1f;
+  scrollbar-color: #9bb9db #e7eef7;
   scrollbar-width: thin;
 }
 
 body,
 * {
-  scrollbar-color: #737373 #1f1f1f;
+  scrollbar-color: #9bb9db #e7eef7;
 }
 
 *::-webkit-scrollbar {
-  width: 10px;
-  height: 10px;
+  width: 8px;
+  height: 8px;
 }
 
 *::-webkit-scrollbar-track {
-  background: #1f1f1f;
+  background: #e7eef7;
 }
 
 *::-webkit-scrollbar-thumb {
-  background: #737373;
-  border: 2px solid #1f1f1f;
+  background: #9bb9db;
+  border: 1px solid #e7eef7;
   border-radius: 9999px;
 }
 
 *::-webkit-scrollbar-thumb:hover {
-  background: #8a8a8a;
+  background: #7ea8d7;
 }

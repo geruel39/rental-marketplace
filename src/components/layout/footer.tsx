@@ -48,7 +48,7 @@ export function Footer() {
                 {column.links.map((link) => (
                   <Link
                     key={link.label}
-                    className="block rounded-sm text-sm text-brand-light/75 transition-colors hover:text-brand-sky focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                    className="block rounded-sm text-sm text-brand-light/90 transition-colors hover:text-brand-sky focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                     href={link.href}
                   >
                     {link.label}
@@ -59,7 +59,7 @@ export function Footer() {
           ))}
         </div>
 
-        <div className="mt-10 border-t border-white/10 pt-6 text-sm text-brand-light/70">
+        <div className="mt-10 border-t border-white/10 pt-6 text-sm text-brand-light/80">
           Copyright {new Date().getFullYear()} RentHub. All rights reserved.
         </div>
       </div>

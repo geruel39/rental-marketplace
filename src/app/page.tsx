@@ -90,23 +90,24 @@ export default async function Home() {
 
   return (
     <div className="bg-brand-light">
-      <section className="bg-gradient-to-br from-brand-navy to-brand-steel text-white">
-        <div className="mx-auto max-w-7xl px-4 py-20 sm:px-6 lg:px-8">
+      <section className="relative overflow-hidden bg-gradient-to-br from-brand-navy via-brand-navy to-brand-steel text-white">
+        <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_top,rgba(56,189,242,0.22),transparent_42%),linear-gradient(135deg,rgba(0,0,0,0.08),transparent_58%)]" />
+        <div className="relative mx-auto max-w-7xl px-4 py-20 sm:px-6 lg:px-8">
           <div className="mx-auto max-w-4xl text-center">
-            <h1 className="text-4xl font-semibold tracking-tight sm:text-6xl">
+            <h1 className="text-4xl font-semibold tracking-tight drop-shadow-sm sm:text-6xl">
               Rent Anything From Anyone
             </h1>
-            <p className="mt-4 text-lg text-white/80 sm:text-xl">
+            <p className="mt-4 text-lg text-white/90 sm:text-xl">
               The peer-to-peer marketplace for renting everyday items.
             </p>
             <div className="mt-8">
               <SearchBar categories={categories} />
             </div>
-            <div className="mt-8 flex flex-wrap items-center justify-center gap-3 text-sm text-white/80">
+            <div className="mt-8 flex flex-wrap items-center justify-center gap-3 text-sm text-white">
               {trustIndicators.map((item) => (
                 <span
                   key={item}
-                  className="rounded-full border border-white/20 bg-white/10 px-4 py-2"
+                  className="rounded-full border border-white/30 bg-white/15 px-4 py-2 shadow-sm backdrop-blur-sm"
                 >
                   {item}
                 </span>
