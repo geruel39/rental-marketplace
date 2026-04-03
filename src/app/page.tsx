@@ -90,14 +90,14 @@ export default async function Home() {
 
   return (
     <div className="bg-brand-light">
-      <section className="relative overflow-hidden bg-gradient-to-br from-brand-navy via-brand-navy to-brand-steel text-white">
-        <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_top,rgba(56,189,242,0.22),transparent_42%),linear-gradient(135deg,rgba(0,0,0,0.08),transparent_58%)]" />
+      <section className="relative overflow-hidden bg-[linear-gradient(135deg,#003e86_0%,#0b4e9a_45%,#3768a2_100%)] text-white">
+        <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_50%_10%,rgba(56,189,242,0.28),transparent_34%),linear-gradient(180deg,rgba(0,0,0,0.10),rgba(0,0,0,0.02))]" />
         <div className="relative mx-auto max-w-7xl px-4 py-20 sm:px-6 lg:px-8">
           <div className="mx-auto max-w-4xl text-center">
-            <h1 className="text-4xl font-semibold tracking-tight drop-shadow-sm sm:text-6xl">
+            <h1 className="text-4xl font-semibold tracking-tight text-white drop-shadow-[0_2px_12px_rgba(0,0,0,0.28)] sm:text-6xl">
               Rent Anything From Anyone
             </h1>
-            <p className="mt-4 text-lg text-white/90 sm:text-xl">
+            <p className="mt-4 text-lg text-white/95 drop-shadow-[0_1px_6px_rgba(0,0,0,0.22)] sm:text-xl">
               The peer-to-peer marketplace for renting everyday items.
             </p>
             <div className="mt-8">
@@ -107,7 +107,7 @@ export default async function Home() {
               {trustIndicators.map((item) => (
                 <span
                   key={item}
-                  className="rounded-full border border-white/30 bg-white/15 px-4 py-2 shadow-sm backdrop-blur-sm"
+                  className="rounded-full border border-white/35 bg-white/18 px-4 py-2 font-medium text-white shadow-[0_8px_24px_rgba(0,0,0,0.14)] backdrop-blur-sm"
                 >
                   {item}
                 </span>
