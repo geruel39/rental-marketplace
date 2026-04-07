@@ -236,9 +236,9 @@ export default async function ListingDetailPage({
           <section className="space-y-4">
             <div className="flex flex-wrap items-center gap-3">
               <h2 className="text-brand-dark text-xl font-semibold">Reviews</h2>
-              <div className="flex items-center gap-2 text-muted-foreground">
+              <div className="flex items-center gap-3 rounded-full bg-white px-4 py-2 text-muted-foreground shadow-sm">
                 <Star className="size-4 fill-current text-amber-500" />
-                <span>
+                <span className="font-medium text-brand-navy">
                   {reviewCount > 0 ? averageRating.toFixed(1) : "No rating yet"}
                 </span>
                 <span>({reviewCount})</span>

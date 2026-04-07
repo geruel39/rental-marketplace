@@ -27,20 +27,24 @@ export function ReviewCard({ review, canReport = false }: ReviewCardProps) {
           <div className="space-y-2">
             <div>
               <p className="font-medium">{reviewerName}</p>
-              <p className="text-sm text-muted-foreground">
-                {formatRelativeTime(review.created_at)}
-              </p>
-            </div>
-            <div className="flex flex-wrap items-center gap-2">
-              <StarRating readOnly size="sm" value={review.overall_rating} />
               <Badge variant="secondary">
                 {review.review_role === "as_renter"
                   ? "Reviewed as Renter"
                   : "Reviewed as Lister"}
               </Badge>
+              <p className="mt-1 text-sm text-muted-foreground">
+                {formatRelativeTime(review.created_at)}
+              </p>
             </div>
           </div>
         </div>
+        <div className="flex items-start gap-3">
+          <div className="text-right">
+            <p className="text-lg font-semibold text-brand-navy">
+              {review.overall_rating.toFixed(1)}
+            </p>
+            <StarRating readOnly size="md" value={review.overall_rating} />
+          </div>
         {canReport ? (
           <ReportDialog
             targetId={review.id}
@@ -48,6 +52,7 @@ export function ReviewCard({ review, canReport = false }: ReviewCardProps) {
             trigger={<Badge variant="outline">Report</Badge>}
           />
         ) : null}
+        </div>
       </div>
 
       {review.comment ? (
@@ -55,8 +60,13 @@ export function ReviewCard({ review, canReport = false }: ReviewCardProps) {
       ) : null}
 
       {review.response ? (
-        <div className="mt-4 rounded-2xl bg-muted/40 p-4 text-sm text-muted-foreground">
+        <div className="mt-4 ml-4 rounded-2xl border border-brand-navy/10 bg-muted/40 p-4 text-sm text-muted-foreground">
           <p className="mb-1 font-medium text-foreground">{revieweeName} responded</p>
+          {review.responded_at ? (
+            <p className="mb-2 text-xs text-muted-foreground">
+              {formatRelativeTime(review.responded_at)}
+            </p>
+          ) : null}
           <p>{review.response}</p>
         </div>
       ) : null}

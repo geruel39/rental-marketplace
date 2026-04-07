@@ -7,6 +7,7 @@ import { toast } from "sonner";
 
 import { respondToReview } from "@/actions/reviews";
 import { ReviewCard } from "@/components/reviews/review-card";
+import { StarRating } from "@/components/reviews/star-rating";
 import { EmptyState } from "@/components/shared/empty-state";
 import { Pagination } from "@/components/shared/pagination";
 import { Button } from "@/components/ui/button";
@@ -97,9 +98,12 @@ export function ReviewList({
   return (
     <div className="space-y-6">
       {showSummary && summary ? (
-        <div className="grid gap-6 rounded-3xl border border-border bg-background p-6 shadow-sm lg:grid-cols-[220px_1fr]">
-          <div className="space-y-2">
-            <p className="text-4xl font-semibold">{summary.average.toFixed(1)}</p>
+        <div className="grid gap-6 rounded-3xl border border-border bg-background p-6 shadow-sm lg:grid-cols-[260px_1fr]">
+          <div className="flex flex-col items-center justify-center space-y-3 text-center">
+            <p className="text-5xl font-semibold text-brand-navy">
+              {summary.average.toFixed(1)}
+            </p>
+            <StarRating readOnly size="md" value={summary.average} />
             <p className="text-sm text-muted-foreground">
               {summary.total} review{summary.total === 1 ? "" : "s"}
             </p>
@@ -108,7 +112,7 @@ export function ReviewList({
           <div className="space-y-3">
             {summary.distribution.map((item) => (
               <div key={item.rating} className="grid grid-cols-[56px_1fr_48px] items-center gap-3 text-sm">
-                <span>{item.rating} star</span>
+                <span>{item.rating} stars</span>
                 <Progress value={item.percentage} />
                 <span className="text-right text-muted-foreground">
                   {Math.round(item.percentage)}%

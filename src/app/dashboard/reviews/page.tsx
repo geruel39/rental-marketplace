@@ -28,12 +28,6 @@ export default async function ReviewsPage() {
       getMyWrittenReviews(user.id),
       getPendingReviews(user.id),
     ]);
-  const writtenAsLister = writtenReviews.filter(
-    (review) => review.review_role === "as_lister",
-  );
-  const writtenAsRenter = writtenReviews.filter(
-    (review) => review.review_role === "as_renter",
-  );
   const pendingAsRenter = pendingReviews.filter((booking) => booking.renter_id === user.id);
   const pendingAsLister = pendingReviews.filter((booking) => booking.lister_id === user.id);
 
@@ -80,8 +74,7 @@ export default async function ReviewsPage() {
         <TabsList>
           <TabsTrigger value="lister">Received as Lister</TabsTrigger>
           <TabsTrigger value="renter">Received as Renter</TabsTrigger>
-          <TabsTrigger value="written-lister">Written as Lister</TabsTrigger>
-          <TabsTrigger value="written-renter">Written as Renter</TabsTrigger>
+          <TabsTrigger value="my-reviews">My Reviews</TabsTrigger>
         </TabsList>
 
         <TabsContent value="lister">
@@ -102,12 +95,8 @@ export default async function ReviewsPage() {
           />
         </TabsContent>
 
-        <TabsContent value="written-lister">
-          <ReviewList reviews={writtenAsLister} showSummary />
-        </TabsContent>
-
-        <TabsContent value="written-renter">
-          <ReviewList reviews={writtenAsRenter} showSummary />
+        <TabsContent value="my-reviews">
+          <ReviewList reviews={writtenReviews} showSummary />
         </TabsContent>
       </Tabs>
     </div>
