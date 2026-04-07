@@ -15,49 +15,55 @@ import {
   ScrollText,
   Settings,
   ShieldAlert,
+  ShieldCheck,
   Users,
 } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
 
-const adminSections = [
-  {
-    title: "Overview",
-    items: [
-      { href: "/admin", label: "Dashboard", icon: LayoutDashboard },
-      { href: "/admin/analytics", label: "Analytics", icon: FileSearch },
-    ],
-  },
-  {
-    title: "Manage",
-    items: [
-      { href: "/admin/users", label: "Users", icon: Users },
-      { href: "/admin/listings", label: "Listings", icon: Package },
-      { href: "/admin/bookings", label: "Bookings", icon: ReceiptText },
-      { href: "/admin/reviews", label: "Reviews", icon: Flag },
-      { href: "/admin/inventory", label: "Inventory", icon: Boxes },
-    ],
-  },
-  {
-    title: "Operations",
-    items: [
-      { href: "/admin/payouts", label: "Payouts", icon: CircleDollarSign },
-      { href: "/admin/reports", label: "Reports", icon: ShieldAlert },
-      { href: "/admin/categories", label: "Categories", icon: ListChecks },
-    ],
-  },
-  {
-    title: "System",
-    items: [
-      { href: "/admin/settings", label: "Settings", icon: Settings },
-      { href: "/admin/audit-log", label: "Audit Log", icon: ScrollText },
-    ],
-  },
-] as const;
-
-export function AdminSidebar() {
+export function AdminSidebar({ pendingKycCount = 0 }: { pendingKycCount?: number }) {
   const pathname = usePathname();
+  const adminSections = [
+    {
+      title: "Overview",
+      items: [
+        { href: "/admin", label: "Dashboard", icon: LayoutDashboard },
+        { href: "/admin/analytics", label: "Analytics", icon: FileSearch },
+      ],
+    },
+    {
+      title: "Manage",
+      items: [
+        { href: "/admin/users", label: "Users", icon: Users },
+        { href: "/admin/listings", label: "Listings", icon: Package },
+        { href: "/admin/bookings", label: "Bookings", icon: ReceiptText },
+        { href: "/admin/reviews", label: "Reviews", icon: Flag },
+        { href: "/admin/inventory", label: "Inventory", icon: Boxes },
+      ],
+    },
+    {
+      title: "Operations",
+      items: [
+        { href: "/admin/payouts", label: "Payouts", icon: CircleDollarSign },
+        {
+          href: "/admin/kyc-verification",
+          label: "KYC Verification",
+          icon: ShieldCheck,
+          count: pendingKycCount,
+        },
+        { href: "/admin/reports", label: "Reports", icon: ShieldAlert },
+        { href: "/admin/categories", label: "Categories", icon: ListChecks },
+      ],
+    },
+    {
+      title: "System",
+      items: [
+        { href: "/admin/settings", label: "Settings", icon: Settings },
+        { href: "/admin/audit-log", label: "Audit Log", icon: ScrollText },
+      ],
+    },
+  ] as const;
 
   return (
     <aside className="hidden w-72 shrink-0 border-r border-border/70 bg-white text-brand-dark lg:fixed lg:top-16 lg:bottom-0 lg:left-0 lg:block">
@@ -103,7 +109,19 @@ export function AdminSidebar() {
                           isActive ? "text-white" : "text-brand-steel",
                         )}
                       />
-                      {item.label}
+                      <span className="flex flex-1 items-center justify-between gap-2">
+                        <span>{item.label}</span>
+                        {"count" in item && item.count ? (
+                          <Badge
+                            className={cn(
+                              "bg-brand-sky text-brand-dark hover:bg-brand-sky",
+                              isActive && "bg-white/15 text-white hover:bg-white/15",
+                            )}
+                          >
+                            {item.count}
+                          </Badge>
+                        ) : null}
+                      </span>
                     </Link>
                   );
                 })}

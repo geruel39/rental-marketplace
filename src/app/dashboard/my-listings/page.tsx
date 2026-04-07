@@ -5,9 +5,11 @@ import { redirect } from "next/navigation";
 import {
   getMyListings,
 } from "@/actions/listings";
+import { getPayoutSetupStatus } from "@/actions/payout";
 import { StockLevelBadge } from "@/components/inventory/stock-level-badge";
 import { MyListingActions } from "@/components/listings/my-listing-actions";
 import { EmptyState } from "@/components/shared/empty-state";
+import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -18,6 +20,12 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 import { createClient } from "@/lib/supabase/server";
 import { formatCurrency } from "@/lib/utils";
 
@@ -47,10 +55,29 @@ export default async function MyListingsPage() {
     redirect("/login");
   }
 
-  const listings = await getMyListings(user.id);
+  const [listings, payoutStatus] = await Promise.all([
+    getMyListings(user.id),
+    getPayoutSetupStatus(user.id),
+  ]);
 
   return (
-    <div className="space-y-6">
+    <TooltipProvider>
+      <div className="space-y-6">
+        {!payoutStatus.is_complete ? (
+          <Alert className="border-amber-200 bg-amber-50 text-amber-900">
+            <AlertDescription className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+              <span>Complete payout setup to create listings.</span>
+              <Button
+                asChild
+                className="bg-brand-navy text-white hover:bg-brand-steel"
+                size="sm"
+              >
+                <Link href="/dashboard/settings/payments">Set Up</Link>
+              </Button>
+            </AlertDescription>
+          </Alert>
+        ) : null}
+
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h1 className="text-2xl font-semibold tracking-tight">My Listings</h1>
@@ -58,22 +85,48 @@ export default async function MyListingsPage() {
             Manage all your active, paused, and draft listings in one place.
           </p>
         </div>
-        <Button asChild>
-          <Link href="/listings/new">
-            <Plus className="size-4" />
-            Create New Listing
-          </Link>
-        </Button>
+        {payoutStatus.is_complete ? (
+          <Button asChild>
+            <Link href="/listings/new">
+              <Plus className="size-4" />
+              Create New Listing
+            </Link>
+          </Button>
+        ) : (
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <span>
+                <Button disabled type="button">
+                  <Plus className="size-4" />
+                  Create New Listing
+                </Button>
+              </span>
+            </TooltipTrigger>
+            <TooltipContent side="bottom" sideOffset={8}>
+              Complete payout setup first to unlock listing creation.
+            </TooltipContent>
+          </Tooltip>
+        )}
       </div>
 
       {listings.length === 0 ? (
-        <EmptyState
-          actionHref="/listings/new"
-          actionLabel="Create Listing"
-          description="Publish your first rentable item to start receiving requests."
-          icon={PackagePlus}
-          title="No listings yet"
-        />
+        payoutStatus.is_complete ? (
+          <EmptyState
+            actionHref="/listings/new"
+            actionLabel="Create Listing"
+            description="Publish your first rentable item to start receiving requests."
+            icon={PackagePlus}
+            title="No listings yet"
+          />
+        ) : (
+          <EmptyState
+            actionHref="/dashboard/settings/payments"
+            actionLabel="Set Up Payout"
+            description="Finish payout setup first, then publish your first rentable item."
+            icon={PackagePlus}
+            title="No listings yet"
+          />
+        )
       ) : (
         <div className="rounded-2xl border border-border bg-background">
           <Table>
@@ -148,6 +201,7 @@ export default async function MyListingsPage() {
           </Table>
         </div>
       )}
-    </div>
+      </div>
+    </TooltipProvider>
   );
 }

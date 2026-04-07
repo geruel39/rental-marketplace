@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
 
+import { getPendingKYCVerifications } from "@/actions/admin";
 import { AdminSidebar } from "@/components/admin/admin-sidebar";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
@@ -37,10 +38,11 @@ export default async function AdminLayout({
 
   const displayName =
     profile.display_name || profile.full_name || profile.email || user.email || "Admin";
+  const { count: pendingKycCount } = await getPendingKYCVerifications();
 
   return (
     <div className="min-h-[calc(100vh-4rem)] bg-brand-light">
-      <AdminSidebar />
+      <AdminSidebar pendingKycCount={pendingKycCount} />
       <div className="lg:pl-72">
         <div className="border-b border-brand-navy/10 bg-brand-navy text-white">
           <div className="flex min-h-16 items-center justify-between gap-4 px-4 py-3 sm:px-6 lg:px-8">

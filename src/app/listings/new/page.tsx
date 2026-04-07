@@ -1,8 +1,18 @@
 import { redirect } from "next/navigation";
 
+import { canCreateListing } from "@/actions/payout";
 import { getCategories } from "@/actions/listings";
 import { ListingForm } from "@/components/listings/listing-form";
+import { Button } from "@/components/ui/button";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
 import { createClient } from "@/lib/supabase/server";
+import Link from "next/link";
 
 export default async function NewListingPage() {
   const supabase = await createClient();
@@ -12,6 +22,31 @@ export default async function NewListingPage() {
 
   if (!user) {
     redirect("/login");
+  }
+
+  const listingAccess = await canCreateListing(user.id);
+
+  if (!listingAccess.allowed) {
+    return (
+      <main className="mx-auto flex min-h-[70vh] max-w-4xl items-center px-4 py-8 sm:px-6 lg:px-8">
+        <Card className="w-full rounded-3xl border-border/70 bg-white shadow-sm">
+          <CardHeader className="space-y-2">
+            <CardTitle className="text-3xl text-brand-navy">
+              Payout Setup Required
+            </CardTitle>
+            <CardDescription className="text-base">
+              You must set up your payout method before creating listings. This
+              ensures you can receive payments.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <Button asChild className="bg-brand-navy text-white hover:bg-brand-steel">
+              <Link href="/dashboard/settings/payments">Set Up Payout Method</Link>
+            </Button>
+          </CardContent>
+        </Card>
+      </main>
+    );
   }
 
   const categories = await getCategories();
