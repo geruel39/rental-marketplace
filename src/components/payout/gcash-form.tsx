@@ -25,6 +25,10 @@ function formatMobileNumber(value: string) {
   return `${digitsOnly.slice(0, 4)} ${digitsOnly.slice(4, 7)} ${digitsOnly.slice(7)}`;
 }
 
+function getRawMobileNumber(value: string) {
+  return value.replace(/\D/g, "").slice(0, 11);
+}
+
 export function GCashForm({
   defaultValues,
   onSubmit,
@@ -50,6 +54,7 @@ export function GCashForm({
       })}
     >
       <input type="hidden" {...form.register("method")} value="gcash" />
+      <input type="hidden" {...form.register("gcash_phone_number")} />
 
       <div className="space-y-2">
         <Label htmlFor="gcash_phone_number">GCash Phone Number</Label>
@@ -66,7 +71,7 @@ export function GCashForm({
             onChange={(event) => {
               form.setValue(
                 "gcash_phone_number",
-                formatMobileNumber(event.target.value),
+                getRawMobileNumber(event.target.value),
                 { shouldDirty: true, shouldValidate: true },
               );
             }}

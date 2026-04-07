@@ -1,36 +1,11 @@
 "use client";
 
-import {
-  useMemo,
-  useState,
-  useTransition,
-} from "react";
+import { useState, useTransition } from "react";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { Info } from "lucide-react";
-import dynamic from "next/dynamic";
 import { useForm, useWatch } from "react-hook-form";
 import { toast } from "sonner";
 import { z } from "zod";
-
-// FIX: MapPinPicker uses Leaflet which accesses `window` at import time.
-// It MUST be loaded with ssr:false or the server build crashes.
-const MapPinPicker = dynamic(
-  () =>
-    import("@/components/listings/map-pin-picker").then(
-      (mod) => mod.MapPinPicker,
-    ),
-  {
-    ssr: false,
-    loading: () => (
-      <div
-        className="flex items-center justify-center rounded-2xl border border-border bg-muted/30"
-        style={{ height: 360 }}
-      >
-        <span className="text-sm text-muted-foreground">Loading map…</span>
-      </div>
-    ),
-  },
-);
 
 import { createListing, updateListing } from "@/actions/listings";
 import { ImageUpload } from "@/components/listings/image-upload";
@@ -85,15 +60,9 @@ const listingFormSchema = z.object({
     optionalString,
     z.coerce.number().int().min(0, "Low stock threshold cannot be negative").default(1),
   ),
-  location_description: z.preprocess(optionalString, z.string().max(200).optional()),
-  latitude: z.coerce
-    .number({ error: "Choose the item location on the map" })
-    .min(-90)
-    .max(90),
-  longitude: z.coerce
-    .number({ error: "Choose the item location on the map" })
-    .min(-180)
-    .max(180),
+  city: z.preprocess(optionalString, z.string().min(2, "City is required").max(120)),
+  state: z.preprocess(optionalString, z.string().min(2, "State is required").max(120)),
+  country: z.preprocess(optionalString, z.string().min(2, "Country is required").max(120)),
   delivery_methods: z
     .array(deliveryMethodsSchema)
     .min(1, "Choose at least one fulfillment method"),
@@ -116,6 +85,16 @@ const pricingPeriods = [
   { value: "month", label: "Per Month" },
 ] as const;
 
+const countryOptions = [
+  "Philippines",
+  "Singapore",
+  "Malaysia",
+  "Indonesia",
+  "Thailand",
+  "Vietnam",
+  "United States",
+] as const;
+
 const DELIVERY_METHODS_PREFIX = "__delivery_methods__:";
 
 const fieldHelpText = {
@@ -129,8 +108,9 @@ const fieldHelpText = {
   condition: "Help renters understand the current state of the item.",
   quantity: "Total number of identical units available to rent.",
   lowStockThreshold: "You will get alerted when available stock falls to this number or lower.",
-  map: "Tap the map to drop a pin for the primary pickup or meetup location.",
-  locationDescription: "Optional extra context such as building, landmark, or neighborhood.",
+  city: "Enter the city where renters can meet you or pick up the item.",
+  state: "Enter the state, province, or region for the item location.",
+  country: "Choose the country where this listing is available.",
   cancellationPolicy: "Sets how flexible cancellations are for renters before the booking starts.",
 } as const;
 
@@ -196,12 +176,18 @@ function decodeDeliveryMethods(listing?: Listing): DeliveryMethod[] {
   return listing.delivery_available ? ["pickup", "delivery"] : ["pickup"];
 }
 
-function getLocationFallback(latitude: number, longitude: number) {
-  return `Pinned location (${latitude.toFixed(5)}, ${longitude.toFixed(5)})`;
-}
+function inferCountryFromListing(listing?: Listing) {
+  if (!listing?.location) {
+    return "Philippines";
+  }
 
-// The fake MapPinPicker that was here has been removed.
-// The real one is dynamically imported above (Leaflet requires ssr:false).
+  const parts = listing.location
+    .split(",")
+    .map((part) => part.trim())
+    .filter(Boolean);
+
+  return parts.length >= 3 ? (parts[parts.length - 1] ?? "Philippines") : "Philippines";
+}
 
 function FieldLabel({
   htmlFor,
@@ -243,6 +229,7 @@ export function ListingForm({ listing, categories }: ListingFormProps) {
   const [images, setImages] = useState<string[]>(listing?.images ?? []);
   const [newFiles, setNewFiles] = useState<File[]>([]);
   const [isPending, startSubmitTransition] = useTransition();
+
   const form = useForm<ListingFormValues, undefined, ListingFormOutput>({
     resolver: zodResolver(listingFormSchema),
     defaultValues: {
@@ -256,16 +243,16 @@ export function ListingForm({ listing, categories }: ListingFormProps) {
       condition: listing?.condition ?? "",
       quantity_total: listing?.quantity_total ?? 1,
       low_stock_threshold: listing?.low_stock_threshold ?? 1,
-      location_description:
-        listing?.location?.startsWith("Pinned location (") ? "" : listing?.location ?? "",
-      latitude: listing?.latitude ?? undefined,
-      longitude: listing?.longitude ?? undefined,
+      city: listing?.city ?? "",
+      state: listing?.state ?? "",
+      country: inferCountryFromListing(listing),
       delivery_methods: decodeDeliveryMethods(listing),
       cancellation_policy:
         (listing?.cancellation_policy as "flexible" | "moderate" | "strict") ??
         "flexible",
     },
   });
+
   form.register("delivery_methods");
 
   const errors = form.formState.errors;
@@ -284,15 +271,14 @@ export function ListingForm({ listing, categories }: ListingFormProps) {
       control: form.control,
       name: "cancellation_policy",
     }) as "flexible" | "moderate" | "strict" | undefined) ?? "flexible";
-  const latitude = useWatch({ control: form.control, name: "latitude" });
-  const longitude = useWatch({ control: form.control, name: "longitude" });
+  const countryValue = useWatch({
+    control: form.control,
+    name: "country",
+  }) as string | undefined;
 
-  const selectedPricingLabel = useMemo(
-    () =>
-      pricingPeriods.find((period) => period.value === primaryPricingPeriod)?.label ??
-      "Per Day",
-    [primaryPricingPeriod],
-  );
+  const selectedPricingLabel =
+    pricingPeriods.find((period) => period.value === primaryPricingPeriod)?.label ??
+    "Per Day";
 
   function syncFormImages(nextImages: string[], nextFiles: File[]) {
     form.setValue("images", [...nextImages, ...nextFiles.map((file) => file.name)], {
@@ -317,9 +303,9 @@ export function ListingForm({ listing, categories }: ListingFormProps) {
     const submitter = nativeEvent?.submitter as HTMLButtonElement | undefined;
     const status = submitter?.value === "draft" ? "draft" : "active";
     const formData = new FormData();
-    const locationLabel =
-      values.location_description?.trim() ||
-      getLocationFallback(values.latitude, values.longitude);
+    const locationLabel = [values.city, values.state, values.country]
+      .filter(Boolean)
+      .join(", ");
 
     setError(null);
     formData.set("status", status);
@@ -332,8 +318,8 @@ export function ListingForm({ listing, categories }: ListingFormProps) {
     );
     formData.set("minimum_rental_period", String(values.minimum_rental_period ?? 1));
     formData.set("location", locationLabel);
-    formData.set("latitude", String(values.latitude));
-    formData.set("longitude", String(values.longitude));
+    formData.set("city", values.city);
+    formData.set("state", values.state);
     formData.set(
       "delivery_available",
       String(values.delivery_methods.includes("delivery")),
@@ -381,9 +367,11 @@ export function ListingForm({ listing, categories }: ListingFormProps) {
     <TooltipProvider>
       <Card className="border-border/70 bg-white">
         <CardHeader className="space-y-2">
-          <CardTitle className="text-brand-dark">{listing ? "Edit Listing" : "Create Listing"}</CardTitle>
+          <CardTitle className="text-brand-dark">
+            {listing ? "Edit Listing" : "Create Listing"}
+          </CardTitle>
           <p className="text-sm text-muted-foreground">
-            Add photos, pricing, stock, and a clear pickup pin before publishing.
+            Add photos, pricing, stock, and a clear city/state location before publishing.
           </p>
         </CardHeader>
         <CardContent>
@@ -629,62 +617,63 @@ export function ListingForm({ listing, categories }: ListingFormProps) {
 
             <section className="space-y-4">
               {renderSectionHeading("Location")}
-              <div className="space-y-2">
-                <FieldLabel hint={fieldHelpText.map} label="Map pin" required />
-                <MapPinPicker
-                  latitude={typeof latitude === "number" ? latitude : undefined}
-                  longitude={typeof longitude === "number" ? longitude : undefined}
-                  onChange={({ latitude: nextLatitude, longitude: nextLongitude, address }) => {
-                    form.setValue("latitude", nextLatitude, {
-                      shouldDirty: true,
-                      shouldValidate: true,
-                    });
-                    form.setValue("longitude", nextLongitude, {
-                      shouldDirty: true,
-                      shouldValidate: true,
-                    });
-                    // Auto-fill location description from geocoded address
-                    // only when the field is still empty so we don't clobber
-                    // something the user typed manually.
-                    if (address && !form.getValues("location_description")) {
-                      form.setValue("location_description", address, {
-                        shouldDirty: true,
-                      });
+              <div className="grid gap-4 md:grid-cols-3">
+                <div className="grid gap-2">
+                  <FieldLabel
+                    hint={fieldHelpText.city}
+                    htmlFor="city"
+                    label="City"
+                    required
+                  />
+                  <Input id="city" placeholder="Navarro" {...form.register("city")} />
+                  {errors.city ? (
+                    <p className="text-sm text-destructive">{errors.city.message}</p>
+                  ) : null}
+                </div>
+                <div className="grid gap-2">
+                  <FieldLabel
+                    hint={fieldHelpText.state}
+                    htmlFor="state"
+                    label="State / Province"
+                    required
+                  />
+                  <Input
+                    id="state"
+                    placeholder="Surigao del Norte"
+                    {...form.register("state")}
+                  />
+                  {errors.state ? (
+                    <p className="text-sm text-destructive">{errors.state.message}</p>
+                  ) : null}
+                </div>
+                <div className="grid gap-2">
+                  <FieldLabel
+                    hint={fieldHelpText.country}
+                    label="Country"
+                    required
+                  />
+                  <Select
+                    onValueChange={(value) =>
+                      form.setValue("country", value, { shouldValidate: true })
                     }
-                  }}
-                />
-                {errors.latitude ? (
-                  <p className="text-sm text-destructive">{errors.latitude.message}</p>
-                ) : null}
-                {errors.longitude ? (
-                  <p className="text-sm text-destructive">{errors.longitude.message}</p>
-                ) : null}
-                <input
-                  type="hidden"
-                  {...form.register("latitude", { valueAsNumber: true })}
-                />
-                <input
-                  type="hidden"
-                  {...form.register("longitude", { valueAsNumber: true })}
-                />
-              </div>
-
-              <div className="grid gap-2">
-                <FieldLabel
-                  hint={fieldHelpText.locationDescription}
-                  htmlFor="location_description"
-                  label="Location description"
-                />
-                <Input
-                  id="location_description"
-                  placeholder="Optional landmark, building, or neighborhood"
-                  {...form.register("location_description")}
-                />
-                {errors.location_description ? (
-                  <p className="text-sm text-destructive">
-                    {errors.location_description.message}
-                  </p>
-                ) : null}
+                    value={countryValue}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select country" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {countryOptions.map((country) => (
+                        <SelectItem key={country} value={country}>
+                          {country}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <input type="hidden" {...form.register("country")} />
+                  {errors.country ? (
+                    <p className="text-sm text-destructive">{errors.country.message}</p>
+                  ) : null}
+                </div>
               </div>
             </section>
 
@@ -716,10 +705,7 @@ export function ListingForm({ listing, categories }: ListingFormProps) {
                       <SelectItem value="strict">Strict</SelectItem>
                     </SelectContent>
                   </Select>
-                  <input
-                    type="hidden"
-                    {...form.register("cancellation_policy")}
-                  />
+                  <input type="hidden" {...form.register("cancellation_policy")} />
                   {errors.cancellation_policy ? (
                     <p className="text-sm text-destructive">
                       {errors.cancellation_policy.message}

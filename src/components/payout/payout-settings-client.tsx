@@ -72,7 +72,14 @@ export function PayoutSettingsClient({
   );
   const [showSelector, setShowSelector] = useState(!profile.payout_method);
 
-  const activeMethod = showSelector ? selectedMethod : profile.payout_method ?? selectedMethod;
+  const activeMethod = showSelector ? selectedMethod : profile.payout_method ?? undefined;
+  const shouldShowBankForm =
+    selectedMethod === "bank" &&
+    (showSelector || profile.payout_method === "bank" || !profile.payout_method);
+  const shouldShowGcashForm =
+    selectedMethod === "gcash" && (showSelector || !profile.payout_method);
+  const shouldShowMayaForm =
+    selectedMethod === "maya" && (showSelector || !profile.payout_method);
 
   async function handleMethodSubmit(data: PayoutMethodInput) {
     startTransition(async () => {
@@ -172,7 +179,7 @@ export function PayoutSettingsClient({
         </div>
       ) : null}
 
-      {selectedMethod === "bank" ? (
+      {shouldShowBankForm ? (
         <div className="rounded-3xl border border-border/70 bg-white p-6 shadow-sm">
           <div className="mb-5 space-y-1">
             <h3 className="text-lg font-semibold text-brand-navy">Bank Account Details</h3>
@@ -193,7 +200,7 @@ export function PayoutSettingsClient({
         </div>
       ) : null}
 
-      {selectedMethod === "gcash" ? (
+      {shouldShowGcashForm ? (
         <div className="rounded-3xl border border-border/70 bg-white p-6 shadow-sm">
           <div className="mb-5 space-y-1">
             <h3 className="text-lg font-semibold text-brand-navy">GCash Details</h3>
@@ -212,7 +219,7 @@ export function PayoutSettingsClient({
         </div>
       ) : null}
 
-      {selectedMethod === "maya" ? (
+      {shouldShowMayaForm ? (
         <div className="rounded-3xl border border-border/70 bg-white p-6 shadow-sm">
           <div className="mb-5 space-y-1">
             <h3 className="text-lg font-semibold text-brand-navy">Maya Details</h3>

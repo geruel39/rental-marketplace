@@ -191,7 +191,7 @@ export function ListingFilters({
             <Input
               id="city-filter"
               onChange={(event) => setCity(event.target.value)}
-              placeholder="Search by city"
+              placeholder="Search by city or state"
               value={city}
             />
             <Button

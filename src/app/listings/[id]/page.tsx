@@ -18,7 +18,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
 import { createClient } from "@/lib/supabase/server";
-import { formatCurrency } from "@/lib/utils";
+import { formatCurrency, formatListingLocation } from "@/lib/utils";
 
 interface ListingDetailPageProps {
   params: Promise<{ id: string }>;
@@ -97,13 +97,11 @@ export default async function ListingDetailPage({
       ? data.reviews.reduce((sum, review) => sum + review.overall_rating, 0) /
         data.reviews.length
       : 0;
-  const location = [
+  const location = formatListingLocation(
     data.listing.city,
     data.listing.state,
     data.listing.location,
-  ]
-    .filter(Boolean)
-    .join(", ");
+  );
   const detailItems = [
     { label: "Brand", value: data.listing.brand },
     { label: "Model", value: data.listing.model },

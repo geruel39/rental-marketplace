@@ -7,7 +7,7 @@ import { MapPin, Package, Star } from "lucide-react";
 import { FavoriteButton } from "@/components/listings/favorite-button";
 import { StockLevelBadge } from "@/components/inventory/stock-level-badge";
 import { Card, CardContent } from "@/components/ui/card";
-import { formatCurrency } from "@/lib/utils";
+import { formatCurrency, formatListingLocation } from "@/lib/utils";
 import type { Listing, ListingWithOwner, Profile } from "@/types";
 
 type ListingCardData = Listing & {
@@ -51,9 +51,11 @@ export function ListingCard({
   const primaryPrice = getPrimaryPrice(listing);
   const rating = listing.owner?.rating_as_lister ?? 0;
   const reviewCount = listing.owner?.total_reviews_as_lister ?? 0;
-  const location = [listing.city, listing.state, listing.location]
-    .filter(Boolean)
-    .join(", ");
+  const location = formatListingLocation(
+    listing.city,
+    listing.state,
+    listing.location,
+  );
 
   if (!isVisible) {
     return null;

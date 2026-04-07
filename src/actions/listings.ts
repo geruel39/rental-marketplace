@@ -558,7 +558,10 @@ export async function searchListings({
     }
 
     if (city) {
-      listingsQuery = listingsQuery.ilike("city", `%${city}%`);
+      const escapedCity = city.replace(/[,%]/g, " ").trim();
+      listingsQuery = listingsQuery.or(
+        `city.ilike.%${escapedCity}%,state.ilike.%${escapedCity}%`,
+      );
     }
 
     if (condition) {

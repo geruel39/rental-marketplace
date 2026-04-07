@@ -35,14 +35,14 @@ function normalizePhilippinePhone(phone: string) {
   const digits = phone.replace(/\D/g, "");
 
   if (digits.startsWith("63")) {
-    return `+${digits}`;
+    return `0${digits.slice(2)}`;
   }
 
   if (digits.startsWith("0")) {
-    return `+63${digits.slice(1)}`;
+    return digits;
   }
 
-  return `+63${digits}`;
+  return `0${digits}`;
 }
 
 function extractStoragePath(publicUrl: string) {
@@ -411,7 +411,7 @@ export async function setupPayoutMethod(
   void prevState;
 
   try {
-    const { user, profile } = await requireAuthenticatedProfile();
+    const { supabase, user, profile } = await requireAuthenticatedProfile();
     const method = formData.get("method")?.toString().trim();
     const parsed = payoutMethodSchema.safeParse({
       method,
@@ -497,6 +497,7 @@ export async function setupPayoutMethod(
     const now = new Date().toISOString();
     let successMessage: string;
     let updatePayload: Record<string, unknown>;
+    let fallbackPayload: Record<string, unknown>;
     let pendingPayoutWarning: string | null = null;
 
     if (isMethodChange) {
@@ -524,8 +525,16 @@ export async function setupPayoutMethod(
           maya_phone_number: null,
           payout_setup_completed: false,
           payout_setup_completed_at: null,
-          payout_bank_account: null,
-          payout_email: null,
+        };
+        fallbackPayload = {
+          payout_method: "bank",
+          bank_name: parsed.data.bank_name,
+          bank_account_number: parsed.data.bank_account_number,
+          bank_account_name: parsed.data.bank_account_name,
+          gcash_phone_number: null,
+          maya_phone_number: null,
+          payout_setup_completed: false,
+          payout_setup_completed_at: null,
         };
         successMessage =
           "Bank account saved. Please upload KYC document to complete setup.";
@@ -543,8 +552,16 @@ export async function setupPayoutMethod(
           maya_phone_number: null,
           payout_setup_completed: true,
           payout_setup_completed_at: now,
-          payout_bank_account: null,
-          payout_email: null,
+        };
+        fallbackPayload = {
+          payout_method: "gcash",
+          gcash_phone_number: parsed.data.gcash_phone_number,
+          bank_name: null,
+          bank_account_number: null,
+          bank_account_name: null,
+          maya_phone_number: null,
+          payout_setup_completed: true,
+          payout_setup_completed_at: now,
         };
         successMessage = "GCash account set up successfully!";
         break;
@@ -561,14 +578,22 @@ export async function setupPayoutMethod(
           gcash_phone_number: null,
           payout_setup_completed: true,
           payout_setup_completed_at: now,
-          payout_bank_account: null,
-          payout_email: null,
+        };
+        fallbackPayload = {
+          payout_method: "maya",
+          maya_phone_number: parsed.data.maya_phone_number,
+          bank_name: null,
+          bank_account_number: null,
+          bank_account_name: null,
+          gcash_phone_number: null,
+          payout_setup_completed: true,
+          payout_setup_completed_at: now,
         };
         successMessage = "Maya account set up successfully!";
         break;
     }
 
-    const { error } = await admin
+    let { error } = await supabase
       .from("profiles")
       .update(updatePayload)
       .eq("id", user.id);
@@ -585,7 +610,21 @@ export async function setupPayoutMethod(
                 : "That payout detail is already in use.",
         };
       }
-      return { error: "Could not save your payout method. Please try again." };
+
+      const fallbackResult = await supabase
+        .from("profiles")
+        .update(fallbackPayload)
+        .eq("id", user.id);
+
+      if (fallbackResult.error) {
+        console.error("setupPayoutMethod fallback update failed:", fallbackResult.error);
+        return {
+          error:
+            fallbackResult.error.message ||
+            error.message ||
+            "Could not save your payout method. Please try again.",
+        };
+      }
     }
 
     await createNotification({

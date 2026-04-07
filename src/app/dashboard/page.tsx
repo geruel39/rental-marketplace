@@ -412,6 +412,18 @@ async function ListerSection({
   const payoutMethod = profile?.payout_method;
   const hasListerActivity =
     stats.lister.totalListings > 0 || stats.lister.totalEarnings > 0;
+  const payoutConfigured = Boolean(
+    profile &&
+      ((payoutMethod === "gcash" && profile.gcash_phone_number) ||
+        (payoutMethod === "maya" && profile.maya_phone_number) ||
+        (payoutMethod === "bank" &&
+          profile.bank_name &&
+          profile.bank_account_number &&
+          profile.bank_account_name &&
+          profile.bank_kyc_verified) ||
+        profile.payout_setup_completed),
+  );
+  const showPayoutSetupCard = hasListerActivity && !payoutConfigured;
 
   function getPayoutIcon() {
     switch (payoutMethod) {
@@ -439,7 +451,12 @@ async function ListerSection({
         </div>
       </div>
 
-      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-5">
+      <div
+        className={cn(
+          "grid gap-4 md:grid-cols-2",
+          showPayoutSetupCard ? "xl:grid-cols-5" : "xl:grid-cols-4",
+        )}
+      >
         <DashboardMetricCard
           href="/dashboard/my-listings"
           icon={Package}
@@ -463,52 +480,27 @@ async function ListerSection({
           label="Earnings This Month"
           value={formatCurrency(stats.lister.earningsThisMonth)}
         />
-        {hasListerActivity ? (
+        {showPayoutSetupCard ? (
           <Card className="border-border/70 shadow-sm">
             <CardContent className="space-y-4 p-5">
-              {profile?.payout_setup_completed && payoutMethod ? (
-                <>
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="space-y-2">
-                      <p className="text-sm text-muted-foreground">Payout Method</p>
-                      <p className="font-semibold text-foreground">
-                        {payoutMethod.charAt(0).toUpperCase() + payoutMethod.slice(1)} configured
-                      </p>
-                      <PayoutMethodBadge method={payoutMethod} size="sm" />
-                    </div>
-                    <div className="rounded-2xl bg-muted p-3">
-                      <PayoutIcon className="size-5 text-muted-foreground" />
-                    </div>
-                  </div>
-                  <Button asChild className="px-0" size="sm" variant="link">
-                    <Link href="/dashboard/settings/payments">
-                      Manage
-                      <ArrowRight className="size-4" />
-                    </Link>
-                  </Button>
-                </>
-              ) : (
-                <>
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="space-y-2">
-                      <p className="text-sm text-muted-foreground">Payout Method</p>
-                      <p className="font-semibold text-amber-900">Payout setup required</p>
-                      <p className="text-sm text-muted-foreground">
-                        You must set up payout to create listings.
-                      </p>
-                    </div>
-                    <div className="rounded-2xl bg-amber-100 p-3">
-                      <AlertTriangle className="size-5 text-amber-700" />
-                    </div>
-                  </div>
-                  <Button asChild className="bg-brand-navy text-white hover:bg-brand-steel" size="sm">
-                    <Link href="/dashboard/settings/payments">
-                      Set Up Now
-                      <ArrowRight className="size-4" />
-                    </Link>
-                  </Button>
-                </>
-              )}
+              <div className="flex items-start justify-between gap-3">
+                <div className="space-y-2">
+                  <p className="text-sm text-muted-foreground">Payout Method</p>
+                  <p className="font-semibold text-amber-900">Payout setup required</p>
+                  <p className="text-sm text-muted-foreground">
+                    You must set up payout to create listings.
+                  </p>
+                </div>
+                <div className="rounded-2xl bg-amber-100 p-3">
+                  <AlertTriangle className="size-5 text-amber-700" />
+                </div>
+              </div>
+              <Button asChild className="bg-brand-navy text-white hover:bg-brand-steel" size="sm">
+                <Link href="/dashboard/settings/payments">
+                  Set Up Now
+                  <ArrowRight className="size-4" />
+                </Link>
+              </Button>
             </CardContent>
           </Card>
         ) : null}

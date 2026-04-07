@@ -33,6 +33,10 @@ function formatAccountNumber(value: string) {
   return digitsOnly.replace(/(.{4})/g, "$1 ").trim();
 }
 
+function getRawAccountNumber(value: string) {
+  return value.replace(/\D/g, "").slice(0, 20);
+}
+
 export function BankAccountForm({
   defaultValues,
   onSubmit,
@@ -60,6 +64,7 @@ export function BankAccountForm({
       })}
     >
       <input type="hidden" {...form.register("method")} value="bank" />
+      <input type="hidden" {...form.register("bank_account_number")} />
 
       <div className="space-y-2">
         <Label htmlFor="bank_name">Bank Name</Label>
@@ -91,7 +96,7 @@ export function BankAccountForm({
           onChange={(event) => {
             form.setValue(
               "bank_account_number",
-              formatAccountNumber(event.target.value),
+              getRawAccountNumber(event.target.value),
               { shouldDirty: true, shouldValidate: true },
             );
           }}

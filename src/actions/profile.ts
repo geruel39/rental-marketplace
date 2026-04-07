@@ -23,6 +23,20 @@ import type {
 const USER_LISTINGS_PER_PAGE = 8;
 const AVATARS_BUCKET = "avatars";
 
+function normalizePhilippinePhone(phone: string) {
+  const digits = phone.replace(/\D/g, "");
+
+  if (digits.startsWith("63")) {
+    return `0${digits.slice(2)}`;
+  }
+
+  if (digits.startsWith("0")) {
+    return digits;
+  }
+
+  return `0${digits}`;
+}
+
 function getPagination(page?: number, perPage = USER_LISTINGS_PER_PAGE) {
   const currentPage = Math.max(1, page ?? 1);
   const from = (currentPage - 1) * perPage;
@@ -295,6 +309,18 @@ export async function updatePayoutSettings(
       };
     }
 
+    if (parsed.data.method === "gcash" && parsed.data.gcash_phone_number) {
+      parsed.data.gcash_phone_number = normalizePhilippinePhone(
+        parsed.data.gcash_phone_number,
+      );
+    }
+
+    if (parsed.data.method === "maya" && parsed.data.maya_phone_number) {
+      parsed.data.maya_phone_number = normalizePhilippinePhone(
+        parsed.data.maya_phone_number,
+      );
+    }
+
     const { error } = await supabase
       .from("profiles")
       .update({
@@ -316,13 +342,14 @@ export async function updatePayoutSettings(
           parsed.data.method === "maya" ? parsed.data.maya_phone_number ?? null : null,
         payout_setup_completed: true,
         payout_setup_completed_at: new Date().toISOString(),
-        payout_bank_account: null,
-        payout_email: null,
       })
       .eq("id", user.id);
 
     if (error) {
       console.error("updatePayoutSettings update failed:", error);
+      if (error.code === "23505") {
+        return { error: "That payout account is already being used by another user." };
+      }
       return { error: "Could not save payout settings. Please try again." };
     }
 

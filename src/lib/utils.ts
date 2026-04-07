@@ -98,3 +98,12 @@ export function maskAccountNumber(accountNumber: string): string {
 
   return `${maskedPrefix}${visibleDigits}`;
 }
+
+export function formatListingLocation(
+  city?: string | null,
+  state?: string | null,
+  fallback?: string | null,
+): string {
+  const formatted = [city, state].filter(Boolean).join(", ");
+  return formatted || fallback || "";
+}

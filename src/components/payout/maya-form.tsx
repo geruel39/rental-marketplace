@@ -25,6 +25,10 @@ function formatMobileNumber(value: string) {
   return `${digitsOnly.slice(0, 4)} ${digitsOnly.slice(4, 7)} ${digitsOnly.slice(7)}`;
 }
 
+function getRawMobileNumber(value: string) {
+  return value.replace(/\D/g, "").slice(0, 11);
+}
+
 export function MayaForm({
   defaultValues,
   onSubmit,
@@ -50,6 +54,7 @@ export function MayaForm({
       })}
     >
       <input type="hidden" {...form.register("method")} value="maya" />
+      <input type="hidden" {...form.register("maya_phone_number")} />
 
       <div className="space-y-2">
         <Label htmlFor="maya_phone_number">Maya Phone Number</Label>
@@ -61,7 +66,7 @@ export function MayaForm({
           onChange={(event) => {
             form.setValue(
               "maya_phone_number",
-              formatMobileNumber(event.target.value),
+              getRawMobileNumber(event.target.value),
               { shouldDirty: true, shouldValidate: true },
             );
           }}
