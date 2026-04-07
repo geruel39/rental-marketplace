@@ -5,6 +5,8 @@ import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { Download, MoreHorizontal } from "lucide-react";
 
 import { PayoutProcessDialog } from "@/components/admin/payout-process-dialog";
+import { PayoutDetailsDisplay } from "@/components/payout/payout-details-display";
+import { PayoutMethodBadge } from "@/components/payout/payout-method-badge";
 import { Pagination } from "@/components/shared/pagination";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
@@ -173,13 +175,31 @@ export function AdminPayoutTable({
                     </TableCell>
                     <TableCell>{payout.currency}</TableCell>
                     <TableCell>
-                      <Badge
-                        className={statusTone[payout.status] ?? "bg-muted text-foreground hover:bg-muted"}
-                      >
+                      <Badge className={statusTone[payout.status] ?? "bg-muted text-foreground hover:bg-muted"}>
                         {payout.status}
                       </Badge>
                     </TableCell>
-                    <TableCell>{payout.payout_method ?? "-"}</TableCell>
+                    <TableCell className="min-w-[240px]">
+                      {payout.lister.payout_method ? (
+                        <div className="space-y-2">
+                          <PayoutMethodBadge method={payout.lister.payout_method} size="sm" />
+                          <PayoutDetailsDisplay
+                            className="md:grid-cols-1"
+                            masked
+                            payoutDetails={{
+                              method: payout.lister.payout_method,
+                              bank_name: payout.lister.bank_name ?? undefined,
+                              bank_account_name: payout.lister.bank_account_name ?? undefined,
+                              bank_account_number: payout.lister.bank_account_number ?? undefined,
+                              gcash_phone_number: payout.lister.gcash_phone_number ?? undefined,
+                              maya_phone_number: payout.lister.maya_phone_number ?? undefined,
+                            }}
+                          />
+                        </div>
+                      ) : (
+                        "-"
+                      )}
+                    </TableCell>
                     <TableCell>{payout.reference_number ?? "-"}</TableCell>
                     <TableCell className="text-right">
                       {payout.status === "pending" ? (

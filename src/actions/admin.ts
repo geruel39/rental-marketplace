@@ -1171,8 +1171,8 @@ export async function processPayout(
     await createNotification({
       userId: payoutRow.lister_id,
       type: "payout_processed",
-      title: "Your payout has been processed",
-      body: `Your payout of ${formatCurrency(payoutRow.amount, payoutRow.currency)} has been processed.`,
+      title: "Payout processed!",
+      body: `${formatCurrency(payoutRow.amount, payoutRow.currency)} has been sent to your ${payoutRow.lister.payout_method || method.trim()} account. Reference: ${referenceNumber.trim()}`,
       bookingId: payoutRow.booking_id ?? undefined,
       fromUserId: adminId,
       actionUrl: "/dashboard/earnings",

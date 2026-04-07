@@ -4,6 +4,8 @@ import { notFound } from "next/navigation";
 import { getAdminUserDetail } from "@/actions/admin";
 import { AdminPageHeader } from "@/components/admin/admin-page-header";
 import { AdminUserDetailActions } from "@/components/admin/admin-user-detail-actions";
+import { PayoutDetailsDisplay } from "@/components/payout/payout-details-display";
+import { PayoutMethodBadge } from "@/components/payout/payout-method-badge";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -185,6 +187,86 @@ export default async function AdminUserDetailPage({
                   label="Response time"
                   value={`${profile.response_time_hours} hour(s)`}
                 />
+              </CardContent>
+            </Card>
+
+            <Card className="border-border/70 bg-white shadow-sm lg:col-span-2">
+              <CardHeader>
+                <CardTitle>Payout Information</CardTitle>
+                <CardDescription>
+                  Review the user&apos;s active payout destination and KYC status.
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                {profile.payout_method ? (
+                  <>
+                    <div className="flex flex-wrap items-center gap-3">
+                      <PayoutMethodBadge method={profile.payout_method} />
+                      {profile.payout_setup_completed ? (
+                        <Badge className="bg-emerald-100 text-emerald-700 hover:bg-emerald-100">
+                          Ready for payouts
+                        </Badge>
+                      ) : (
+                        <Badge className="bg-amber-100 text-amber-700 hover:bg-amber-100">
+                          Setup incomplete
+                        </Badge>
+                      )}
+                    </div>
+
+                    <PayoutDetailsDisplay
+                      masked={false}
+                      payoutDetails={{
+                        method: profile.payout_method,
+                        bank_name: profile.bank_name ?? undefined,
+                        bank_account_name: profile.bank_account_name ?? undefined,
+                        bank_account_number: profile.bank_account_number ?? undefined,
+                        bank_kyc_verified: profile.bank_kyc_verified ?? undefined,
+                        gcash_phone_number: profile.gcash_phone_number ?? undefined,
+                        maya_phone_number: profile.maya_phone_number ?? undefined,
+                      }}
+                      showCopyButtons
+                    />
+
+                    {profile.payout_method === "bank" ? (
+                      <div className="rounded-2xl border border-brand-navy/10 bg-brand-light p-4 text-sm">
+                        {profile.bank_kyc_verified ? (
+                          <div className="space-y-2">
+                            <p className="font-medium text-foreground">KYC verified</p>
+                            <p className="text-muted-foreground">
+                              Verified on {profile.bank_kyc_verified_at ? formatDate(profile.bank_kyc_verified_at) : "Unknown date"}
+                            </p>
+                            {profile.bank_kyc_document_url ? (
+                              <ButtonLink
+                                external
+                                href={profile.bank_kyc_document_url}
+                                label="View KYC Document"
+                              />
+                            ) : null}
+                          </div>
+                        ) : profile.bank_kyc_document_url ? (
+                          <div className="space-y-3">
+                            <p className="font-medium text-foreground">KYC pending review</p>
+                            <div className="flex flex-wrap gap-2">
+                              <ButtonLink
+                                external
+                                href={profile.bank_kyc_document_url}
+                                label="View KYC Document"
+                              />
+                              <ButtonLink
+                                href="/admin/kyc-verification"
+                                label="Review KYC"
+                              />
+                            </div>
+                          </div>
+                        ) : (
+                          <p className="text-muted-foreground">No KYC submitted</p>
+                        )}
+                      </div>
+                    ) : null}
+                  </>
+                ) : (
+                  <p className="text-sm text-muted-foreground">No payout method configured.</p>
+                )}
               </CardContent>
             </Card>
           </div>
@@ -389,7 +471,27 @@ export default async function AdminUserDetailPage({
                     <TableCell>{formatDate(payout.created_at)}</TableCell>
                     <TableCell>{payout.status}</TableCell>
                     <TableCell>{formatCurrency(payout.amount, payout.currency)}</TableCell>
-                    <TableCell>{payout.payout_method || "-"}</TableCell>
+                    <TableCell>
+                      {profile.payout_method ? (
+                        <div className="space-y-2">
+                          <PayoutMethodBadge method={profile.payout_method} size="sm" />
+                          <PayoutDetailsDisplay
+                            className="md:grid-cols-1"
+                            masked
+                            payoutDetails={{
+                              method: profile.payout_method,
+                              bank_name: profile.bank_name ?? undefined,
+                              bank_account_name: profile.bank_account_name ?? undefined,
+                              bank_account_number: profile.bank_account_number ?? undefined,
+                              gcash_phone_number: profile.gcash_phone_number ?? undefined,
+                              maya_phone_number: profile.maya_phone_number ?? undefined,
+                            }}
+                          />
+                        </div>
+                      ) : (
+                        payout.payout_method || "-"
+                      )}
+                    </TableCell>
                     <TableCell>{payout.reference_number || "-"}</TableCell>
                   </TableRow>
                 ))}
@@ -437,11 +539,21 @@ function DataTableCard({
   );
 }
 
-function ButtonLink({ href, label }: { href: string; label: string }) {
+function ButtonLink({
+  href,
+  label,
+  external = false,
+}: {
+  href: string;
+  label: string;
+  external?: boolean;
+}) {
   return (
     <Link
       className="inline-flex h-9 items-center justify-center rounded-md border border-border bg-white px-4 text-sm font-medium text-brand-navy shadow-xs transition-colors hover:bg-brand-light"
       href={href}
+      rel={external ? "noreferrer" : undefined}
+      target={external ? "_blank" : undefined}
     >
       {label}
     </Link>

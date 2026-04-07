@@ -39,9 +39,53 @@ export default async function NewListingPage() {
               ensures you can receive payments.
             </CardDescription>
           </CardHeader>
-          <CardContent>
+          <CardContent className="space-y-6">
+            <details className="rounded-2xl border border-brand-navy/10 bg-brand-light p-4">
+              <summary className="cursor-pointer list-none font-medium text-brand-navy">
+                Why do I need payout setup?
+              </summary>
+              <p className="mt-3 text-sm leading-6 text-muted-foreground">
+                To ensure you can receive payments from renters, you must configure
+                your payout method. This is a one-time setup. Choose from bank
+                transfer, GCash, or Maya.
+              </p>
+            </details>
+
+            <div className="overflow-hidden rounded-2xl border border-border/70">
+              <table className="w-full text-left text-sm">
+                <thead className="bg-brand-light text-brand-navy">
+                  <tr>
+                    <th className="px-4 py-3 font-medium">Method</th>
+                    <th className="px-4 py-3 font-medium">Setup Time</th>
+                    <th className="px-4 py-3 font-medium">Verification</th>
+                    <th className="px-4 py-3 font-medium">Payout Speed</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-border bg-white">
+                  <tr>
+                    <td className="px-4 py-3">Bank</td>
+                    <td className="px-4 py-3">2-3 days</td>
+                    <td className="px-4 py-3">KYC Required</td>
+                    <td className="px-4 py-3">1-2 days</td>
+                  </tr>
+                  <tr>
+                    <td className="px-4 py-3">GCash</td>
+                    <td className="px-4 py-3">Instant</td>
+                    <td className="px-4 py-3">None</td>
+                    <td className="px-4 py-3">Instant</td>
+                  </tr>
+                  <tr>
+                    <td className="px-4 py-3">Maya</td>
+                    <td className="px-4 py-3">Instant</td>
+                    <td className="px-4 py-3">None</td>
+                    <td className="px-4 py-3">Instant</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+
             <Button asChild className="bg-brand-navy text-white hover:bg-brand-steel">
-              <Link href="/dashboard/settings/payments">Set Up Payout Method</Link>
+              <Link href="/dashboard/settings/payments">Set Up Payout Now</Link>
             </Button>
           </CardContent>
         </Card>

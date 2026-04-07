@@ -376,8 +376,8 @@ export async function setupPayoutMethod(
     await createNotification({
       userId: user.id,
       type: "payout_method_updated",
-      title: `Payout method updated to ${parsed.data.method}`,
-      body: `Your payout method is now set to ${parsed.data.method}.`,
+      title: "Payout method set up successfully!",
+      body: "You can now create listings.",
       actionUrl: "/dashboard/settings/payments",
     });
 
@@ -554,8 +554,8 @@ export async function verifyKYC(
       type: approved ? "kyc_verified" : "kyc_rejected",
       title: approved ? "KYC verified" : "KYC rejected",
       body: approved
-        ? "Your KYC has been verified! You can now create listings."
-        : `Your KYC was rejected. Reason: ${notes?.trim() || "No reason provided"}. Please upload a new document.`,
+        ? `Your KYC has been verified! Your ${targetProfile.bank_name || "bank"} account is ready for payouts.`
+        : `Your KYC document was rejected. Please upload a new one. Reason: ${notes?.trim() || "No reason provided"}`,
       actionUrl: "/dashboard/settings/verification",
     });
 

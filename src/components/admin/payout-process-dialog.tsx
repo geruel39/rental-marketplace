@@ -1,8 +1,11 @@
 "use client";
 
 import { useState, useTransition } from "react";
+import { toast } from "sonner";
 
 import { processPayout } from "@/actions/admin";
+import { PayoutDetailsDisplay } from "@/components/payout/payout-details-display";
+import { PayoutMethodBadge } from "@/components/payout/payout-method-badge";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -15,13 +18,6 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import { formatCurrency } from "@/lib/utils";
 import type { Payout, Profile } from "@/types";
 
@@ -39,12 +35,11 @@ export function PayoutProcessDialog({
   onComplete,
 }: PayoutProcessDialogProps) {
   const [open, setOpen] = useState(false);
-  const [method, setMethod] = useState("bank_transfer");
   const [referenceNumber, setReferenceNumber] = useState("");
   const [isPending, startTransition] = useTransition();
   const listerName =
     payout.lister.display_name || payout.lister.full_name || payout.lister.email;
-  const bank = payout.lister.payout_bank_account;
+  const payoutMethod = payout.lister.payout_method ?? "bank";
 
   return (
     <Dialog onOpenChange={setOpen} open={open}>
@@ -70,47 +65,32 @@ export function PayoutProcessDialog({
           </div>
 
           <div className="rounded-2xl border border-brand-navy/10 bg-white p-4 text-sm">
-            <p className="font-medium text-foreground">Payout settings</p>
-            {bank ? (
-              <div className="mt-2 space-y-1 text-muted-foreground">
-                <p>Bank: {bank.bank_name}</p>
-                <p>Account holder: {bank.account_holder}</p>
-                <p>Account #: {bank.account_number}</p>
-                <p>Routing #: {bank.routing_number}</p>
-              </div>
-            ) : (
-              <p className="mt-2 text-muted-foreground">No bank account on file.</p>
-            )}
-            {payout.lister.payout_email ? (
-              <p className="mt-2 text-muted-foreground">
-                Payout email: {payout.lister.payout_email}
-              </p>
-            ) : null}
+            <div className="mb-3 flex items-center gap-3">
+              <p className="font-medium text-foreground">Payout details</p>
+              <PayoutMethodBadge method={payoutMethod} size="sm" />
+            </div>
+            <PayoutDetailsDisplay
+              masked={false}
+              payoutDetails={{
+                method: payoutMethod,
+                bank_name: payout.lister.bank_name ?? undefined,
+                bank_account_number: payout.lister.bank_account_number ?? undefined,
+                bank_account_name: payout.lister.bank_account_name ?? undefined,
+                gcash_phone_number: payout.lister.gcash_phone_number ?? undefined,
+                maya_phone_number: payout.lister.maya_phone_number ?? undefined,
+              }}
+              showCopyButtons
+            />
           </div>
 
-          <div className="grid gap-4 sm:grid-cols-2">
-            <div className="space-y-2">
-              <Label htmlFor="payout-method">Payout method</Label>
-              <Select onValueChange={setMethod} value={method}>
-                <SelectTrigger id="payout-method" className="w-full">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="bank_transfer">Bank transfer</SelectItem>
-                  <SelectItem value="paynow">PayNow</SelectItem>
-                  <SelectItem value="manual">Manual</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="reference-number">Reference number</Label>
-              <Input
-                id="reference-number"
-                onChange={(event) => setReferenceNumber(event.target.value)}
-                placeholder="Transfer or transaction reference"
-                value={referenceNumber}
-              />
-            </div>
+          <div className="space-y-2">
+            <Label htmlFor="reference-number">Reference number</Label>
+            <Input
+              id="reference-number"
+              onChange={(event) => setReferenceNumber(event.target.value)}
+              placeholder="Transfer or transaction reference"
+              value={referenceNumber}
+            />
           </div>
         </div>
 
@@ -123,7 +103,16 @@ export function PayoutProcessDialog({
             disabled={isPending || !referenceNumber.trim()}
             onClick={() =>
               startTransition(async () => {
-                await processPayout(payout.id, referenceNumber.trim(), method);
+                const result = await processPayout(
+                  payout.id,
+                  referenceNumber.trim(),
+                  payoutMethod,
+                );
+                if (result.error) {
+                  toast.error(result.error);
+                  return;
+                }
+                toast.success(result.success ?? "Payout processed");
                 setOpen(false);
                 onComplete?.();
               })

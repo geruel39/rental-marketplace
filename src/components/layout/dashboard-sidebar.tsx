@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 import { usePathname } from "next/navigation";
 import {
+  AlertCircle,
   Bell,
   CreditCard,
   Heart,
@@ -22,6 +23,12 @@ import {
 import { getBookingDetails } from "@/actions/bookings";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 
 export const dashboardSections = [
@@ -66,9 +73,13 @@ export const dashboardSections = [
 export function DashboardSidebar({
   currentUserId,
   isAdmin = false,
+  hasListerActivity = false,
+  payoutSetupCompleted = true,
 }: {
   currentUserId: string;
   isAdmin?: boolean;
+  hasListerActivity?: boolean;
+  payoutSetupCompleted?: boolean;
 }) {
   const pathname = usePathname();
   const [bookingRouteTarget, setBookingRouteTarget] = useState<string | null>(null);
@@ -113,7 +124,8 @@ export function DashboardSidebar({
   const effectivePath = bookingRouteTarget ?? pathname;
 
   return (
-    <aside className="hidden w-64 shrink-0 border-r border-border/70 bg-white lg:fixed lg:top-16 lg:bottom-0 lg:left-0 lg:block">
+    <TooltipProvider>
+      <aside className="hidden w-64 shrink-0 border-r border-border/70 bg-white lg:fixed lg:top-16 lg:bottom-0 lg:left-0 lg:block">
       <div className="flex h-full flex-col overflow-y-auto p-4 pb-6">
         <Button asChild className="mb-6 w-full justify-start bg-brand-navy text-white hover:bg-brand-steel">
           <Link href="/listings/new">
@@ -145,15 +157,31 @@ export function DashboardSidebar({
                           ? "border-brand-navy bg-brand-navy/10 text-brand-navy"
                           : "text-foreground hover:bg-brand-light hover:text-brand-steel",
                       )}
-                    >
-                      <Icon
-                        className={cn(
-                          "size-4 text-brand-steel",
-                          isActive && "text-brand-navy",
-                        )}
-                      />
-                      {item.label}
-                    </Link>
+                      >
+                        <Icon
+                          className={cn(
+                            "size-4 text-brand-steel",
+                            isActive && "text-brand-navy",
+                          )}
+                        />
+                        <span className="flex items-center gap-2">
+                          {item.label}
+                          {item.href === "/dashboard/earnings" &&
+                          hasListerActivity &&
+                          !payoutSetupCompleted ? (
+                            <Tooltip>
+                              <TooltipTrigger asChild>
+                                <span className="inline-flex">
+                                  <AlertCircle className="size-3.5 text-red-500" />
+                                </span>
+                              </TooltipTrigger>
+                              <TooltipContent side="right" sideOffset={8}>
+                                Payout setup required
+                              </TooltipContent>
+                            </Tooltip>
+                          ) : null}
+                        </span>
+                      </Link>
                   );
                 })}
               </div>
@@ -189,6 +217,7 @@ export function DashboardSidebar({
           ) : null}
         </nav>
       </div>
-    </aside>
+      </aside>
+    </TooltipProvider>
   );
 }
