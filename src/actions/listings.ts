@@ -2,6 +2,7 @@
 
 import { redirect } from "next/navigation";
 
+import { canCreateListing } from "@/actions/payout";
 import { hasSupabaseEnv } from "@/lib/env";
 import { createClient } from "@/lib/supabase/server";
 import { listingSchema } from "@/lib/validations";
@@ -136,6 +137,16 @@ function getExistingImages(formData: FormData) {
 export async function createListing(formData: FormData): Promise<ActionResponse> {
   try {
     const { supabase, user } = await getAuthenticatedUser();
+    const listingAccess = await canCreateListing(user.id);
+
+    if (!listingAccess.allowed) {
+      return {
+        error:
+          listingAccess.reason ??
+          "Please set up your payout method in Settings before creating a listing.",
+      };
+    }
+
     const uploadedFiles = getUploadedFiles(formData);
     const imageUrls = await uploadListingImages(user.id, uploadedFiles);
     const input = buildListingInput(formData, imageUrls);

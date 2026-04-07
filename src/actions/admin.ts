@@ -589,6 +589,44 @@ export async function suspendUser(
   }
 }
 
+export async function getPendingKYCVerifications(): Promise<{
+  users: (Profile & { document_url: string })[];
+  count: number;
+}> {
+  try {
+    await verifyAdmin();
+
+    const admin = createAdminClient();
+    const { data, error } = await admin
+      .from("profiles")
+      .select("*")
+      .eq("payout_method", "bank")
+      .not("bank_kyc_document_url", "is", null)
+      .eq("bank_kyc_verified", false)
+      .order("updated_at", { ascending: true });
+
+    if (error) {
+      throw error;
+    }
+
+    const users = ((data ?? []) as Profile[]).map((profile) => ({
+      ...profile,
+      document_url: profile.bank_kyc_document_url ?? "",
+    }));
+
+    return {
+      users,
+      count: users.length,
+    };
+  } catch (error) {
+    console.error("getPendingKYCVerifications failed:", error);
+    return {
+      users: [],
+      count: 0,
+    };
+  }
+}
+
 export async function unsuspendUser(userId: string): Promise<ActionResponse> {
   try {
     const { adminId } = await verifyAdmin();
