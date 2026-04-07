@@ -171,6 +171,71 @@ async function callRpcWithFallbacks<T>(
   throw lastError ?? new Error(`RPC ${fn} failed`);
 }
 
+function isMissingRpcSignatureError(error: unknown, fn: string) {
+  if (!(error instanceof Error)) {
+    return false;
+  }
+
+  return error.message.includes(`Could not find the function public.${fn}`);
+}
+
+async function startRentalPeriodDirect(params: {
+  supabase: SupabaseClient;
+  booking: BookingRecord;
+  userId: string;
+  notes?: string;
+  photoUrls: string[];
+}) {
+  const startedAt = new Date().toISOString();
+  const fallbackRentalEndsAt = params.booking.rental_ends_at ?? params.booking.end_date ?? null;
+
+  const { error } = await params.supabase
+    .from("bookings")
+    .update({
+      status: "active",
+      rental_started_at: startedAt,
+      rental_ends_at: fallbackRentalEndsAt,
+      handover_at: startedAt,
+      handover_notes: params.notes ?? null,
+      handover_proof_urls: params.photoUrls,
+    })
+    .eq("id", params.booking.id)
+    .eq("lister_id", params.userId)
+    .eq("status", "confirmed");
+
+  if (error) {
+    throw new Error(error.message);
+  }
+
+  await addTimeline({
+    bookingId: params.booking.id,
+    status: "active",
+    previousStatus: "confirmed",
+    actorId: params.userId,
+    actorRole: "lister",
+    title: "Item handed over",
+    description: "Lister confirmed handover and started the rental period.",
+    metadata: {
+      handover_notes: params.notes ?? null,
+      proof_photos: params.photoUrls,
+      rental_ends_at: fallbackRentalEndsAt,
+    },
+  });
+
+  await createNotification({
+    userId: params.booking.renter_id,
+    type: "rental_started",
+    title: "Rental started",
+    body: "The lister confirmed handover. Your rental period is now active.",
+    listingId: params.booking.listing_id,
+    bookingId: params.booking.id,
+    fromUserId: params.userId,
+    actionUrl: `/dashboard/bookings/${params.booking.id}`,
+  });
+
+  return fallbackRentalEndsAt;
+}
+
 async function addTimeline(params: {
   bookingId: string;
   status: BookingStatus;
@@ -854,33 +919,57 @@ export async function markReceivedByRenter(
     const notes = normalizeText(formData.get("notes")?.toString());
     const photoUrls = await uploadProofPhotos(booking.id, "handover", proofFiles);
 
-    const rpcData = await callRpcWithFallbacks<unknown>(
-      auth.supabase,
-      "start_rental_period",
-      [
-        {
-          p_booking_id: booking.id,
-          p_user_id: auth.user.id,
-          p_photo_urls: photoUrls,
-          p_notes: notes ?? null,
-        },
-        {
-          booking_id: booking.id,
-          user_id: auth.user.id,
-          photo_urls: photoUrls,
-          notes: notes ?? null,
-        },
-      ],
-    );
+    let rentalEndsAt: string | null = null;
 
-    let rentalEndsAt = extractRpcDateTime(rpcData);
-    if (!rentalEndsAt) {
-      const { data: refreshed } = await auth.supabase
-        .from("bookings")
-        .select("rental_ends_at")
-        .eq("id", booking.id)
-        .maybeSingle<{ rental_ends_at: string | null }>();
-      rentalEndsAt = refreshed?.rental_ends_at ?? null;
+    try {
+      const rpcData = await callRpcWithFallbacks<unknown>(
+        auth.supabase,
+        "start_rental_period",
+        [
+          {
+            p_booking_id: booking.id,
+            p_user_id: auth.user.id,
+            p_photo_urls: photoUrls,
+            p_notes: notes ?? null,
+          },
+          {
+            booking_id: booking.id,
+            user_id: auth.user.id,
+            photo_urls: photoUrls,
+            notes: notes ?? null,
+          },
+          {
+            p_booking_id: booking.id,
+            p_user_id: auth.user.id,
+          },
+          {
+            booking_id: booking.id,
+            user_id: auth.user.id,
+          },
+        ],
+      );
+
+      rentalEndsAt = extractRpcDateTime(rpcData);
+      if (!rentalEndsAt) {
+        const { data: refreshed } = await auth.supabase
+          .from("bookings")
+          .select("rental_ends_at")
+          .eq("id", booking.id)
+          .maybeSingle<{ rental_ends_at: string | null }>();
+        rentalEndsAt = refreshed?.rental_ends_at ?? null;
+      }
+    } catch (error) {
+      if (!isMissingRpcSignatureError(error, "start_rental_period")) {
+        throw error;
+      }
+
+      rentalEndsAt = await startRentalPeriodDirect({
+        supabase: auth.supabase,
+        booking,
+        userId: auth.user.id,
+        notes,
+        photoUrls,
+      });
     }
 
     revalidateBookingViews();
