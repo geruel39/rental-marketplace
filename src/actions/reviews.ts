@@ -46,10 +46,6 @@ export async function submitReview(
     const parsed = reviewSchema.safeParse({
       booking_id: formData.get("booking_id"),
       overall_rating: formData.get("overall_rating"),
-      communication_rating: formData.get("communication_rating") || undefined,
-      accuracy_rating: formData.get("accuracy_rating") || undefined,
-      condition_rating: formData.get("condition_rating") || undefined,
-      value_rating: formData.get("value_rating") || undefined,
       comment: formData.get("comment")?.toString().trim() || undefined,
     });
 
@@ -111,10 +107,10 @@ export async function submitReview(
       reviewee_id: revieweeId,
       review_role: reviewRole,
       overall_rating: parsed.data.overall_rating,
-      communication_rating: parsed.data.communication_rating ?? null,
-      accuracy_rating: parsed.data.accuracy_rating ?? null,
-      condition_rating: parsed.data.condition_rating ?? null,
-      value_rating: parsed.data.value_rating ?? null,
+      communication_rating: null,
+      accuracy_rating: null,
+      condition_rating: null,
+      value_rating: null,
       comment: parsed.data.comment ?? null,
     });
 

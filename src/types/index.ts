@@ -61,6 +61,7 @@ export type StockMovementType =
   | "damaged"
   | "lost";
 export type PayoutStatus = "pending" | "processing" | "completed" | "failed";
+export type PayoutMethod = "bank" | "gcash" | "maya";
 export type StockStatus =
   | "in_stock"
   | "low_stock"
@@ -118,8 +119,21 @@ export interface Profile {
   response_rate: number;
   response_time_hours: number;
   hitpay_customer_id: string | null;
-  payout_bank_account: BankAccount | null;
-  payout_email: string | null;
+  payout_method?: PayoutMethod;
+  bank_name?: string;
+  bank_account_number?: string;
+  bank_account_name?: string;
+  bank_kyc_verified?: boolean;
+  bank_kyc_document_url?: string;
+  bank_kyc_verified_at?: string;
+  gcash_phone_number?: string;
+  maya_phone_number?: string;
+  payout_setup_completed?: boolean;
+  payout_setup_completed_at?: string;
+  /** @deprecated Replaced by specific payout fields. */
+  payout_bank_account?: BankAccount | null;
+  /** @deprecated Replaced by payout method-specific fields. */
+  payout_email?: string | null;
   notification_preferences: NotificationPreferences;
   is_admin: boolean;
   is_suspended: boolean;
@@ -318,10 +332,10 @@ export interface Review {
   reviewee_id: string;
   review_role: ReviewRole;
   overall_rating: number;
-  communication_rating: number | null;
-  accuracy_rating: number | null;
-  condition_rating: number | null;
-  value_rating: number | null;
+  communication_rating?: number | null;
+  accuracy_rating?: number | null;
+  condition_rating?: number | null;
+  value_rating?: number | null;
   comment: string | null;
   response: string | null;
   responded_at: string | null;
@@ -682,5 +696,22 @@ export interface PricingCalculation {
 export interface ActionResponse {
   success?: string;
   error?: string;
+}
+
+export interface PayoutMethodDetails {
+  method: PayoutMethod;
+  bank_name?: string;
+  bank_account_number?: string;
+  bank_account_name?: string;
+  bank_kyc_verified?: boolean;
+  gcash_phone_number?: string;
+  maya_phone_number?: string;
+}
+
+export interface PayoutSetupStatus {
+  is_complete: boolean;
+  current_method?: PayoutMethod;
+  missing_fields?: string[];
+  kyc_status?: "not_submitted" | "pending" | "verified" | "rejected";
 }
 

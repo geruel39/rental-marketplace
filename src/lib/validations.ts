@@ -147,10 +147,6 @@ export const markDeliveredSchema = z.object({
 export const reviewSchema = z.object({
   booking_id: z.string().uuid(),
   overall_rating: z.coerce.number().int().min(1).max(5),
-  communication_rating: z.coerce.number().int().min(1).max(5).optional(),
-  accuracy_rating: z.coerce.number().int().min(1).max(5).optional(),
-  condition_rating: z.coerce.number().int().min(1).max(5).optional(),
-  value_rating: z.coerce.number().int().min(1).max(5).optional(),
   comment: z.string().max(2000).optional(),
 });
 
@@ -180,16 +176,68 @@ export const stockAdjustmentSchema = z.object({
   reason: z.string().min(3, "Reason is required").max(500),
 });
 
-export const payoutSettingsSchema = z.object({
-  payout_email: z.string().email().optional(),
-  payout_bank_account: z
-    .object({
-      bank_name: z.string().min(2),
-      account_number: z.string().min(4),
-      routing_number: z.string().optional(),
-      account_holder: z.string().min(2),
-    })
-    .optional(),
+export const payoutMethodSchema = z
+  .object({
+    method: z.enum(["bank", "gcash", "maya"]),
+    bank_name: z.string().min(2).optional(),
+    bank_account_number: z.string().min(5).optional(),
+    bank_account_name: z.string().min(2).optional(),
+    gcash_phone_number: z
+      .string()
+      .regex(/^(\+63|0)?9\d{9}$/, "Invalid Philippine mobile number")
+      .optional(),
+    maya_phone_number: z
+      .string()
+      .regex(/^(\+63|0)?9\d{9}$/, "Invalid Philippine mobile number")
+      .optional(),
+  })
+  .superRefine((data, ctx) => {
+    if (data.method === "bank") {
+      if (!data.bank_name) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: "Bank name is required",
+          path: ["bank_name"],
+        });
+      }
+
+      if (!data.bank_account_number) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: "Bank account number is required",
+          path: ["bank_account_number"],
+        });
+      }
+
+      if (!data.bank_account_name) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: "Bank account name is required",
+          path: ["bank_account_name"],
+        });
+      }
+    }
+
+    if (data.method === "gcash" && !data.gcash_phone_number) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "GCash phone number is required",
+        path: ["gcash_phone_number"],
+      });
+    }
+
+    if (data.method === "maya" && !data.maya_phone_number) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "Maya phone number is required",
+        path: ["maya_phone_number"],
+      });
+    }
+  });
+
+export const kycUploadSchema = z.object({
+  user_id: z.string().uuid(),
+  document_type: z.enum(["national_id", "drivers_license", "passport"]),
 });
 
 export type LoginInput = z.infer<typeof loginSchema>;
@@ -207,4 +255,5 @@ export type ReviewInput = z.infer<typeof reviewSchema>;
 export type MessageInput = z.infer<typeof messageSchema>;
 export type ProfileUpdateInput = z.infer<typeof profileUpdateSchema>;
 export type StockAdjustmentInput = z.infer<typeof stockAdjustmentSchema>;
-export type PayoutSettingsInput = z.infer<typeof payoutSettingsSchema>;
+export type PayoutMethodInput = z.infer<typeof payoutMethodSchema>;
+export type KYCUploadInput = z.infer<typeof kycUploadSchema>;

@@ -8,7 +8,7 @@ import { getNotifications } from "@/actions/notifications";
 import { getPendingReviews } from "@/actions/reviews";
 import { createClient } from "@/lib/supabase/server";
 import {
-  payoutSettingsSchema,
+  payoutMethodSchema,
   profileUpdateSchema,
 } from "@/lib/validations";
 import type {
@@ -251,26 +251,42 @@ export async function updatePayoutSettings(
       return { error: "You must be signed in" };
     }
 
-    const payoutEmail = formData.get("payout_email")?.toString().trim() || undefined;
-    const bankName = formData.get("bank_name")?.toString().trim();
-    const accountNumber = formData.get("account_number")?.toString().trim();
-    const routingNumber = formData.get("routing_number")?.toString().trim();
-    const accountHolder = formData.get("account_holder")?.toString().trim();
+    const bankName = formData.get("bank_name")?.toString().trim() || undefined;
+    const bankAccountNumber =
+      formData.get("bank_account_number")?.toString().trim() ||
+      formData.get("account_number")?.toString().trim() ||
+      undefined;
+    const bankAccountName =
+      formData.get("bank_account_name")?.toString().trim() ||
+      formData.get("account_holder")?.toString().trim() ||
+      undefined;
+    const gcashPhoneNumber =
+      formData.get("gcash_phone_number")?.toString().trim() || undefined;
+    const mayaPhoneNumber =
+      formData.get("maya_phone_number")?.toString().trim() || undefined;
+    const submittedMethod = formData.get("method")?.toString().trim();
 
-    const hasBankAccountValues = Boolean(
-      bankName || accountNumber || routingNumber || accountHolder,
-    );
+    const inferredMethod =
+      submittedMethod ||
+      (gcashPhoneNumber
+        ? "gcash"
+        : mayaPhoneNumber
+          ? "maya"
+          : bankName || bankAccountNumber || bankAccountName
+            ? "bank"
+            : undefined);
 
-    const parsed = payoutSettingsSchema.safeParse({
-      payout_email: payoutEmail,
-      payout_bank_account: hasBankAccountValues
-        ? {
-            bank_name: bankName,
-            account_number: accountNumber,
-            routing_number: routingNumber,
-            account_holder: accountHolder,
-          }
-        : undefined,
+    if (!inferredMethod) {
+      return { error: "Select a payout method and complete the required details" };
+    }
+
+    const parsed = payoutMethodSchema.safeParse({
+      method: inferredMethod,
+      bank_name: bankName,
+      bank_account_number: bankAccountNumber,
+      bank_account_name: bankAccountName,
+      gcash_phone_number: gcashPhoneNumber,
+      maya_phone_number: mayaPhoneNumber,
     });
 
     if (!parsed.success) {
@@ -282,8 +298,26 @@ export async function updatePayoutSettings(
     const { error } = await supabase
       .from("profiles")
       .update({
-        payout_email: parsed.data.payout_email ?? null,
-        payout_bank_account: parsed.data.payout_bank_account ?? null,
+        payout_method: parsed.data.method,
+        bank_name: parsed.data.method === "bank" ? parsed.data.bank_name ?? null : null,
+        bank_account_number:
+          parsed.data.method === "bank"
+            ? parsed.data.bank_account_number ?? null
+            : null,
+        bank_account_name:
+          parsed.data.method === "bank"
+            ? parsed.data.bank_account_name ?? null
+            : null,
+        gcash_phone_number:
+          parsed.data.method === "gcash"
+            ? parsed.data.gcash_phone_number ?? null
+            : null,
+        maya_phone_number:
+          parsed.data.method === "maya" ? parsed.data.maya_phone_number ?? null : null,
+        payout_setup_completed: true,
+        payout_setup_completed_at: new Date().toISOString(),
+        payout_bank_account: null,
+        payout_email: null,
       })
       .eq("id", user.id);
 

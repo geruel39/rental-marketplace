@@ -2,6 +2,8 @@ import { clsx, type ClassValue } from "clsx";
 import { format, formatDistanceToNow } from "date-fns";
 import { twMerge } from "tailwind-merge";
 
+import type { PayoutMethod } from "@/types";
+
 export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
 }
@@ -48,4 +50,51 @@ export function slugify(text: string) {
     .replace(/[^a-z0-9\s-]/g, "")
     .replace(/\s+/g, "-")
     .replace(/-+/g, "-");
+}
+
+export function getPayoutMethodLabel(method: PayoutMethod): string {
+  switch (method) {
+    case "bank":
+      return "Bank Account";
+    case "gcash":
+      return "GCash";
+    case "maya":
+      return "Maya";
+  }
+}
+
+export function getPayoutMethodIcon(method: PayoutMethod): string {
+  switch (method) {
+    case "bank":
+      return "Building";
+    case "gcash":
+      return "Smartphone";
+    case "maya":
+      return "CreditCard";
+  }
+}
+
+export function formatPhoneNumber(phone: string): string {
+  const digits = phone.replace(/\D/g, "");
+  let normalized = digits;
+
+  if (normalized.startsWith("0")) {
+    normalized = `63${normalized.slice(1)}`;
+  } else if (!normalized.startsWith("63")) {
+    normalized = `63${normalized}`;
+  }
+
+  const localNumber = normalized.slice(-10);
+
+  return `+63 ${localNumber.slice(0, 3)} ${localNumber.slice(
+    3,
+    6,
+  )} ${localNumber.slice(6)}`;
+}
+
+export function maskAccountNumber(accountNumber: string): string {
+  const visibleDigits = accountNumber.slice(-4);
+  const maskedPrefix = "*".repeat(Math.max(0, accountNumber.length - 4));
+
+  return `${maskedPrefix}${visibleDigits}`;
 }
