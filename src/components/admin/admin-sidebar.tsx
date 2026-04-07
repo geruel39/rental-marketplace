@@ -61,13 +61,13 @@ export function AdminSidebar() {
 
   return (
     <aside className="bg-brand-dark text-brand-light hidden w-72 shrink-0 border-r border-white/10 lg:fixed lg:top-16 lg:bottom-0 lg:left-0 lg:block">
-      <div className="flex h-full flex-col overflow-y-auto p-4 pb-6">
-        <div className="mb-6 rounded-2xl border border-white/10 bg-white/5 p-4 shadow-sm">
-          <Badge className="bg-brand-sky text-brand-dark hover:bg-brand-sky">
+      <div className="flex h-full flex-col overflow-y-auto px-4 py-5">
+        <div className="mb-6 rounded-2xl border border-white/20 bg-[linear-gradient(180deg,rgba(255,255,255,0.08),rgba(255,255,255,0.04))] p-4 shadow-[0_12px_30px_rgba(0,0,0,0.18)]">
+          <Badge className="bg-brand-sky px-3 text-brand-dark hover:bg-brand-sky">
             ADMIN
           </Badge>
-          <p className="mt-3 text-sm font-semibold text-white">Super Admin Panel</p>
-          <p className="mt-1 text-sm text-brand-light/70">
+          <p className="mt-3 text-base font-semibold text-white">Super Admin Panel</p>
+          <p className="mt-2 text-sm leading-6 text-white/72">
             Moderate the marketplace, review reports, and manage platform operations.
           </p>
         </div>
@@ -75,7 +75,7 @@ export function AdminSidebar() {
         <nav className="space-y-6">
           {adminSections.map((section) => (
             <div key={section.title} className="space-y-2">
-              <h2 className="px-3 text-xs font-semibold uppercase tracking-[0.18em] text-brand-light/50">
+              <h2 className="px-3 text-xs font-semibold uppercase tracking-[0.18em] text-brand-sky/80">
                 {section.title}
               </h2>
               <div className="space-y-1">
@@ -94,10 +94,15 @@ export function AdminSidebar() {
                         "flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm transition-colors",
                         isActive
                           ? "bg-brand-navy text-white shadow-sm"
-                          : "text-brand-light/70 hover:bg-white/10 hover:text-white",
+                          : "text-white/88 hover:bg-white/12 hover:text-white",
                       )}
                     >
-                      <Icon className="size-4" />
+                      <Icon
+                        className={cn(
+                          "size-4",
+                          isActive ? "text-white" : "text-brand-sky",
+                        )}
+                      />
                       {item.label}
                     </Link>
                   );
@@ -110,7 +115,7 @@ export function AdminSidebar() {
         <div className="mt-auto pt-6">
           <Link
             href="/dashboard"
-            className="flex items-center gap-3 rounded-xl border border-white/10 bg-white/5 px-3 py-2.5 text-sm font-medium text-brand-light transition-colors hover:bg-white/10"
+            className="flex items-center gap-3 rounded-xl border border-white/20 bg-white/8 px-3 py-2.5 text-sm font-medium text-white transition-colors hover:bg-white/12"
           >
             <ArrowLeft className="size-4" />
             Back to Marketplace
