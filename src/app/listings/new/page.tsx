@@ -27,19 +27,41 @@ export default async function NewListingPage() {
   const listingAccess = await canCreateListing(user.id);
 
   if (!listingAccess.allowed) {
+    const isKycPending = listingAccess.reason?.includes("being reviewed");
+    const isKycRejected = listingAccess.reason?.includes("was rejected");
+
     return (
       <main className="mx-auto flex min-h-[70vh] max-w-4xl items-center px-4 py-8 sm:px-6 lg:px-8">
         <Card className="w-full rounded-3xl border-border/70 bg-white shadow-sm">
           <CardHeader className="space-y-2">
             <CardTitle className="text-3xl text-brand-navy">
-              Payout Setup Required
+              {isKycPending ? "Your KYC is pending verification" : "Payout Setup Required"}
             </CardTitle>
             <CardDescription className="text-base">
-              You must set up your payout method before creating listings. This
-              ensures you can receive payments.
+              {isKycPending
+                ? "Your bank payout setup is almost done. Once your document is approved, you'll be able to create listings."
+                : listingAccess.reason ||
+                  "You must set up your payout method before creating listings. This ensures you can receive payments."}
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-6">
+            {isKycPending ? (
+              <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
+                <p className="font-medium">Expected review time: 1-3 business days</p>
+                <p className="mt-1">
+                  Need to replace your upload? You can submit a new document from
+                  Payment Settings.
+                </p>
+              </div>
+            ) : null}
+
+            {isKycRejected ? (
+              <div className="rounded-2xl border border-red-200 bg-red-50 p-4 text-sm text-red-900">
+                Your last KYC document was rejected. Upload a new document in
+                Payment Settings to continue.
+              </div>
+            ) : null}
+
             <details className="rounded-2xl border border-brand-navy/10 bg-brand-light p-4">
               <summary className="cursor-pointer list-none font-medium text-brand-navy">
                 Why do I need payout setup?

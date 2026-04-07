@@ -114,8 +114,13 @@ export function AdminSidebar({ pendingKycCount = 0 }: { pendingKycCount?: number
                         {"count" in item && item.count ? (
                           <Badge
                             className={cn(
-                              "bg-brand-sky text-brand-dark hover:bg-brand-sky",
-                              isActive && "bg-white/15 text-white hover:bg-white/15",
+                              item.href === "/admin/kyc-verification"
+                                ? "bg-red-600 text-white hover:bg-red-600"
+                                : "bg-brand-sky text-brand-dark hover:bg-brand-sky",
+                              isActive &&
+                                (item.href === "/admin/kyc-verification"
+                                  ? "bg-white/20 text-white hover:bg-white/20"
+                                  : "bg-white/15 text-white hover:bg-white/15"),
                             )}
                           >
                             {item.count}

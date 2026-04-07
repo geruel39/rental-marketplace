@@ -9,6 +9,28 @@ const stockAdjustmentTypeSchema = z.enum([
   "damaged",
   "lost",
 ]);
+const philippineMobilePattern = /^(\+63|0)9\d{9}$/;
+const approvedBankNames = [
+  "BDO",
+  "BPI",
+  "Metrobank",
+  "Land Bank",
+  "Landbank",
+  "PNB",
+  "Security Bank",
+  "UnionBank",
+  "Union Bank",
+  "RCBC",
+  "Chinabank",
+  "EastWest Bank",
+  "Maybank",
+  "AUB",
+  "Bank of Commerce",
+  "CIMB",
+  "GoTyme",
+  "Tonik",
+  "SeaBank",
+];
 
 export const loginSchema = z.object({
   email: z.string().email("Invalid email"),
@@ -179,16 +201,37 @@ export const stockAdjustmentSchema = z.object({
 export const payoutMethodSchema = z
   .object({
     method: z.enum(["bank", "gcash", "maya"]),
-    bank_name: z.string().min(2).optional(),
-    bank_account_number: z.string().min(5).optional(),
-    bank_account_name: z.string().min(2).optional(),
+    bank_name: z
+      .string()
+      .trim()
+      .min(2, "Bank name is required")
+      .max(100, "Bank name is too long")
+      .refine(
+        (value) =>
+          approvedBankNames.some(
+            (bankName) => bankName.toLowerCase() === value.toLowerCase(),
+          ) || /^[A-Za-z0-9&().,'/\-\s]+$/.test(value),
+        "Enter a valid bank name",
+      )
+      .optional(),
+    bank_account_number: z
+      .string()
+      .trim()
+      .regex(/^\d{10,20}$/, "Account number must be 10 to 20 digits")
+      .optional(),
+    bank_account_name: z
+      .string()
+      .trim()
+      .min(2, "Account name must be at least 2 characters")
+      .max(120, "Account name is too long")
+      .optional(),
     gcash_phone_number: z
       .string()
-      .regex(/^(\+63|0)?9\d{9}$/, "Invalid Philippine mobile number")
+      .regex(philippineMobilePattern, "Invalid Philippine mobile number")
       .optional(),
     maya_phone_number: z
       .string()
-      .regex(/^(\+63|0)?9\d{9}$/, "Invalid Philippine mobile number")
+      .regex(philippineMobilePattern, "Invalid Philippine mobile number")
       .optional(),
   })
   .superRefine((data, ctx) => {

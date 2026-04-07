@@ -10,6 +10,7 @@ import { kycUploadSchema, payoutMethodSchema } from "@/lib/validations";
 import type {
   ActionResponse,
   AdminTargetType,
+  BookingStatus,
   JsonObject,
   PayoutSetupStatus,
   Profile,
@@ -23,9 +24,36 @@ const ALLOWED_KYC_MIME_TYPES = new Set([
   "image/jpg",
   "image/png",
 ]);
+const ACTIVE_BOOKING_STATUSES: BookingStatus[] = ["confirmed", "active", "returned"];
+const FUTURE_PAYOUT_STATUSES = ["pending", "processing"] as const;
 
 function sanitizeFilename(filename: string) {
   return filename.replace(/[^a-zA-Z0-9._-]/g, "-");
+}
+
+function normalizePhilippinePhone(phone: string) {
+  const digits = phone.replace(/\D/g, "");
+
+  if (digits.startsWith("63")) {
+    return `+${digits}`;
+  }
+
+  if (digits.startsWith("0")) {
+    return `+63${digits.slice(1)}`;
+  }
+
+  return `+63${digits}`;
+}
+
+function extractStoragePath(publicUrl: string) {
+  const marker = `/storage/v1/object/public/${KYC_BUCKET}/`;
+  const index = publicUrl.indexOf(marker);
+
+  if (index === -1) {
+    return null;
+  }
+
+  return decodeURIComponent(publicUrl.slice(index + marker.length));
 }
 
 function getRequestIp(
@@ -57,6 +85,44 @@ function getKycStatus(profile: Profile): PayoutSetupStatus["kyc_status"] {
   }
 
   return "not_submitted";
+}
+
+async function getLatestKycAudit(userId: string) {
+  const admin = createAdminClient();
+  const { data, error } = await admin
+    .from("admin_audit_log")
+    .select("*")
+    .eq("target_type", "user")
+    .eq("target_id", userId)
+    .in("action", ["kyc_verified", "kyc_rejected"])
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle<{
+      action: string;
+      details: JsonObject;
+      created_at: string;
+    }>();
+
+  if (error) {
+    console.error("getLatestKycAudit failed:", error);
+    return null;
+  }
+
+  return data ?? null;
+}
+
+async function getResolvedKycStatus(profile: Profile) {
+  if (profile.payout_method !== "bank") {
+    return undefined;
+  }
+
+  const baseStatus = getKycStatus(profile);
+  if (baseStatus === "verified" || baseStatus === "pending") {
+    return baseStatus;
+  }
+
+  const latestAudit = await getLatestKycAudit(profile.id);
+  return latestAudit?.action === "kyc_rejected" ? "rejected" : baseStatus;
 }
 
 function getMissingFields(profile: Profile): string[] {
@@ -221,6 +287,89 @@ async function logAdminAction(params: {
   }
 }
 
+async function findConflictingPhoneOwner(
+  field: "gcash_phone_number" | "maya_phone_number",
+  phone: string,
+  currentUserId: string,
+) {
+  const admin = createAdminClient();
+  const normalizedPhone = normalizePhilippinePhone(phone);
+  const { data, error } = await admin
+    .from("profiles")
+    .select("id, display_name, full_name, email")
+    .neq("id", currentUserId)
+    .eq(field, normalizedPhone)
+    .limit(1)
+    .maybeSingle<Pick<Profile, "id" | "display_name" | "full_name" | "email">>();
+
+  if (error) {
+    throw error;
+  }
+
+  return data;
+}
+
+async function getBlockingBookingCount(userId: string) {
+  const admin = createAdminClient();
+  const { count, error } = await admin
+    .from("bookings")
+    .select("id", { count: "exact", head: true })
+    .eq("lister_id", userId)
+    .in("status", ACTIVE_BOOKING_STATUSES);
+
+  if (error) {
+    throw error;
+  }
+
+  return count ?? 0;
+}
+
+async function getPendingPayoutCount(userId: string) {
+  const admin = createAdminClient();
+  const { count, error } = await admin
+    .from("payouts")
+    .select("id", { count: "exact", head: true })
+    .eq("lister_id", userId)
+    .in("status", [...FUTURE_PAYOUT_STATUSES]);
+
+  if (error) {
+    throw error;
+  }
+
+  return count ?? 0;
+}
+
+async function updateFuturePayoutMethods(userId: string, method: string) {
+  const admin = createAdminClient();
+  const { error } = await admin
+    .from("payouts")
+    .update({ payout_method: method })
+    .eq("lister_id", userId)
+    .in("status", [...FUTURE_PAYOUT_STATUSES]);
+
+  if (error) {
+    throw error;
+  }
+}
+
+async function removeStoredKycDocument(publicUrl?: string | null) {
+  if (!publicUrl) {
+    return;
+  }
+
+  const path = extractStoragePath(publicUrl);
+  if (!path) {
+    return;
+  }
+
+  const admin = createAdminClient();
+  const { error } = await admin.storage.from(KYC_BUCKET).remove([path]);
+
+  if (error) {
+    console.error("removeStoredKycDocument failed:", error);
+  }
+}
+
 function revalidatePayoutViews() {
   revalidatePath("/dashboard/settings");
   revalidatePath("/dashboard/settings/payments");
@@ -244,7 +393,7 @@ export async function getPayoutSetupStatus(
       is_complete: isComplete,
       current_method: target.payout_method,
       missing_fields: isComplete ? [] : getMissingFields(target),
-      kyc_status: getKycStatus(target),
+      kyc_status: await getResolvedKycStatus(target),
     };
   } catch (error) {
     console.error("getPayoutSetupStatus failed:", error);
@@ -287,7 +436,51 @@ export async function setupPayoutMethod(
       };
     }
 
-    if (profile.payout_method && profile.payout_method !== parsed.data.method) {
+    const isMethodChange =
+      Boolean(profile.payout_method) && profile.payout_method !== parsed.data.method;
+
+    if (isMethodChange) {
+      const blockingBookings = await getBlockingBookingCount(user.id);
+
+      if (blockingBookings > 0) {
+        return {
+          error:
+            "Cannot change payout method while you have active bookings. Please wait until they're completed.",
+        };
+      }
+    }
+
+    if (parsed.data.method === "gcash" && parsed.data.gcash_phone_number) {
+      const normalizedPhone = normalizePhilippinePhone(parsed.data.gcash_phone_number);
+      const existingOwner = await findConflictingPhoneOwner(
+        "gcash_phone_number",
+        normalizedPhone,
+        user.id,
+      );
+
+      if (existingOwner) {
+        return { error: "That GCash number is already being used by another account." };
+      }
+
+      parsed.data.gcash_phone_number = normalizedPhone;
+    }
+
+    if (parsed.data.method === "maya" && parsed.data.maya_phone_number) {
+      const normalizedPhone = normalizePhilippinePhone(parsed.data.maya_phone_number);
+      const existingOwner = await findConflictingPhoneOwner(
+        "maya_phone_number",
+        normalizedPhone,
+        user.id,
+      );
+
+      if (existingOwner) {
+        return { error: "That Maya number is already being used by another account." };
+      }
+
+      parsed.data.maya_phone_number = normalizedPhone;
+    }
+
+    if (isMethodChange) {
       const admin = createAdminClient();
       const { error: historyError } = await admin.from("payout_method_history").insert({
         user_id: user.id,
@@ -304,6 +497,18 @@ export async function setupPayoutMethod(
     const now = new Date().toISOString();
     let successMessage: string;
     let updatePayload: Record<string, unknown>;
+    let pendingPayoutWarning: string | null = null;
+
+    if (isMethodChange) {
+      const pendingPayouts = await getPendingPayoutCount(user.id);
+
+      if (profile.payout_method === "bank" && pendingPayouts > 0) {
+        pendingPayoutWarning =
+          "You have pending payouts via bank. Future payouts will use the new method, but pending ones will still go to your bank account.";
+      } else {
+        await updateFuturePayoutMethods(user.id, parsed.data.method);
+      }
+    }
 
     switch (parsed.data.method) {
       case "bank":
@@ -370,6 +575,16 @@ export async function setupPayoutMethod(
 
     if (error) {
       console.error("setupPayoutMethod update failed:", error);
+      if (error.code === "23505") {
+        return {
+          error:
+            parsed.data.method === "gcash"
+              ? "That GCash number is already being used by another account."
+              : parsed.data.method === "maya"
+                ? "That Maya number is already being used by another account."
+                : "That payout detail is already in use.",
+        };
+      }
       return { error: "Could not save your payout method. Please try again." };
     }
 
@@ -377,12 +592,31 @@ export async function setupPayoutMethod(
       userId: user.id,
       type: "payout_method_updated",
       title: "Payout method set up successfully!",
-      body: "You can now create listings.",
+      body:
+        parsed.data.method === "bank"
+          ? "Your bank details are saved. Upload your KYC document to finish setup."
+          : "You can now create listings.",
       actionUrl: "/dashboard/settings/payments",
     });
 
+    if (isMethodChange) {
+      await createNotification({
+        userId: user.id,
+        type: "payout_method_changed",
+        title: "Payout method changed",
+        body: pendingPayoutWarning
+          ? `${pendingPayoutWarning} Your future payouts will use ${parsed.data.method}.`
+          : `Your payout method has been updated to ${parsed.data.method}.`,
+        actionUrl: "/dashboard/settings/payments",
+      });
+    }
+
     revalidatePayoutViews();
-    return { success: successMessage };
+    return {
+      success: pendingPayoutWarning
+        ? `${successMessage} ${pendingPayoutWarning}`
+        : successMessage,
+    };
   } catch (error) {
     console.error("setupPayoutMethod failed:", error);
     return { error: "Something went wrong. Please try again." };
@@ -431,6 +665,7 @@ export async function uploadKYCDocument(
     const filePath = `${user.id}/kyc-${parsed.data.document_type}-${crypto.randomUUID()}.${extension}`;
     const fileBuffer = await documentFile.arrayBuffer();
     const admin = createAdminClient();
+    const previousDocumentUrl = profile.bank_kyc_document_url ?? null;
 
     const { error: uploadError } = await admin.storage
       .from(KYC_BUCKET)
@@ -464,12 +699,14 @@ export async function uploadKYCDocument(
       return { error: "Could not save your KYC document. Please try again." };
     }
 
+    await removeStoredKycDocument(previousDocumentUrl);
+
     await createNotification({
       userId: user.id,
       type: "kyc_uploaded",
       title: "KYC document uploaded",
-      body: "KYC document uploaded. Awaiting admin verification.",
-      actionUrl: "/dashboard/settings/verification",
+      body: "Your KYC document has been submitted and is now awaiting review.",
+      actionUrl: "/dashboard/settings/payments",
     });
 
     const { data: adminUsers, error: adminUsersError } = await admin
@@ -488,7 +725,7 @@ export async function uploadKYCDocument(
             title: "New KYC document to review",
             body: `New KYC document to review from ${getUserDisplayName(profile)}`,
             fromUserId: user.id,
-            actionUrl: `/admin/users/${user.id}`,
+            actionUrl: `/admin/kyc-verification`,
           }),
         ),
       );
@@ -524,6 +761,7 @@ export async function verifyKYC(
     }
 
     const now = new Date().toISOString();
+    const previousDocumentUrl = targetProfile.bank_kyc_document_url ?? null;
     const updatePayload = approved
       ? {
           bank_kyc_verified: true,
@@ -549,6 +787,10 @@ export async function verifyKYC(
       return { error: "Could not update KYC verification. Please try again." };
     }
 
+    if (!approved) {
+      await removeStoredKycDocument(previousDocumentUrl);
+    }
+
     await createNotification({
       userId,
       type: approved ? "kyc_verified" : "kyc_rejected",
@@ -556,7 +798,7 @@ export async function verifyKYC(
       body: approved
         ? `Your KYC has been verified! Your ${targetProfile.bank_name || "bank"} account is ready for payouts.`
         : `Your KYC document was rejected. Please upload a new one. Reason: ${notes?.trim() || "No reason provided"}`,
-      actionUrl: "/dashboard/settings/verification",
+      actionUrl: "/dashboard/settings/payments",
     });
 
     await logAdminAction({
@@ -567,7 +809,7 @@ export async function verifyKYC(
       details: {
         approved,
         notes: notes?.trim() || null,
-        previous_document_url: targetProfile.bank_kyc_document_url ?? null,
+        previous_document_url: previousDocumentUrl,
       },
     });
 
@@ -602,7 +844,25 @@ export async function canCreateListing(
       return { allowed: true };
     }
 
-    await getPayoutSetupStatus(userId);
+    const payoutStatus = await getPayoutSetupStatus(userId);
+    const { target } = await getAccessibleProfile(userId);
+
+    if (target.payout_method === "bank" && payoutStatus.kyc_status === "pending") {
+      return {
+        allowed: false,
+        reason:
+          "Your KYC document is being reviewed. You'll be able to create listings once verified.",
+      };
+    }
+
+    if (target.payout_method === "bank" && payoutStatus.kyc_status === "rejected") {
+      return {
+        allowed: false,
+        reason:
+          "Your KYC document was rejected. Please upload a new document to complete payout setup.",
+      };
+    }
+
     return {
       allowed: false,
       reason: "Please set up your payout method in Settings before creating a listing.",

@@ -5,6 +5,7 @@ import { getPayoutSetupStatus } from "@/actions/payout";
 import { PayoutSettingsClient } from "@/components/payout/payout-settings-client";
 import { Pagination } from "@/components/shared/pagination";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import {
   Table,
   TableBody,
@@ -13,9 +14,10 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
 import { formatCurrency, formatDate, getPayoutMethodLabel } from "@/lib/utils";
-import type { Payout, Profile } from "@/types";
+import type { AdminAuditLog, Payout, Profile } from "@/types";
 
 type SearchParams = {
   page?: string;
@@ -42,6 +44,7 @@ export default async function PaymentsSettingsPage({
     redirect("/login");
   }
 
+  const admin = createAdminClient();
   const [{ data: profile }, payoutStatus, payoutsResult] = await Promise.all([
     supabase.from("profiles").select("*").eq("id", user.id).maybeSingle<Profile>(),
     getPayoutSetupStatus(user.id),
@@ -61,6 +64,20 @@ export default async function PaymentsSettingsPage({
   const payouts = (payoutsResult.data ?? []) as Payout[];
   const totalCount = payoutsResult.count ?? 0;
   const totalPages = totalCount === 0 ? 0 : Math.ceil(totalCount / PAYOUTS_PER_PAGE);
+  const { data: latestKycAudit } = await admin
+    .from("admin_audit_log")
+    .select("*")
+    .eq("target_type", "user")
+    .eq("target_id", user.id)
+    .in("action", ["kyc_verified", "kyc_rejected"])
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle<AdminAuditLog>();
+  const latestRejectionReason =
+    latestKycAudit?.action === "kyc_rejected" &&
+    typeof latestKycAudit.details?.notes === "string"
+      ? latestKycAudit.details.notes
+      : null;
 
   return (
     <div className="space-y-8">
@@ -93,6 +110,47 @@ export default async function PaymentsSettingsPage({
             You must complete payout setup to create listings.
           </div>
         ) : null}
+
+        {payoutStatus.kyc_status === "rejected" && latestRejectionReason ? (
+          <div className="rounded-2xl border border-red-200 bg-red-50 p-4 text-sm text-red-900">
+            <p className="font-medium">KYC Rejected: {latestRejectionReason}</p>
+            <p className="mt-1">
+              Upload a new document below so the team can review it again.
+            </p>
+            <Button asChild className="mt-4 bg-brand-navy text-white hover:bg-brand-steel">
+              <a href="#kyc-section">Upload New Document</a>
+            </Button>
+          </div>
+        ) : null}
+
+        <div className="grid gap-4 lg:grid-cols-3">
+          <div className="rounded-3xl border border-brand-navy/10 bg-white p-5 shadow-sm">
+            <p className="text-sm font-semibold text-brand-navy">Why we need this</p>
+            <p className="mt-2 text-sm leading-6 text-muted-foreground">
+              We verify payout details so completed bookings can be settled safely
+              to the right account.
+            </p>
+          </div>
+          <div className="rounded-3xl border border-brand-sky/20 bg-brand-light p-5 shadow-sm">
+            <p className="text-sm font-semibold text-brand-navy">
+              Your information is encrypted and secure
+            </p>
+            <p className="mt-2 text-sm leading-6 text-muted-foreground">
+              Bank details and KYC files are only used for payout processing and
+              compliance review.
+            </p>
+          </div>
+          <div className="rounded-3xl border border-brand-steel/20 bg-white p-5 shadow-sm">
+            <p className="text-sm font-semibold text-brand-navy">
+              Estimated processing times
+            </p>
+            <ul className="mt-2 space-y-2 text-sm text-muted-foreground">
+              <li>Bank: setup 1-3 business days after KYC approval</li>
+              <li>GCash: instant setup, instant payouts</li>
+              <li>Maya: instant setup, instant payouts</li>
+            </ul>
+          </div>
+        </div>
 
         <PayoutSettingsClient payoutStatus={payoutStatus} profile={profile} />
       </section>

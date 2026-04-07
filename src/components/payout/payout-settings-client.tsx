@@ -234,7 +234,10 @@ export function PayoutSettingsClient({
       {activeMethod === "bank" ? (
         <>
           <Separator />
-          <div className="rounded-3xl border border-border/70 bg-white p-6 shadow-sm">
+          <div
+            className="rounded-3xl border border-border/70 bg-white p-6 shadow-sm"
+            id="kyc-section"
+          >
             <div className="mb-5 space-y-1">
               <h3 className="text-lg font-semibold text-brand-navy">KYC Verification</h3>
               <p className="text-sm text-muted-foreground">

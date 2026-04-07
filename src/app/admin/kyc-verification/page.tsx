@@ -8,7 +8,7 @@ import { EmptyState } from "@/components/shared/empty-state";
 export const dynamic = "force-dynamic";
 
 export default async function AdminKycVerificationPage() {
-  const { users, count } = await getPendingKYCVerifications();
+  const { users } = await getPendingKYCVerifications();
 
   return (
     <div className="space-y-6">
@@ -17,7 +17,7 @@ export default async function AdminKycVerificationPage() {
         title="KYC Verification"
       />
 
-      {count === 0 ? (
+      {users.length === 0 ? (
         <EmptyState
           description="No pending KYC verifications"
           icon={ShieldCheck}

@@ -46,7 +46,8 @@ function getReviewCopy(booking: BookingWithDetails, currentUserId: string) {
     return {
       title: `How was your experience with ${listerName}?`,
       description: "Your overall rating helps future renters know what to expect.",
-      placeholder: "Share your experience with the item and the lister...",
+      placeholder: "Was the item as described? How was the handover?",
+      disclaimer: `Your review will be visible to ${listerName}.`,
     };
   }
 
@@ -55,7 +56,8 @@ function getReviewCopy(booking: BookingWithDetails, currentUserId: string) {
   return {
     title: `How was your experience with ${renterName}?`,
     description: "A quick overall review makes it easier to build trust on the marketplace.",
-    placeholder: "Share your experience with the renter...",
+    placeholder: "Was the renter respectful of your item? Timely return?",
+    disclaimer: `Your review will be visible to ${renterName}.`,
   };
 }
 
@@ -211,7 +213,7 @@ export function DualReviewForm({
               {...form.register("comment")}
             />
             <div className="flex justify-between text-xs text-muted-foreground">
-              <span>Optional</span>
+              <span>{copy.disclaimer}</span>
               <span>{form.watch("comment")?.length ?? 0}/2000</span>
             </div>
           </div>

@@ -24,7 +24,9 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { createAdminClient } from "@/lib/supabase/admin";
 import { formatCurrency, formatDate, getInitials } from "@/lib/utils";
+import type { AdminAuditLog } from "@/types";
 
 function statusBadgeClass(active: boolean) {
   return active
@@ -50,6 +52,15 @@ export default async function AdminUserDetailPage({
   const displayName = profile.display_name || profile.full_name || profile.email;
   const receivedReviews = reviews.filter((review) => review.reviewee_id === profile.id);
   const writtenReviews = reviews.filter((review) => review.reviewer_id === profile.id);
+  const admin = createAdminClient();
+  const { data: kycAuditLog } = await admin
+    .from("admin_audit_log")
+    .select("*")
+    .eq("target_type", "user")
+    .eq("target_id", profile.id)
+    .in("action", ["kyc_verified", "kyc_rejected"])
+    .order("created_at", { ascending: false });
+  const kycHistory = (kycAuditLog ?? []) as AdminAuditLog[];
 
   return (
     <div className="space-y-6">
@@ -228,7 +239,7 @@ export default async function AdminUserDetailPage({
                     />
 
                     {profile.payout_method === "bank" ? (
-                      <div className="rounded-2xl border border-brand-navy/10 bg-brand-light p-4 text-sm">
+                      <div className="space-y-4 rounded-2xl border border-brand-navy/10 bg-brand-light p-4 text-sm">
                         {profile.bank_kyc_verified ? (
                           <div className="space-y-2">
                             <p className="font-medium text-foreground">KYC verified</p>
@@ -261,6 +272,44 @@ export default async function AdminUserDetailPage({
                         ) : (
                           <p className="text-muted-foreground">No KYC submitted</p>
                         )}
+
+                        <div className="space-y-3 rounded-2xl border border-border/70 bg-white p-4">
+                          <div className="flex flex-wrap items-center justify-between gap-2">
+                            <p className="font-medium text-foreground">Verification history</p>
+                            <ButtonLink
+                              href="/admin/kyc-verification"
+                              label="Manual Verification Override"
+                            />
+                          </div>
+                          {kycHistory.length === 0 ? (
+                            <p className="text-muted-foreground">
+                              No verification actions recorded yet.
+                            </p>
+                          ) : (
+                            <div className="space-y-2">
+                              {kycHistory.map((entry) => (
+                                <div
+                                  key={entry.id}
+                                  className="rounded-xl border border-border/60 px-4 py-3"
+                                >
+                                  <div className="flex flex-wrap items-center justify-between gap-2">
+                                    <span className="font-medium text-foreground">
+                                      {entry.action === "kyc_verified" ? "Verified" : "Rejected"}
+                                    </span>
+                                    <span className="text-muted-foreground">
+                                      {formatDate(entry.created_at)}
+                                    </span>
+                                  </div>
+                                  {typeof entry.details?.notes === "string" ? (
+                                    <p className="mt-2 text-muted-foreground">
+                                      {entry.details.notes}
+                                    </p>
+                                  ) : null}
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                        </div>
                       </div>
                     ) : null}
                   </>

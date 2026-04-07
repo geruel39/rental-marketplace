@@ -590,7 +590,18 @@ export async function suspendUser(
 }
 
 export async function getPendingKYCVerifications(): Promise<{
-  users: (Profile & { document_url: string })[];
+  users: Array<
+    Profile & {
+      document_url: string;
+      kyc_status: "pending" | "verified" | "rejected";
+      last_rejection_reason?: string;
+      history: Array<{
+        action: string;
+        created_at: string;
+        notes?: string;
+      }>;
+    }
+  >;
   count: number;
 }> {
   try {
@@ -601,22 +612,94 @@ export async function getPendingKYCVerifications(): Promise<{
       .from("profiles")
       .select("*")
       .eq("payout_method", "bank")
-      .not("bank_kyc_document_url", "is", null)
-      .eq("bank_kyc_verified", false)
-      .order("updated_at", { ascending: true });
+      .order("updated_at", { ascending: false });
 
     if (error) {
       throw error;
     }
 
-    const users = ((data ?? []) as Profile[]).map((profile) => ({
-      ...profile,
-      document_url: profile.bank_kyc_document_url ?? "",
-    }));
+    const profiles = (data ?? []) as Profile[];
+    const userIds = profiles.map((profile) => profile.id);
+
+    const auditQuery =
+      userIds.length === 0
+        ? Promise.resolve({ data: [], error: null })
+        : admin
+            .from("admin_audit_log")
+            .select("*")
+            .eq("target_type", "user")
+            .in("target_id", userIds)
+            .in("action", ["kyc_verified", "kyc_rejected"])
+            .order("created_at", { ascending: false });
+
+    const { data: auditRows, error: auditError } = await auditQuery;
+
+    if (auditError) {
+      throw auditError;
+    }
+
+    const historyByUser = new Map<
+      string,
+      Array<{
+        action: string;
+        created_at: string;
+        notes?: string;
+      }>
+    >();
+
+    for (const row of (auditRows ?? []) as AdminAuditLog[]) {
+      const notesValue =
+        row.details && typeof row.details.notes === "string" ? row.details.notes : undefined;
+      const current = historyByUser.get(row.target_id) ?? [];
+      current.push({
+        action: row.action,
+        created_at: row.created_at,
+        notes: notesValue,
+      });
+      historyByUser.set(row.target_id, current);
+    }
+
+    const users = profiles
+      .map((profile) => {
+        const history = historyByUser.get(profile.id) ?? [];
+        const latestHistory = history[0];
+        const kycStatus = profile.bank_kyc_verified
+          ? "verified"
+          : profile.bank_kyc_document_url
+            ? "pending"
+            : latestHistory?.action === "kyc_rejected"
+              ? "rejected"
+              : null;
+
+        if (!kycStatus) {
+          return null;
+        }
+
+        return {
+          ...profile,
+          document_url: profile.bank_kyc_document_url ?? "",
+          kyc_status: kycStatus,
+          last_rejection_reason:
+            latestHistory?.action === "kyc_rejected" ? latestHistory.notes : undefined,
+          history,
+        };
+      })
+      .filter(Boolean) as Array<
+      Profile & {
+        document_url: string;
+        kyc_status: "pending" | "verified" | "rejected";
+        last_rejection_reason?: string;
+        history: Array<{
+          action: string;
+          created_at: string;
+          notes?: string;
+        }>;
+      }
+    >;
 
     return {
       users,
-      count: users.length,
+      count: users.filter((user) => user.kyc_status === "pending").length,
     };
   } catch (error) {
     console.error("getPendingKYCVerifications failed:", error);
@@ -1232,8 +1315,8 @@ export async function rejectPayout(
     await createNotification({
       userId: payout.lister_id,
       type: "payout_failed",
-      title: "Payout could not be processed",
-      body: trimmedReason,
+      title: "Payout failed",
+      body: `We couldn't process your payout. Reason: ${trimmedReason}`,
       bookingId: payout.booking_id ?? undefined,
       fromUserId: adminId,
       actionUrl: "/dashboard/earnings",
