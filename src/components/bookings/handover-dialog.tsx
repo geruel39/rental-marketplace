@@ -67,7 +67,7 @@ export function HandoverDialog({ booking, onSuccess }: HandoverDialogProps) {
           Confirm Handover
         </Button>
       </DialogTrigger>
-      <DialogContent className="bg-white sm:max-w-2xl">
+      <DialogContent className="max-h-[90vh] overflow-hidden bg-white sm:max-w-2xl">
         <DialogHeader>
           <DialogTitle>Confirm Item Handover</DialogTitle>
           <DialogDescription>
@@ -75,7 +75,7 @@ export function HandoverDialog({ booking, onSuccess }: HandoverDialogProps) {
           </DialogDescription>
         </DialogHeader>
 
-        <div className="space-y-4">
+        <div className="space-y-4 overflow-y-auto pr-1">
           <div className="rounded-xl border bg-white p-3 text-sm shadow-sm">
             <p className="font-medium">{booking.listing.title}</p>
             <p className="text-muted-foreground">
