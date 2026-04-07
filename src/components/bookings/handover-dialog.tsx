@@ -67,7 +67,7 @@ export function HandoverDialog({ booking, onSuccess }: HandoverDialogProps) {
           Confirm Handover
         </Button>
       </DialogTrigger>
-      <DialogContent className="sm:max-w-2xl">
+      <DialogContent className="bg-white sm:max-w-2xl">
         <DialogHeader>
           <DialogTitle>Confirm Item Handover</DialogTitle>
           <DialogDescription>
@@ -76,7 +76,7 @@ export function HandoverDialog({ booking, onSuccess }: HandoverDialogProps) {
         </DialogHeader>
 
         <div className="space-y-4">
-          <div className="rounded-xl border bg-muted/20 p-3 text-sm">
+          <div className="rounded-xl border bg-white p-3 text-sm shadow-sm">
             <p className="font-medium">{booking.listing.title}</p>
             <p className="text-muted-foreground">
               Renter: {booking.renter.display_name || booking.renter.full_name}
@@ -101,9 +101,10 @@ export function HandoverDialog({ booking, onSuccess }: HandoverDialogProps) {
             required
           />
 
-          <div className="space-y-2">
+          <div className="space-y-2 rounded-xl bg-white">
             <Label htmlFor={`handover-notes-${booking.id}`}>Any notes about the handover</Label>
             <Textarea
+              className="bg-white"
               id={`handover-notes-${booking.id}`}
               maxLength={500}
               onChange={(event) => setNotes(event.target.value)}
