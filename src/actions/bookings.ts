@@ -246,32 +246,53 @@ async function addTimeline(params: {
   description?: string;
   metadata?: Record<string, unknown>;
 }): Promise<void> {
+  const payload = {
+    booking_id: params.bookingId,
+    status: params.status,
+    previous_status: params.previousStatus ?? null,
+    actor_id: params.actorId ?? null,
+    actor_role: params.actorRole,
+    title: params.title,
+    description: params.description ?? null,
+    metadata: params.metadata ?? {},
+  };
+
   try {
     const admin = createAdminClient();
     await callRpcWithFallbacks(admin, "add_booking_timeline", [
       {
-        p_booking_id: params.bookingId,
-        p_status: params.status,
-        p_previous_status: params.previousStatus ?? null,
-        p_actor_id: params.actorId ?? null,
-        p_actor_role: params.actorRole,
-        p_title: params.title,
-        p_description: params.description ?? null,
-        p_metadata: params.metadata ?? {},
+        p_booking_id: payload.booking_id,
+        p_status: payload.status,
+        p_previous_status: payload.previous_status,
+        p_actor_id: payload.actor_id,
+        p_actor_role: payload.actor_role,
+        p_title: payload.title,
+        p_description: payload.description,
+        p_metadata: payload.metadata,
       },
       {
-        booking_id: params.bookingId,
-        status: params.status,
-        previous_status: params.previousStatus ?? null,
-        actor_id: params.actorId ?? null,
-        actor_role: params.actorRole,
-        title: params.title,
-        description: params.description ?? null,
-        metadata: params.metadata ?? {},
+        booking_id: payload.booking_id,
+        status: payload.status,
+        previous_status: payload.previous_status,
+        actor_id: payload.actor_id,
+        actor_role: payload.actor_role,
+        title: payload.title,
+        description: payload.description,
+        metadata: payload.metadata,
       },
     ]);
   } catch (error) {
-    console.error("addTimeline failed:", error);
+    try {
+      const admin = createAdminClient();
+      const { error: insertError } = await admin.from("booking_timeline").insert(payload);
+
+      if (insertError) {
+        throw new Error(insertError.message);
+      }
+    } catch (fallbackError) {
+      console.error("addTimeline failed:", error);
+      console.error("addTimeline fallback insert failed:", fallbackError);
+    }
   }
 }
 
