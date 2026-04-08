@@ -236,6 +236,68 @@ async function startRentalPeriodDirect(params: {
   return fallbackRentalEndsAt;
 }
 
+async function markReturnToListerDirect(params: {
+  supabase: SupabaseClient;
+  booking: BookingRecord;
+  userId: string;
+  notes?: string;
+  photoUrls: string[];
+}) {
+  const returnedAt = new Date().toISOString();
+  const isLateReturn = Boolean(
+    params.booking.rental_ends_at &&
+      new Date(returnedAt).getTime() > new Date(params.booking.rental_ends_at).getTime(),
+  );
+
+  const { error } = await params.supabase
+    .from("bookings")
+    .update({
+      status: "returned",
+      returned_at: returnedAt,
+      return_notes: params.notes ?? null,
+      return_proof_urls: params.photoUrls,
+    })
+    .eq("id", params.booking.id)
+    .eq("renter_id", params.userId)
+    .eq("status", "active");
+
+  if (error) {
+    throw new Error(error.message);
+  }
+
+  await addTimeline({
+    bookingId: params.booking.id,
+    status: "returned",
+    previousStatus: "active",
+    actorId: params.userId,
+    actorRole: "renter",
+    title: "Item returned",
+    description: isLateReturn
+      ? "Renter confirmed the item was returned after the rental deadline."
+      : "Renter confirmed the item was returned to the lister.",
+    metadata: {
+      return_notes: params.notes ?? null,
+      proof_photos: params.photoUrls,
+      returned_at: returnedAt,
+      rental_ends_at: params.booking.rental_ends_at ?? null,
+      is_late_return: isLateReturn,
+    },
+  });
+
+  await createNotification({
+    userId: params.booking.lister_id,
+    type: "booking_returned",
+    title: "Item returned",
+    body: isLateReturn
+      ? "The renter marked the item as returned after the deadline. Please inspect it."
+      : "The renter marked the item as returned. Please inspect it and complete the booking.",
+    listingId: params.booking.listing_id,
+    bookingId: params.booking.id,
+    fromUserId: params.userId,
+    actionUrl: `/dashboard/bookings/${params.booking.id}`,
+  });
+}
+
 async function addTimeline(params: {
   bookingId: string;
   status: BookingStatus;
@@ -1042,24 +1104,38 @@ export async function markReturnedToLister(
     const notes = normalizeText(formData.get("notes")?.toString());
     const photoUrls = await uploadProofPhotos(booking.id, "return", proofFiles);
 
-    await callRpcWithFallbacks(
-      auth.supabase,
-      "mark_item_returned_by_renter",
-      [
-        {
-          p_booking_id: booking.id,
-          p_user_id: auth.user.id,
-          p_photo_urls: photoUrls,
-          p_notes: notes ?? null,
-        },
-        {
-          booking_id: booking.id,
-          user_id: auth.user.id,
-          photo_urls: photoUrls,
-          notes: notes ?? null,
-        },
-      ],
-    );
+    try {
+      await callRpcWithFallbacks(
+        auth.supabase,
+        "mark_item_returned_by_renter",
+        [
+          {
+            p_booking_id: booking.id,
+            p_user_id: auth.user.id,
+            p_photo_urls: photoUrls,
+            p_notes: notes ?? null,
+          },
+          {
+            booking_id: booking.id,
+            user_id: auth.user.id,
+            photo_urls: photoUrls,
+            notes: notes ?? null,
+          },
+        ],
+      );
+    } catch (error) {
+      if (!isMissingRpcSignatureError(error, "mark_item_returned_by_renter")) {
+        throw error;
+      }
+
+      await markReturnToListerDirect({
+        supabase: auth.supabase,
+        booking,
+        userId: auth.user.id,
+        notes,
+        photoUrls,
+      });
+    }
 
     revalidateBookingViews();
     return {
@@ -1557,6 +1633,7 @@ export async function markOutForDelivery(
   bookingId: string,
   _notes?: string,
 ): Promise<ActionResponse> {
+  void _notes;
   return markItemHandedOver(bookingId);
 }
 
