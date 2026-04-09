@@ -29,11 +29,11 @@ export default async function MessagesPage() {
   }
 
   return (
-    <div className="grid gap-6 md:grid-cols-3">
-      <div className="md:col-span-1">
+    <div className="grid gap-6 md:h-[calc(100dvh-11.5rem)] md:min-h-0 md:grid-cols-3">
+      <div className="min-h-0 md:col-span-1">
         <ConversationList conversations={conversations} />
       </div>
-      <div className="hidden min-h-[32rem] items-center justify-center rounded-3xl border border-dashed border-border bg-background px-6 text-center md:col-span-2 md:flex">
+      <div className="hidden h-full min-h-0 items-center justify-center rounded-3xl border border-dashed border-border bg-background px-6 text-center md:col-span-2 md:flex">
         <div className="space-y-3">
           <MessageSquareMore className="mx-auto size-10 text-muted-foreground" />
           <h1 className="text-xl font-semibold">Select a conversation</h1>

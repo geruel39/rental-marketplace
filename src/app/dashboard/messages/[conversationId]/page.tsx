@@ -43,15 +43,15 @@ export default async function ConversationPage({
     activeConversation.other_user.full_name;
 
   return (
-    <div className="grid gap-6 md:grid-cols-3">
-      <div className="hidden md:col-span-1 md:block">
+    <div className="grid gap-6 md:h-[calc(100dvh-11.5rem)] md:min-h-0 md:grid-cols-3">
+      <div className="hidden min-h-0 md:col-span-1 md:block">
         <ConversationList
           activeConversationId={conversationId}
           conversations={conversations}
         />
       </div>
 
-      <div className="space-y-4 md:col-span-2">
+      <div className="flex min-h-0 flex-col gap-4 md:col-span-2 md:overflow-hidden">
         <Button asChild className="md:hidden" size="sm" variant="ghost">
           <Link href="/dashboard/messages">
             <ArrowLeft className="size-4" />

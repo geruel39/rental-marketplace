@@ -40,7 +40,7 @@ export function ConversationList({
   }, [conversations, search]);
 
   return (
-    <div className="flex h-full flex-col rounded-3xl border border-border bg-background">
+    <div className="flex h-full min-h-0 flex-col overflow-hidden rounded-3xl border border-border bg-background">
       <div className="border-b border-border p-4">
         <div className="relative">
           <Search className="absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground" />

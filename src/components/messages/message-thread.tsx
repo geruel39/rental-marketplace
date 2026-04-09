@@ -129,7 +129,7 @@ export function MessageThread({
   }
 
   return (
-    <div className="flex h-full min-h-[28rem] flex-col rounded-3xl border border-border bg-background">
+    <div className="flex min-h-[28rem] flex-1 flex-col overflow-hidden rounded-3xl border border-border bg-background md:min-h-0">
       <div className="border-b border-border px-4 py-3">
         {hasMore ? (
           <Button
@@ -147,7 +147,7 @@ export function MessageThread({
         )}
       </div>
 
-      <div className="flex-1 overflow-y-auto px-4 py-5">
+      <div className="min-h-0 flex-1 overflow-y-auto px-4 py-5">
         <div className="space-y-3">
           {messages.map((message) => {
             const isOwnMessage = message.sender_id === currentUserId;
