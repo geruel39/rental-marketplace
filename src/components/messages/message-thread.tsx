@@ -11,12 +11,14 @@ import { useRealtimeMessages } from "@/hooks/use-realtime";
 import type { Message } from "@/types";
 
 interface MessageThreadProps {
+  className?: string;
   conversationId: string;
   currentUserId: string;
   initialMessages: Message[];
 }
 
 export function MessageThread({
+  className,
   conversationId,
   currentUserId,
   initialMessages,
@@ -129,8 +131,13 @@ export function MessageThread({
   }
 
   return (
-    <div className="flex min-h-[28rem] flex-1 flex-col overflow-hidden rounded-3xl border border-border bg-background md:min-h-0">
-      <div className="border-b border-border px-4 py-3">
+    <div
+      className={cn(
+        "flex min-h-[28rem] flex-1 flex-col overflow-hidden rounded-3xl border border-border bg-background md:min-h-0",
+        className,
+      )}
+    >
+      <div className="shrink-0 border-b border-border px-4 py-3">
         {hasMore ? (
           <Button
             disabled={isPending}
@@ -147,7 +154,7 @@ export function MessageThread({
         )}
       </div>
 
-      <div className="min-h-0 flex-1 overflow-y-auto px-4 py-5">
+      <div className="min-h-0 flex-1 overflow-y-auto px-4 py-4">
         <div className="space-y-3">
           {messages.map((message) => {
             const isOwnMessage = message.sender_id === currentUserId;

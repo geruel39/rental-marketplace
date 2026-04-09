@@ -59,40 +59,44 @@ export default async function ConversationPage({
           </Link>
         </Button>
 
-        <div className="flex items-start gap-3 rounded-3xl border border-border bg-background p-4">
-          <Avatar size="lg">
-            <AvatarImage
-              alt={displayName}
-              src={activeConversation.other_user.avatar_url ?? undefined}
-            />
-            <AvatarFallback>{getInitials(displayName)}</AvatarFallback>
-          </Avatar>
-          <div className="min-w-0 space-y-1">
-            <h1 className="truncate text-lg font-semibold">{displayName}</h1>
-            {activeConversation.listing ? (
-              <Link
-                className="truncate text-sm text-muted-foreground underline-offset-4 hover:underline"
-                href={`/listings/${activeConversation.listing.id}`}
-              >
-                Re: {activeConversation.listing.title}
-              </Link>
-            ) : (
-              <p className="text-sm text-muted-foreground">Direct conversation</p>
-            )}
+        <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-3xl border border-border bg-background">
+          <div className="flex shrink-0 items-start gap-3 border-b border-border px-4 py-4">
+            <Avatar size="lg">
+              <AvatarImage
+                alt={displayName}
+                src={activeConversation.other_user.avatar_url ?? undefined}
+              />
+              <AvatarFallback>{getInitials(displayName)}</AvatarFallback>
+            </Avatar>
+            <div className="min-w-0 space-y-1">
+              <h1 className="truncate text-lg font-semibold">{displayName}</h1>
+              {activeConversation.listing ? (
+                <Link
+                  className="truncate text-sm text-muted-foreground underline-offset-4 hover:underline"
+                  href={`/listings/${activeConversation.listing.id}`}
+                >
+                  Re: {activeConversation.listing.title}
+                </Link>
+              ) : (
+                <p className="text-sm text-muted-foreground">Direct conversation</p>
+              )}
+            </div>
           </div>
-        </div>
 
-        <MessageThread
-          conversationId={conversationId}
-          currentUserId={user.id}
-          initialMessages={initialMessagePage.messages}
-          key={`thread-${conversationId}`}
-        />
-        <MessageInput
-          conversationId={conversationId}
-          key={`input-${conversationId}`}
-          recipientId={activeConversation.other_user.id}
-        />
+          <MessageThread
+            className="min-h-0 flex-1 rounded-none border-0 bg-transparent"
+            conversationId={conversationId}
+            currentUserId={user.id}
+            initialMessages={initialMessagePage.messages}
+            key={`thread-${conversationId}`}
+          />
+          <MessageInput
+            className="shrink-0 rounded-none border-0 border-t border-border bg-transparent px-4 py-3"
+            conversationId={conversationId}
+            key={`input-${conversationId}`}
+            recipientId={activeConversation.other_user.id}
+          />
+        </div>
       </div>
     </div>
   );
