@@ -283,6 +283,57 @@ export const kycUploadSchema = z.object({
   document_type: z.enum(["national_id", "drivers_license", "passport"]),
 });
 
+export const disputeResolutionSchema = z
+  .object({
+    booking_id: z.string().uuid(),
+    resolution_type: z.enum([
+      "full_refund_renter",
+      "full_payout_lister",
+      "split",
+    ]),
+    renter_refund_percent: z.coerce.number().min(0).max(100).optional(),
+    lister_payout_percent: z.coerce.number().min(0).max(100).optional(),
+    resolution_notes: z
+      .string()
+      .min(10, "Please provide detailed resolution notes"),
+    evidence_reviewed: z.string().optional(),
+  })
+  .superRefine((data, ctx) => {
+    if (data.resolution_type !== "split") {
+      return;
+    }
+
+    if (
+      data.renter_refund_percent === undefined ||
+      data.lister_payout_percent === undefined
+    ) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "Split resolutions require both refund and payout percentages",
+        path: ["renter_refund_percent"],
+      });
+      return;
+    }
+
+    if (data.renter_refund_percent + data.lister_payout_percent !== 100) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message:
+          "For split resolutions, renter refund percent and lister payout percent must total 100",
+        path: ["lister_payout_percent"],
+      });
+    }
+  });
+
+export const payoutRetrySchema = z.object({
+  payout_id: z.string().uuid(),
+});
+
+export const feeConfigUpdateSchema = z.object({
+  key: z.string(),
+  value: z.coerce.number().min(0),
+});
+
 export type LoginInput = z.infer<typeof loginSchema>;
 export type ForgotPasswordInput = z.infer<typeof forgotPasswordSchema>;
 export type RegisterInput = z.infer<typeof registerSchema>;
@@ -300,3 +351,6 @@ export type ProfileUpdateInput = z.infer<typeof profileUpdateSchema>;
 export type StockAdjustmentInput = z.infer<typeof stockAdjustmentSchema>;
 export type PayoutMethodInput = z.infer<typeof payoutMethodSchema>;
 export type KYCUploadInput = z.infer<typeof kycUploadSchema>;
+export type DisputeResolutionInput = z.infer<typeof disputeResolutionSchema>;
+export type PayoutRetryInput = z.infer<typeof payoutRetrySchema>;
+export type FeeConfigUpdateInput = z.infer<typeof feeConfigUpdateSchema>;

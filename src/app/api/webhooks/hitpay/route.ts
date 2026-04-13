@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 
-import { confirmPaymentFromWebhook } from "@/actions/bookings";
+import { handlePaymentConfirmed } from "@/actions/payments";
 import { verifyWebhookSignature } from "@/lib/hitpay";
 
 function getNestedRecord(value: unknown): Record<string, unknown> | null {
@@ -78,6 +78,11 @@ function normalizeEventPayload(payload: Record<string, unknown>) {
       "id",
       "transaction_id",
     ]),
+    paymentRequestId: getFirstString(sources, [
+      "payment_request_id",
+      "paymentRequestId",
+      "payment_request",
+    ]),
     status: getFirstString(sources, ["status", "payment_status", "state"]),
     amount: getFirstNumber(sources, ["amount"]),
     currency: getFirstString(sources, ["currency"]),
@@ -135,14 +140,13 @@ export async function POST(request: Request) {
       normalizedStatus === "paid";
 
     if (isCompletedEvent && normalized.bookingId) {
-      const result = await confirmPaymentFromWebhook(
-        normalized.bookingId,
-        normalized.paymentId || undefined,
-      );
-
-      if (result.error) {
-        console.error("[WEBHOOK] confirmPaymentFromWebhook failed:", result.error);
-      }
+      await handlePaymentConfirmed({
+        hitpayPaymentId: normalized.paymentId || "",
+        hitpayPaymentRequestId: normalized.paymentRequestId || "",
+        bookingId: normalized.bookingId,
+        amount: normalized.amount ?? 0,
+        currency: normalized.currency || "SGD",
+      });
     }
 
     return NextResponse.json({ success: true }, { status: 200 });

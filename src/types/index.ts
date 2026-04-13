@@ -62,6 +62,39 @@ export type StockMovementType =
   | "lost";
 export type PayoutStatus = "pending" | "processing" | "completed" | "failed";
 export type PayoutMethod = "bank" | "gcash" | "maya";
+export type PaymentEventType =
+  | "payment_initiated"
+  | "payment_completed"
+  | "payment_failed"
+  | "payment_expired"
+  | "refund_initiated"
+  | "refund_completed"
+  | "refund_failed"
+  | "payout_initiated"
+  | "payout_completed"
+  | "payout_failed"
+  | "payout_retry_requested"
+  | "dispute_hold"
+  | "dispute_released_lister"
+  | "dispute_released_renter"
+  | "dispute_split";
+export type RefundReason =
+  | "booking_cancelled_by_renter"
+  | "booking_cancelled_by_lister"
+  | "booking_declined"
+  | "payment_expired"
+  | "dispute_resolved_renter"
+  | "dispute_split"
+  | "admin_manual_refund";
+export type PayoutTrigger =
+  | "auto_after_completion"
+  | "admin_manual"
+  | "dispute_resolved"
+  | "retry_after_failure";
+export type DisputeResolutionType =
+  | "full_refund_renter"
+  | "full_payout_lister"
+  | "split";
 export type StockStatus =
   | "in_stock"
   | "low_stock"
@@ -281,8 +314,15 @@ export interface Booking {
   hitpay_payment_id: string | null;
   hitpay_payment_url: string | null;
   hitpay_payment_status: string | null;
+  hitpay_fee?: number;
+  net_collected?: number;
   paid_at: string | null;
   payout_at: string | null;
+  refund_id?: string;
+  refunded_at?: string;
+  refund_amount?: number;
+  payout_id?: string;
+  last_webhook_at?: string;
   deposit_returned: boolean;
   renter_reviewed: boolean;
   lister_reviewed: boolean;
@@ -314,14 +354,139 @@ export interface Payout {
   lister_id: string;
   booking_id: string | null;
   amount: number;
+  trigger_type: PayoutTrigger;
+  gross_amount: number;
+  platform_fee: number;
+  hitpay_fee: number;
+  net_amount: number;
   currency: string;
   status: PayoutStatus;
   payout_method: string | null;
   reference_number: string | null;
   notes: string | null;
+  failure_reason?: string | null;
+  retry_count: number;
+  last_retry_at?: string | null;
+  can_retry: boolean;
+  transaction_id?: string | null;
   processed_at: string | null;
   created_at: string;
   updated_at: string;
+}
+
+export interface Transaction {
+  id: string;
+  booking_id?: string;
+  renter_id: string;
+  lister_id: string;
+  event_type: PaymentEventType;
+  gross_amount: number;
+  hitpay_fee: number;
+  platform_fee: number;
+  net_amount: number;
+  currency: string;
+  hitpay_payment_request_id?: string;
+  hitpay_payment_id?: string;
+  hitpay_refund_id?: string;
+  hitpay_transfer_id?: string;
+  external_reference?: string;
+  external_notes?: string;
+  status: "pending" | "processing" | "completed" | "failed";
+  failure_reason?: string;
+  idempotency_key?: string;
+  triggered_by?: string;
+  triggered_by_role?: "system" | "renter" | "lister" | "admin";
+  metadata: Record<string, unknown>;
+  processed_at?: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface Refund {
+  id: string;
+  booking_id: string;
+  transaction_id?: string;
+  renter_id: string;
+  refund_reason: RefundReason;
+  original_amount: number;
+  refund_amount: number;
+  platform_fee_retained: number;
+  deposit_refund: number;
+  cancellation_fee: number;
+  cancellation_policy?: string;
+  hours_before_start?: number;
+  currency: string;
+  hitpay_refund_id?: string;
+  hitpay_payment_id?: string;
+  status: "pending" | "processing" | "completed" | "failed";
+  failure_reason?: string;
+  note?: string;
+  processed_by?: string;
+  processed_at?: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface DisputeResolution {
+  id: string;
+  booking_id: string;
+  admin_id: string;
+  resolution_type: DisputeResolutionType;
+  renter_refund_amount: number;
+  lister_payout_amount: number;
+  platform_keeps_amount: number;
+  renter_refund_percent: number;
+  lister_payout_percent: number;
+  resolution_notes: string;
+  evidence_reviewed?: string;
+  renter_notified: boolean;
+  lister_notified: boolean;
+  created_at: string;
+}
+
+export interface FeeConfig {
+  id: string;
+  key: string;
+  value: number;
+  description?: string;
+  updated_at: string;
+}
+
+export interface PlatformFees {
+  hitpay_percentage_fee: number;
+  hitpay_fixed_fee: number;
+  platform_service_fee_renter: number;
+  platform_service_fee_lister: number;
+  platform_absorbs_hitpay_fee: boolean;
+  cancellation_flexible_full_refund_hours: number;
+  cancellation_moderate_full_refund_hours: number;
+  cancellation_strict_full_refund_hours: number;
+  payout_delay_days: number;
+  max_payout_retry_count: number;
+}
+
+export interface CancellationRefundCalculation {
+  refund_amount: number;
+  cancellation_fee: number;
+  platform_fee_retained: number;
+  deposit_refund: number;
+  reason: string;
+  policy_applied: string;
+  hours_since_payment?: number;
+  full_refund_threshold_hours?: number;
+}
+
+export interface PaymentBreakdown {
+  subtotal: number;
+  service_fee_renter: number;
+  deposit_amount: number;
+  hitpay_fee: number;
+  platform_absorbs_hitpay: boolean;
+  total_charged_to_renter: number;
+  lister_gross: number;
+  service_fee_lister: number;
+  lister_payout: number;
+  platform_total_kept: number;
 }
 
 export interface Review {
@@ -486,6 +651,26 @@ export interface BookingTimeline {
 
 export type BookingTimelineWithActor = BookingTimeline & {
   actor?: Profile;
+};
+
+export type TransactionWithDetails = Transaction & {
+  renter: Profile;
+  lister: Profile;
+  booking?: Booking;
+};
+
+export type RefundWithDetails = Refund & {
+  renter: Profile;
+  booking: Booking;
+};
+
+export type PayoutWithDetails = Payout & {
+  lister: Profile;
+  booking: Booking;
+};
+
+export type DisputeResolutionWithAdmin = DisputeResolution & {
+  admin: Profile;
 };
 
 /** @deprecated Deprecated delivery address model retained for compatibility. */

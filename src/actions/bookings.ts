@@ -3,8 +3,14 @@
 import { revalidatePath } from "next/cache";
 import { addHours, format } from "date-fns";
 
-import { createPaymentForBooking } from "@/actions/hitpay";
 import { createNotification } from "@/actions/notifications";
+import {
+  autoTriggerPayout,
+  createPaymentForBooking,
+  handlePaymentConfirmed,
+  holdPaymentForDispute,
+  processCancellationRefund,
+} from "@/actions/payments";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
 import { bookingRequestSchema, confirmReturnSchema } from "@/lib/validations";
@@ -874,12 +880,18 @@ export async function declineBookingRequest(
     if (booking.lister_id !== auth.user.id) {
       return { error: "Only the lister can decline this booking." };
     }
-    if (booking.status !== "pending") {
-      return { error: "Only pending bookings can be declined." };
+    if (booking.status !== "pending" && booking.status !== "awaiting_payment") {
+      return { error: "Only pending or awaiting payment bookings can be declined." };
     }
 
     const now = new Date().toISOString();
     const declineReason = normalizeText(reason) ?? "Declined by lister.";
+    let stockRestored = booking.stock_restored;
+    if ((booking.stock_reserved || booking.stock_deducted) && !booking.stock_restored) {
+      await releaseStock(auth.supabase, booking, auth.user.id);
+      stockRestored = true;
+    }
+
     const { error: updateError } = await auth.supabase
       .from("bookings")
       .update({
@@ -887,6 +899,7 @@ export async function declineBookingRequest(
         cancelled_at: now,
         cancelled_by: auth.user.id,
         cancellation_reason: declineReason,
+        stock_restored: stockRestored,
       })
       .eq("id", booking.id);
 
@@ -900,9 +913,9 @@ export async function declineBookingRequest(
       previousStatus: "pending",
       actorId: auth.user.id,
       actorRole: "lister",
-      title: "Booking declined",
-      description: `Lister declined the request. Reason: ${declineReason}`,
-      metadata: { reason: declineReason },
+        title: "Booking declined",
+        description: `Lister declined the request. Reason: ${declineReason}`,
+        metadata: { reason: declineReason, stock_released: stockRestored },
     });
 
     await createNotification({
@@ -916,8 +929,22 @@ export async function declineBookingRequest(
       actionUrl: `/dashboard/bookings/${booking.id}`,
     });
 
+    let successMessage = "Booking request declined.";
+    if (booking.paid_at) {
+      const refundResult = await processCancellationRefund(booking.id, {
+        refundReason: "booking_declined",
+        cancelledBy: "lister",
+      });
+
+      if ("error" in refundResult) {
+        successMessage = `Booking request declined. Refund needs attention: ${refundResult.error}`;
+      } else {
+        successMessage = `${successMessage} ${refundResult.message}`;
+      }
+    }
+
     revalidateBookingViews();
-    return { success: "Booking request declined." };
+    return { success: successMessage };
   } catch (error) {
     console.error("declineBookingRequest failed:", error);
     return { error: "Something went wrong. Please try again." };
@@ -940,11 +967,14 @@ export async function confirmPayment(
       return { error: "You are not allowed to confirm this booking payment." };
     }
 
-    return await confirmPaymentInternal({
-      supabase: auth.supabase,
+    await handlePaymentConfirmed({
+      hitpayPaymentId: paymentId ?? booking.hitpay_payment_id ?? "",
+      hitpayPaymentRequestId: booking.hitpay_payment_request_id ?? "",
       bookingId,
-      paymentId,
+      amount: booking.net_collected ?? booking.total_price,
+      currency: "SGD",
     });
+    return { success: "Payment confirmed." };
   } catch (error) {
     console.error("confirmPayment failed:", error);
     return { error: "Something went wrong. Please try again." };
@@ -957,11 +987,15 @@ export async function confirmPaymentFromWebhook(
 ): Promise<ActionResponse> {
   try {
     const admin = createAdminClient();
-    return await confirmPaymentInternal({
-      supabase: admin,
+    const booking = await getBookingRecord(admin, bookingId);
+    await handlePaymentConfirmed({
+      hitpayPaymentId: paymentId ?? booking.hitpay_payment_id ?? "",
+      hitpayPaymentRequestId: booking.hitpay_payment_request_id ?? "",
       bookingId,
-      paymentId,
+      amount: booking.net_collected ?? booking.total_price,
+      currency: "SGD",
     });
+    return { success: "Payment confirmed." };
   } catch (error) {
     console.error("confirmPaymentFromWebhook failed:", error);
     return { error: "Could not confirm payment from webhook." };
@@ -1206,18 +1240,7 @@ export async function confirmReturnAndComplete(
       return { error: updateError.message };
     }
 
-    const { error: payoutError } = await auth.supabase.from("payouts").insert({
-      lister_id: booking.lister_id,
-      booking_id: booking.id,
-      amount: booking.lister_payout,
-      currency: "SGD",
-      status: "pending",
-      reference_number: booking.id,
-      notes: "Auto-created after booking completion.",
-    });
-    if (payoutError) {
-      return { error: payoutError.message };
-    }
+    await autoTriggerPayout(booking.id);
 
     const notesText = parsed.data.return_condition_notes
       ? ` ${parsed.data.return_condition_notes}`
@@ -1229,7 +1252,7 @@ export async function confirmReturnAndComplete(
       actorId: auth.user.id,
       actorRole: "lister",
       title: "Rental completed",
-      description: `Item condition: ${parsed.data.return_condition}.${notesText} Stock restored. Payout of ${formatMoney(booking.lister_payout)} is being processed.`,
+      description: `Item condition: ${parsed.data.return_condition}.${notesText} Stock restored. Payout flow has been queued for processing.`,
       metadata: {
         return_condition: parsed.data.return_condition,
         payout_amount: booking.lister_payout,
@@ -1365,8 +1388,21 @@ export async function cancelBooking(
       actionUrl: `/dashboard/bookings/${booking.id}`,
     });
 
+    let successMessage = "Booking cancelled.";
+    if (booking.paid_at) {
+      const refundResult = await processCancellationRefund(booking.id, {
+        cancelledBy: actorRole,
+      });
+
+      if ("error" in refundResult) {
+        successMessage = `${successMessage} Refund requires attention: ${refundResult.error}`;
+      } else {
+        successMessage = `${successMessage} ${refundResult.message}`;
+      }
+    }
+
     revalidateBookingViews();
-    return { success: "Booking cancelled." };
+    return { success: successMessage };
   } catch (error) {
     console.error("cancelBooking failed:", error);
     return { error: "Something went wrong. Please try again." };
@@ -1450,6 +1486,8 @@ export async function raiseDispute(
         }),
       ),
     );
+
+    await holdPaymentForDispute(booking.id);
 
     revalidateBookingViews();
     return { success: "Dispute raised." };
