@@ -2,10 +2,12 @@ import Link from "next/link";
 import { CheckCircle2, Loader2, TriangleAlert } from "lucide-react";
 
 import { getBookingDetails } from "@/actions/bookings";
-import { BookingSummaryCard } from "@/components/bookings/booking-summary-card";
+import { getFeeConfig } from "@/actions/payments";
+import { PaymentBreakdownCard } from "@/components/payments/payment-breakdown-card";
 import { PaymentStatusPoller } from "@/components/payments/payment-status-poller";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { calculatePaymentBreakdown } from "@/lib/utils";
 
 type SearchParams = Record<string, string | string[] | undefined>;
 
@@ -15,6 +17,19 @@ interface PaymentSuccessPageProps {
 
 function getSingleValue(value: string | string[] | undefined) {
   return Array.isArray(value) ? value[0] : value;
+}
+
+function getRefundPolicyMessage(policy?: string | null) {
+  switch (policy) {
+    case "flexible":
+      return "You can cancel for a full refund within 24 hours.";
+    case "moderate":
+      return "You can cancel for a full refund within 72 hours.";
+    case "strict":
+      return "You can cancel for a full refund within 168 hours.";
+    default:
+      return "You can cancel for a full refund within the applicable listing policy window.";
+  }
 }
 
 export default async function PaymentSuccessPage({
@@ -45,41 +60,17 @@ export default async function PaymentSuccessPage({
     );
   }
 
-  if (booking.status === "confirmed") {
-    return (
-      <main className="mx-auto flex min-h-[70vh] max-w-4xl items-center px-4 py-12 sm:px-6 lg:px-8">
-        <Card className="w-full border-border/70">
-          <CardHeader className="text-center">
-            <CheckCircle2 className="mx-auto size-12 text-emerald-600" />
-            <CardTitle className="text-2xl">Payment Confirmed!</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-6">
-            <BookingSummaryCard booking={booking} />
-
-            <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-950">
-              <p>Your booking is confirmed. Contact the lister to arrange item handover.</p>
-              <p className="mt-2">
-                The rental period will begin once the lister confirms handover.
-              </p>
-            </div>
-
-            <div className="flex flex-wrap justify-center gap-3">
-              <Button asChild>
-                <Link href={`/dashboard/bookings/${booking.id}`}>View Booking</Link>
-              </Button>
-              <Button asChild variant="outline">
-                <Link href="/dashboard/my-rentals">View My Rentals</Link>
-              </Button>
-            </div>
-          </CardContent>
-        </Card>
-      </main>
-    );
-  }
+  const fees = await getFeeConfig();
+  const breakdown = calculatePaymentBreakdown({
+    subtotal: booking.subtotal,
+    depositAmount: booking.deposit_amount,
+    pricingPeriod: booking.pricing_period,
+    fees,
+  });
 
   if (booking.status === "awaiting_payment") {
     return (
-      <main className="mx-auto flex min-h-[70vh] max-w-4xl items-center px-4 py-12 sm:px-6 lg:px-8">
+      <main className="mx-auto flex min-h-[70vh] max-w-5xl items-center px-4 py-12 sm:px-6 lg:px-8">
         <PaymentStatusPoller
           enabled
           fallbackMessage="Payment is being verified. You can check your rentals page for updates."
@@ -93,9 +84,14 @@ export default async function PaymentSuccessPage({
             <p className="text-center text-sm text-muted-foreground">
               This usually takes a few seconds.
             </p>
-
-            <BookingSummaryCard booking={booking} />
-
+            <PaymentBreakdownCard
+              breakdown={breakdown}
+              defaultOpen
+              pricingPeriod={booking.pricing_period}
+              quantity={booking.quantity}
+              rentalUnits={booking.rental_units || booking.num_units || 1}
+              viewer="renter"
+            />
             <div className="flex justify-center">
               <Button asChild variant="outline">
                 <Link href="/dashboard/my-rentals">Check My Rentals</Link>
@@ -108,20 +104,44 @@ export default async function PaymentSuccessPage({
   }
 
   return (
-    <main className="mx-auto flex min-h-[70vh] max-w-3xl items-center px-4 py-12 sm:px-6 lg:px-8">
+    <main className="mx-auto flex min-h-[70vh] max-w-5xl items-center px-4 py-12 sm:px-6 lg:px-8">
       <Card className="w-full border-border/70">
         <CardHeader className="text-center">
-          <TriangleAlert className="mx-auto size-12 text-amber-600" />
-          <CardTitle className="text-2xl">Payment received</CardTitle>
+          <CheckCircle2 className="mx-auto size-12 text-emerald-600" />
+          <CardTitle className="text-2xl">
+            {booking.status === "confirmed" ? "Payment Confirmed!" : "Payment received"}
+          </CardTitle>
         </CardHeader>
-        <CardContent className="space-y-6 text-center">
-          <p className="text-sm text-muted-foreground">
-            Your booking is currently in the <strong>{booking.status.replaceAll("_", " ")}</strong> state.
-            Please check your booking details for the latest update.
-          </p>
+        <CardContent className="space-y-6">
+          <PaymentBreakdownCard
+            breakdown={breakdown}
+            defaultOpen
+            pricingPeriod={booking.pricing_period}
+            quantity={booking.quantity}
+            rentalUnits={booking.rental_units || booking.num_units || 1}
+            viewer="renter"
+          />
+
+          <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-5">
+            <p className="text-sm font-semibold uppercase tracking-[0.18em] text-emerald-800">
+              What happens next
+            </p>
+            <div className="mt-3 space-y-2 text-sm text-emerald-950">
+              <p>✅ Payment confirmed</p>
+              <p>📞 Contact lister to arrange handover</p>
+              <p>⏱ Rental starts when lister confirms handover</p>
+              <p>📸 Lister will take a photo as proof</p>
+            </div>
+          </div>
+
+          <div className="rounded-2xl border border-sky-200 bg-sky-50 p-5 text-sm text-sky-950">
+            <p className="font-medium">Refund policy</p>
+            <p className="mt-2">{getRefundPolicyMessage(booking.listing.cancellation_policy)}</p>
+          </div>
+
           <div className="flex flex-wrap justify-center gap-3">
             <Button asChild>
-              <Link href={`/dashboard/bookings/${booking.id}`}>View Booking Details</Link>
+              <Link href={`/dashboard/bookings/${booking.id}`}>View Booking</Link>
             </Button>
             <Button asChild variant="outline">
               <Link href="/dashboard/my-rentals">View My Rentals</Link>

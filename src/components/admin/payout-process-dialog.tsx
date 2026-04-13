@@ -1,9 +1,10 @@
 "use client";
 
 import { useState, useTransition } from "react";
+import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 
-import { processPayout } from "@/actions/admin";
+import { processPayoutToLister } from "@/actions/payments";
 import { PayoutDetailsDisplay } from "@/components/payout/payout-details-display";
 import { PayoutMethodBadge } from "@/components/payout/payout-method-badge";
 import { Button } from "@/components/ui/button";
@@ -16,8 +17,6 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import { formatCurrency } from "@/lib/utils";
 import type { Payout, Profile } from "@/types";
 
@@ -34,8 +33,8 @@ export function PayoutProcessDialog({
   trigger,
   onComplete,
 }: PayoutProcessDialogProps) {
+  const router = useRouter();
   const [open, setOpen] = useState(false);
-  const [referenceNumber, setReferenceNumber] = useState("");
   const [isPending, startTransition] = useTransition();
   const listerName =
     payout.lister.display_name || payout.lister.full_name || payout.lister.email;
@@ -48,7 +47,7 @@ export function PayoutProcessDialog({
         <DialogHeader>
           <DialogTitle>Process payout</DialogTitle>
           <DialogDescription>
-            Confirm payout details before marking this payout as completed.
+            Confirm payout details before triggering the release to the lister.
           </DialogDescription>
         </DialogHeader>
 
@@ -82,16 +81,6 @@ export function PayoutProcessDialog({
               showCopyButtons
             />
           </div>
-
-          <div className="space-y-2">
-            <Label htmlFor="reference-number">Reference number</Label>
-            <Input
-              id="reference-number"
-              onChange={(event) => setReferenceNumber(event.target.value)}
-              placeholder="Transfer or transaction reference"
-              value={referenceNumber}
-            />
-          </div>
         </div>
 
         <DialogFooter>
@@ -100,20 +89,17 @@ export function PayoutProcessDialog({
           </Button>
           <Button
             className="bg-brand-navy text-white hover:bg-brand-steel"
-            disabled={isPending || !referenceNumber.trim()}
+            disabled={isPending}
             onClick={() =>
               startTransition(async () => {
-                const result = await processPayout(
-                  payout.id,
-                  referenceNumber.trim(),
-                  payoutMethod,
-                );
-                if (result.error) {
+                const result = await processPayoutToLister(payout.id);
+                if ("error" in result) {
                   toast.error(result.error);
                   return;
                 }
-                toast.success(result.success ?? "Payout processed");
+                toast.success(result.message);
                 setOpen(false);
+                router.refresh();
                 onComplete?.();
               })
             }
@@ -126,4 +112,3 @@ export function PayoutProcessDialog({
     </Dialog>
   );
 }
-

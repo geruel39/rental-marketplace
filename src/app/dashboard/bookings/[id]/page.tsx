@@ -1,5 +1,5 @@
 import { format } from "date-fns";
-import { Star } from "lucide-react";
+import { AlertTriangle, Star } from "lucide-react";
 import Link from "next/link";
 import { redirect } from "next/navigation";
 
@@ -9,6 +9,11 @@ import {
   getBookingTimeline,
   raiseDispute,
 } from "@/actions/bookings";
+import {
+  getFeeConfig,
+  getRefundDetails,
+  getTransactionsForBooking,
+} from "@/actions/payments";
 import { BookingStatusBadge } from "@/components/bookings/booking-status-badge";
 import { BookingTimeline } from "@/components/bookings/booking-timeline";
 import { ConditionCheckForm } from "@/components/bookings/condition-check-form";
@@ -17,15 +22,21 @@ import { PaymentButton } from "@/components/bookings/payment-button";
 import { PaymentCountdown } from "@/components/bookings/payment-countdown";
 import { RentalCountdown } from "@/components/bookings/rental-countdown";
 import { ReturnDialog } from "@/components/bookings/return-dialog";
+import { DisputeResolutionForm } from "@/components/payments/dispute-resolution-form";
+import { PaymentBreakdownCard } from "@/components/payments/payment-breakdown-card";
+import { PayoutStatusCard } from "@/components/payments/payout-status-card";
+import { RefundStatusCard } from "@/components/payments/refund-status-card";
+import { TransactionList } from "@/components/payments/transaction-list";
 import { MessageProfileButton } from "@/components/profile/message-profile-button";
 import { TrustBadges } from "@/components/profile/trust-badges";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
+import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
-import { cn, formatCurrency, getInitials } from "@/lib/utils";
-import type { BookingTimelineWithActor } from "@/types";
+import { calculatePaymentBreakdown, cn, formatCurrency, getInitials } from "@/lib/utils";
+import type { BookingTimelineWithActor, DisputeResolution, Payout } from "@/types";
 
 interface BookingDetailPageProps {
   params: Promise<{ id: string }>;
@@ -97,9 +108,9 @@ export default async function BookingDetailPage({ params }: BookingDetailPagePro
 
   const { data: profile } = await supabase
     .from("profiles")
-    .select("is_admin")
+    .select("id, is_admin")
     .eq("id", user.id)
-    .maybeSingle<{ is_admin: boolean }>();
+    .maybeSingle<{ id: string; is_admin: boolean }>();
 
   const booking = await getBookingDetails(id);
   if (!booking) {
@@ -115,6 +126,23 @@ export default async function BookingDetailPage({ params }: BookingDetailPagePro
     redirect("/dashboard");
   }
 
+  const admin = createAdminClient();
+  const [fees, transactions, refund, payoutResult, resolutionResult] = await Promise.all([
+    getFeeConfig(),
+    getTransactionsForBooking(booking.id),
+    getRefundDetails(booking.id),
+    admin.from("payouts").select("*").eq("booking_id", booking.id).maybeSingle<Payout>(),
+    admin
+      .from("dispute_resolutions")
+      .select("*")
+      .eq("booking_id", booking.id)
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle<DisputeResolution>(),
+  ]);
+
+  const payout = payoutResult.data ?? null;
+  const disputeResolution = resolutionResult.data ?? null;
   const otherParty = isLister ? booking.renter : booking.lister;
   const otherPartyName = otherParty.display_name || otherParty.full_name;
   const rentalUnits = booking.rental_units || booking.num_units || 1;
@@ -123,19 +151,16 @@ export default async function BookingDetailPage({ params }: BookingDetailPagePro
     booking.status === "awaiting_payment" ||
     booking.status === "confirmed";
   const canDispute = booking.status === "active" || booking.status === "returned";
-
-  const { data: payout } = isLister
-    ? await supabase
-        .from("payouts")
-        .select("status, amount, processed_at")
-        .eq("booking_id", booking.id)
-        .maybeSingle<{ status: string; amount: number; processed_at: string | null }>()
-    : { data: null };
-
   const isLateReturn =
     Boolean(booking.returned_at) &&
     Boolean(booking.rental_ends_at) &&
     new Date(booking.returned_at as string).getTime() > new Date(booking.rental_ends_at as string).getTime();
+  const breakdown = calculatePaymentBreakdown({
+    subtotal: booking.subtotal,
+    depositAmount: booking.deposit_amount,
+    pricingPeriod: booking.pricing_period,
+    fees,
+  });
 
   return (
     <div className="space-y-6">
@@ -185,29 +210,6 @@ export default async function BookingDetailPage({ params }: BookingDetailPagePro
                 </p>
               </div>
             </div>
-
-            <div className="mt-4 space-y-2 rounded-xl border border-border/70 bg-muted/20 p-4 text-sm">
-              <div className="flex items-center justify-between">
-                <span>
-                  {formatCurrency(booking.unit_price)} × {rentalUnits} {booking.pricing_period}(s) × {booking.quantity}
-                </span>
-                <span>{formatCurrency(booking.subtotal)}</span>
-              </div>
-              <div className="flex items-center justify-between">
-                <span>Service fee</span>
-                <span>{formatCurrency(booking.service_fee_renter)}</span>
-              </div>
-              {booking.deposit_amount > 0 ? (
-                <div className="flex items-center justify-between">
-                  <span>Security deposit</span>
-                  <span>{formatCurrency(booking.deposit_amount)}</span>
-                </div>
-              ) : null}
-              <div className="flex items-center justify-between border-t border-border pt-2 font-semibold text-brand-navy">
-                <span>Total</span>
-                <span>{formatCurrency(booking.total_price)}</span>
-              </div>
-            </div>
           </section>
 
           {booking.rental_started_at ? (
@@ -235,6 +237,103 @@ export default async function BookingDetailPage({ params }: BookingDetailPagePro
               ) : null}
             </section>
           ) : null}
+
+          <section className="rounded-2xl border border-border/70 bg-background p-5 shadow-sm">
+            <h2 className="text-lg font-semibold">Payment</h2>
+            <div className="mt-4 space-y-4">
+              {booking.status === "awaiting_payment" ? (
+                <div className="space-y-4 rounded-2xl border border-brand-navy/10 bg-brand-navy/5 p-4">
+                  <div className="flex flex-wrap items-center justify-between gap-3">
+                    <div>
+                      <p className="font-medium text-foreground">Payment required</p>
+                      <p className="text-sm text-muted-foreground">
+                        Complete checkout to secure this booking.
+                      </p>
+                    </div>
+                    {isRenter ? (
+                      <PaymentButton
+                        bookingId={booking.id}
+                        className="bg-brand-navy text-white hover:bg-brand-steel"
+                        paymentUrl={booking.hitpay_payment_url}
+                      />
+                    ) : null}
+                  </div>
+                  {booking.payment_expires_at ? (
+                    <PaymentCountdown expiresAt={booking.payment_expires_at} />
+                  ) : null}
+                  <PaymentBreakdownCard
+                    breakdown={breakdown}
+                    defaultOpen
+                    pricingPeriod={booking.pricing_period}
+                    quantity={booking.quantity}
+                    rentalUnits={rentalUnits}
+                    viewer="renter"
+                  />
+                </div>
+              ) : null}
+
+              {booking.paid_at ? (
+                <>
+                  <PaymentBreakdownCard
+                    breakdown={breakdown}
+                    defaultOpen
+                    pricingPeriod={booking.pricing_period}
+                    quantity={booking.quantity}
+                    rentalUnits={rentalUnits}
+                    viewer={isLister ? "lister" : "renter"}
+                  />
+                  <div className="rounded-2xl border border-border/70 bg-slate-50 p-4 text-sm">
+                    <p>
+                      Payment status:{" "}
+                      <Badge variant="outline">
+                        {(booking.hitpay_payment_status || "pending").replaceAll("_", " ")}
+                      </Badge>
+                    </p>
+                    <p className="mt-2 text-muted-foreground">Paid at: {formatDateTime(booking.paid_at)}</p>
+                    {booking.hitpay_payment_id ? (
+                      <p className="mt-1 text-muted-foreground">
+                        HitPay payment reference: {booking.hitpay_payment_id}
+                      </p>
+                    ) : null}
+                  </div>
+                </>
+              ) : null}
+
+              {booking.status === "disputed" ? (
+                <div className="space-y-4 rounded-2xl border border-rose-200 bg-rose-50 p-4">
+                  <div className="flex items-start gap-3 text-rose-900">
+                    <AlertTriangle className="mt-0.5 size-4 shrink-0" />
+                    <div>
+                      <p className="font-medium">Payment is on hold pending dispute resolution</p>
+                      <p className="text-sm text-rose-800/80">
+                        Funds remain locked until an admin completes the dispute decision.
+                      </p>
+                    </div>
+                  </div>
+                  {isAdmin ? <DisputeResolutionForm booking={booking} /> : null}
+                  {disputeResolution ? (
+                    <div className="rounded-2xl border border-rose-200 bg-white p-4 text-sm">
+                      <p className="font-medium text-foreground">Resolution decision</p>
+                      <p className="mt-2 capitalize text-muted-foreground">
+                        {disputeResolution.resolution_type.replaceAll("_", " ")}
+                      </p>
+                      <p className="mt-2 text-muted-foreground">{disputeResolution.resolution_notes}</p>
+                    </div>
+                  ) : null}
+                </div>
+              ) : null}
+
+              {transactions.length > 0 ? (
+                <div className="space-y-3">
+                  <h3 className="font-medium text-foreground">Transaction history</h3>
+                  <TransactionList showBookingRef={false} transactions={transactions} />
+                </div>
+              ) : null}
+
+              {refund ? <RefundStatusCard refund={refund} /> : null}
+              {isLister && payout ? <PayoutStatusCard payout={payout} /> : null}
+            </div>
+          </section>
 
           <section className="rounded-2xl border border-border/70 bg-background p-5 shadow-sm">
             <h2 className="text-lg font-semibold">Proof Photos</h2>
@@ -386,40 +485,6 @@ export default async function BookingDetailPage({ params }: BookingDetailPagePro
                     Raise Dispute
                   </Button>
                 </form>
-              ) : null}
-              {booking.status === "completed" && ((isLister && !booking.lister_reviewed) || (isRenter && !booking.renter_reviewed)) ? (
-                <Button asChild className="w-full" variant="outline">
-                  <Link href="/dashboard/reviews">Leave Review</Link>
-                </Button>
-              ) : null}
-            </div>
-          </section>
-
-          <section className="rounded-2xl border border-border/70 bg-background p-5 shadow-sm">
-            <h2 className="text-lg font-semibold">Payment</h2>
-            <div className="mt-4 space-y-2 text-sm">
-              <p>
-                Status:{" "}
-                <Badge variant="outline">
-                  {(booking.hitpay_payment_status || "pending").replaceAll("_", " ")}
-                </Badge>
-              </p>
-              {booking.status === "awaiting_payment" && booking.payment_expires_at ? (
-                <PaymentCountdown expiresAt={booking.payment_expires_at} />
-              ) : null}
-              {booking.paid_at ? <p className="text-muted-foreground">Paid at: {formatDateTime(booking.paid_at)}</p> : null}
-              {booking.hitpay_payment_id ? (
-                <p className="text-muted-foreground">HitPay reference: {booking.hitpay_payment_id}</p>
-              ) : null}
-
-              {isLister ? (
-                <div className="rounded-xl border border-border/70 bg-muted/20 p-3">
-                  <p className="font-medium">Payout</p>
-                  <p className="text-muted-foreground">Amount: {formatCurrency(booking.lister_payout)}</p>
-                  <p className="text-muted-foreground">
-                    Status: {payout?.status ? payout.status.replaceAll("_", " ") : booking.payout_at ? "completed" : "pending"}
-                  </p>
-                </div>
               ) : null}
             </div>
           </section>

@@ -1103,6 +1103,25 @@ CREATE TRIGGER on_favorite_changed
   FOR EACH ROW
   EXECUTE FUNCTION public.update_favorites_count();
 
+CREATE OR REPLACE FUNCTION public.try_acquire_booking_webhook_lock(p_lock_key bigint)
+RETURNS boolean
+LANGUAGE sql
+SECURITY DEFINER
+AS $$
+  SELECT pg_try_advisory_xact_lock(p_lock_key);
+$$;
+
+DO $$
+DECLARE
+  _count INTEGER;
+BEGIN
+  SELECT COUNT(*) INTO _count FROM pg_proc WHERE proname = 'try_acquire_booking_webhook_lock';
+  IF _count = 0 THEN
+    RAISE EXCEPTION 'Webhook lock function missing';
+  END IF;
+END;
+$$;
+
 -- ============================================================
 -- SECTION 8: SEED DATA
 -- ============================================================

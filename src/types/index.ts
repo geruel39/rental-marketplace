@@ -853,6 +853,11 @@ export interface AdminDashboardStats {
   disputedBookings: number;
   totalRevenue: number;
   revenueThisMonth: number;
+  platformFeesFromRentersThisMonth: number;
+  platformFeesFromListersThisMonth: number;
+  platformFeesCollectedThisMonth: number;
+  hitpayFeesAbsorbedThisMonth: number;
+  netPlatformRevenueThisMonth: number;
   pendingPayouts: number;
   pendingPayoutsAmount: number;
   openReports: number;

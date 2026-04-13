@@ -1239,8 +1239,15 @@ export async function confirmReturnAndComplete(
     if (updateError) {
       return { error: updateError.message };
     }
+    const depositRequiresReview =
+      parsed.data.return_condition === "damaged" ||
+      parsed.data.return_condition === "missing_parts";
 
-    await autoTriggerPayout(booking.id);
+    try {
+      await autoTriggerPayout(booking.id);
+    } catch (payoutError) {
+      console.error("confirmReturnAndComplete autoTriggerPayout failed:", payoutError);
+    }
 
     const notesText = parsed.data.return_condition_notes
       ? ` ${parsed.data.return_condition_notes}`
@@ -1252,27 +1259,50 @@ export async function confirmReturnAndComplete(
       actorId: auth.user.id,
       actorRole: "lister",
       title: "Rental completed",
-      description: `Item condition: ${parsed.data.return_condition}.${notesText} Stock restored. Payout flow has been queued for processing.`,
+      description: depositRequiresReview
+        ? `Item condition: ${parsed.data.return_condition}.${notesText} Stock restored. Deposit review is required before any deposit disposition.`
+        : `Item condition: ${parsed.data.return_condition}.${notesText} Stock restored. Deposit released with no claim and payout flow has been queued for processing.`,
       metadata: {
         return_condition: parsed.data.return_condition,
         payout_amount: booking.lister_payout,
+        deposit_amount: booking.deposit_amount,
+        deposit_review_required: depositRequiresReview,
       },
     });
 
-    if (
-      parsed.data.return_condition === "damaged" ||
-      parsed.data.return_condition === "missing_parts"
-    ) {
-      await createNotification({
-        userId: booking.renter_id,
-        type: "return_condition_issue",
-        title: "Return condition flagged",
-        body: `Your returned item was marked as ${parsed.data.return_condition}.`,
-        listingId: booking.listing_id,
-        bookingId: booking.id,
-        fromUserId: auth.user.id,
-        actionUrl: `/dashboard/bookings/${booking.id}`,
-      });
+    if (depositRequiresReview) {
+      const admin = createAdminClient();
+      const { data: admins } = await admin
+        .from("profiles")
+        .select("id")
+        .eq("is_admin", true);
+
+      const reviewMessage = `Deposit of ${formatMoney(booking.deposit_amount ?? 0)} is being reviewed due to reported damage`;
+
+      await Promise.all([
+        createNotification({
+          userId: booking.renter_id,
+          type: "return_condition_issue",
+          title: "Deposit under review",
+          body: reviewMessage,
+          listingId: booking.listing_id,
+          bookingId: booking.id,
+          fromUserId: auth.user.id,
+          actionUrl: `/dashboard/bookings/${booking.id}`,
+        }),
+        ...((admins ?? []) as Array<{ id: string }>).map((adminProfile) =>
+          createNotification({
+            userId: adminProfile.id,
+            type: "admin_alert",
+            title: "Deposit review required",
+            body: reviewMessage,
+            listingId: booking.listing_id,
+            bookingId: booking.id,
+            fromUserId: auth.user.id,
+            actionUrl: `/admin/bookings/${booking.id}`,
+          }),
+        ),
+      ]);
     }
 
     await Promise.all([
@@ -1476,9 +1506,9 @@ export async function raiseDispute(
       (admins ?? []).map((adminProfile) =>
         createNotification({
           userId: String((adminProfile as { id: string }).id),
-          type: "booking_disputed",
-          title: "Booking dispute requires review",
-          body: `Booking ${booking.id} was disputed. Reason: ${disputeReason}`,
+          type: "dispute_raised",
+          title: `New dispute on booking ${booking.id} - ${formatMoney(booking.total_price)} at stake`,
+          body: `New dispute on booking ${booking.id} - ${formatMoney(booking.total_price)} at stake`,
           listingId: booking.listing_id,
           bookingId: booking.id,
           fromUserId: auth.user.id,
@@ -1657,7 +1687,33 @@ export async function getBookingTimeline(
 export async function expireUnpaidBookings(): Promise<ActionResponse> {
   try {
     const admin = createAdminClient();
+    const now = new Date().toISOString();
+    const { data: expiringBookings } = await admin
+      .from("bookings")
+      .select("id, renter_id, listing_id")
+      .eq("status", "awaiting_payment")
+      .lt("payment_expires_at", now);
+
     await callRpcWithFallbacks(admin, "expire_unpaid_bookings", [{}]);
+
+    await Promise.all(
+      ((expiringBookings ?? []) as Array<{
+        id: string;
+        renter_id: string;
+        listing_id: string;
+      }>).map((booking) =>
+        createNotification({
+          userId: booking.renter_id,
+          type: "booking_expired",
+          title: "Booking cancelled",
+          body: "Booking cancelled — payment not completed in time",
+          listingId: booking.listing_id,
+          bookingId: booking.id,
+          actionUrl: `/dashboard/bookings/${booking.id}`,
+        }),
+      ),
+    );
+
     revalidateBookingViews();
     return { success: "Expired unpaid bookings." };
   } catch (error) {

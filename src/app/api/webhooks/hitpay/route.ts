@@ -1,92 +1,367 @@
-import { NextResponse } from "next/server";
+import crypto from "node:crypto";
+
+import { NextRequest, NextResponse } from "next/server";
 
 import { handlePaymentConfirmed } from "@/actions/payments";
-import { verifyWebhookSignature } from "@/lib/hitpay";
+import { createAdminClient } from "@/lib/supabase/admin";
 
-function getNestedRecord(value: unknown): Record<string, unknown> | null {
-  return value && typeof value === "object" && !Array.isArray(value)
-    ? (value as Record<string, unknown>)
-    : null;
+export const runtime = "nodejs";
+
+type HitPayWebhookPayload = {
+  payment_id: string;
+  payment_request_id: string;
+  phone: string;
+  amount: string;
+  currency: string;
+  status: string;
+  reference_number: string;
+};
+
+type BookingSnapshot = {
+  id: string;
+  renter_id: string;
+  lister_id: string;
+  listing_id: string;
+  status: string;
+};
+
+function roundMoney(value: number) {
+  return Math.round(value * 100) / 100;
 }
 
-function getFirstString(
-  sources: Array<Record<string, unknown> | null>,
-  keys: string[],
-) {
-  for (const source of sources) {
-    if (!source) {
-      continue;
-    }
-    for (const key of keys) {
-      const value = source[key];
-      if (typeof value === "string" && value.length > 0) {
-        return value;
-      }
+function getBookingLockKey(bookingId: string) {
+  const digest = crypto.createHash("sha256").update(bookingId).digest("hex");
+  return BigInt(`0x${digest.slice(0, 15)}`).toString();
+}
+
+async function tryAcquireBookingLock(bookingId: string) {
+  const adminClient = createAdminClient();
+  const lockKey = getBookingLockKey(bookingId);
+  const attempts = [
+    { p_lock_key: lockKey },
+    { lock_key: lockKey },
+  ];
+
+  for (const args of attempts) {
+    const { data, error } = await adminClient.rpc(
+      "try_acquire_booking_webhook_lock",
+      args,
+    );
+
+    if (!error) {
+      return Boolean(data);
     }
   }
 
-  return "";
+  console.error(
+    "[HITPAY_WEBHOOK] Booking advisory lock RPC unavailable; continuing with idempotency safeguards only.",
+  );
+  return true;
 }
 
-function getFirstNumber(
-  sources: Array<Record<string, unknown> | null>,
-  keys: string[],
-) {
-  for (const source of sources) {
-    if (!source) {
-      continue;
-    }
-
-    for (const key of keys) {
-      const value = source[key];
-      if (typeof value === "number" && Number.isFinite(value)) {
-        return value;
-      }
-      if (typeof value === "string" && value.trim().length > 0) {
-        const parsed = Number(value);
-        if (Number.isFinite(parsed)) {
-          return parsed;
-        }
-      }
-    }
+function verifyHitPaySignature(
+  payload: Record<string, string>,
+  receivedHmac: string,
+): boolean {
+  const salt = process.env.HITPAY_WEBHOOK_SALT;
+  if (!salt) {
+    console.error("[HITPAY_WEBHOOK] HITPAY_WEBHOOK_SALT not configured");
+    return false;
   }
 
-  return null;
+  const normalizedHmac = receivedHmac.trim().toLowerCase();
+  if (!/^[0-9a-f]{64}$/.test(normalizedHmac)) {
+    return false;
+  }
+
+  const message = Object.keys(payload)
+    .sort((a, b) => a.localeCompare(b))
+    .map((key) => key + payload[key])
+    .join("");
+
+  const computed = crypto
+    .createHmac("sha256", salt)
+    .update(message)
+    .digest("hex");
+
+  try {
+    return crypto.timingSafeEqual(
+      Buffer.from(computed, "hex"),
+      Buffer.from(normalizedHmac, "hex"),
+    );
+  } catch {
+    return false;
+  }
 }
 
-function normalizeEventPayload(payload: Record<string, unknown>) {
-  const event = getFirstString([payload], ["event", "type", "event_type", "eventType"]);
-  const data = getNestedRecord(payload.data) ?? payload;
-  const paymentRequest = getNestedRecord(data.payment_request);
-  const order = getNestedRecord(data.order);
-  const metadata = getNestedRecord(data.metadata);
-  const relatable = getNestedRecord(data.relatable);
-  const sources = [data, paymentRequest, order, metadata, relatable];
+function parseWebhookBody(rawBody: string) {
+  const params = new URLSearchParams(rawBody);
+  const payload: Record<string, string> = {};
 
-  return {
-    event,
-    bookingId: getFirstString(sources, [
-      "reference_number",
-      "reference",
-      "booking_id",
-      "bookingId",
-      "order_id",
-    ]),
-    paymentId: getFirstString(sources, [
-      "payment_id",
-      "paymentId",
-      "id",
-      "transaction_id",
-    ]),
-    paymentRequestId: getFirstString(sources, [
-      "payment_request_id",
-      "paymentRequestId",
-      "payment_request",
-    ]),
-    status: getFirstString(sources, ["status", "payment_status", "state"]),
-    amount: getFirstNumber(sources, ["amount"]),
-    currency: getFirstString(sources, ["currency"]),
+  for (const key of new Set(params.keys())) {
+    const allValues = params.getAll(key);
+    if (allValues.length !== 1) {
+      throw new Error(`Duplicate webhook field: ${key}`);
+    }
+
+    payload[key] = allValues[0] ?? "";
+  }
+
+  return payload;
+}
+
+function getRequiredField(
+  payload: Record<string, string>,
+  key: keyof HitPayWebhookPayload,
+) {
+  const value = payload[key];
+  return typeof value === "string" ? value.trim() : "";
+}
+
+async function notifyAdmins(params: {
+  bookingId: string;
+  title: string;
+  body: string;
+  actionUrl?: string;
+}) {
+  const adminClient = createAdminClient();
+  const { data: admins, error } = await adminClient
+    .from("profiles")
+    .select("id")
+    .eq("is_admin", true);
+
+  if (error) {
+    console.error("[HITPAY_WEBHOOK] Failed to load admins:", error);
+    return;
+  }
+
+  const adminIds = (admins ?? [])
+    .map((admin) => (typeof admin.id === "string" ? admin.id : ""))
+    .filter(Boolean);
+
+  if (adminIds.length === 0) {
+    return;
+  }
+
+  const { error: notificationError } = await adminClient
+    .from("notifications")
+    .insert(
+      adminIds.map((userId) => ({
+        user_id: userId,
+        type: "admin_alert",
+        title: params.title,
+        body: params.body,
+        booking_id: params.bookingId,
+        action_url: params.actionUrl ?? `/admin/bookings/${params.bookingId}`,
+      })),
+    );
+
+  if (notificationError) {
+    console.error(
+      "[HITPAY_WEBHOOK] Failed to notify admins:",
+      notificationError,
+    );
+  }
+}
+
+async function addTimelineEntry(params: {
+  bookingId: string;
+  status: string;
+  previousStatus?: string;
+  title: string;
+  description?: string;
+  metadata?: Record<string, unknown>;
+}) {
+  const adminClient = createAdminClient();
+  const payload = {
+    booking_id: params.bookingId,
+    status: params.status,
+    previous_status: params.previousStatus ?? null,
+    actor_id: null,
+    actor_role: "system",
+    title: params.title,
+    description: params.description ?? null,
+    metadata: params.metadata ?? {},
   };
+
+  const rpcAttempts = [
+    {
+      p_booking_id: payload.booking_id,
+      p_status: payload.status,
+      p_previous_status: payload.previous_status,
+      p_actor_id: payload.actor_id,
+      p_actor_role: payload.actor_role,
+      p_title: payload.title,
+      p_description: payload.description,
+      p_metadata: payload.metadata,
+    },
+    {
+      booking_id: payload.booking_id,
+      status: payload.status,
+      previous_status: payload.previous_status,
+      actor_id: payload.actor_id,
+      actor_role: payload.actor_role,
+      title: payload.title,
+      description: payload.description,
+      metadata: payload.metadata,
+    },
+  ];
+
+  for (const args of rpcAttempts) {
+    const { error } = await adminClient.rpc("add_booking_timeline", args);
+    if (!error) {
+      return;
+    }
+  }
+
+  const { error } = await adminClient.from("booking_timeline").insert(payload);
+  if (error) {
+    console.error("[HITPAY_WEBHOOK] Failed to add timeline entry:", error);
+  }
+}
+
+async function fetchBooking(bookingId: string) {
+  const adminClient = createAdminClient();
+  const { data, error } = await adminClient
+    .from("bookings")
+    .select(
+      `
+        id,
+        renter_id,
+        lister_id,
+        listing_id,
+        status
+      `,
+    )
+    .eq("id", bookingId)
+    .maybeSingle<BookingSnapshot>();
+
+  if (error) {
+    throw new Error(error.message);
+  }
+
+  return data ?? null;
+}
+
+async function markWebhookReceipt(params: {
+  bookingId: string;
+  paymentId: string;
+  paymentRequestId: string;
+  status: string;
+  timestamp: string;
+}) {
+  const adminClient = createAdminClient();
+  const { error } = await adminClient
+    .from("bookings")
+    .update({
+      hitpay_payment_id: params.paymentId || null,
+      hitpay_payment_request_id: params.paymentRequestId || null,
+      hitpay_payment_status: params.status,
+      last_webhook_at: params.timestamp,
+      updated_at: params.timestamp,
+    })
+    .eq("id", params.bookingId);
+
+  if (error) {
+    console.error("[HITPAY_WEBHOOK] Failed to mark webhook receipt:", error);
+  }
+}
+
+async function handleFailedPayment(params: {
+  booking: BookingSnapshot;
+  bookingId: string;
+  paymentId: string;
+  paymentRequestId: string;
+  amount: number;
+  currency: string;
+  status: string;
+  timestamp: string;
+}) {
+  const adminClient = createAdminClient();
+  const idempotencyKey = `payment_failed_${params.paymentRequestId || params.paymentId || params.bookingId}`;
+
+  const { data: existingFailure, error: existingFailureError } = await adminClient
+    .from("transactions")
+    .select("id")
+    .eq("idempotency_key", idempotencyKey)
+    .maybeSingle<{ id: string }>();
+
+  if (existingFailureError) {
+    console.error(
+      "[HITPAY_WEBHOOK] Failed to check failed-payment idempotency:",
+      existingFailureError,
+    );
+  }
+
+  if (!existingFailure) {
+    const { error: transactionError } = await adminClient
+      .from("transactions")
+      .insert({
+        booking_id: params.bookingId,
+        renter_id: params.booking.renter_id,
+        lister_id: params.booking.lister_id,
+        event_type: "payment_failed",
+        gross_amount: params.amount,
+        hitpay_fee: 0,
+        platform_fee: 0,
+        net_amount: 0,
+        currency: params.currency,
+        hitpay_payment_request_id: params.paymentRequestId,
+        hitpay_payment_id: params.paymentId,
+        status: "failed",
+        failure_reason: `HitPay reported payment status: ${params.status}`,
+        idempotency_key: idempotencyKey,
+        triggered_by_role: "system",
+        processed_at: params.timestamp,
+        metadata: {
+          source: "webhook",
+          hitpay_status: params.status,
+          received_at: params.timestamp,
+        },
+      });
+
+    if (transactionError) {
+      console.error(
+        "[HITPAY_WEBHOOK] Failed to insert failed payment transaction:",
+        transactionError,
+      );
+    }
+
+    await addTimelineEntry({
+      bookingId: params.bookingId,
+      status: params.booking.status,
+      previousStatus: params.booking.status,
+      title: "Payment failed",
+      description: "HitPay reported that the payment could not be completed.",
+      metadata: {
+        amount: params.amount,
+        currency: params.currency,
+        hitpay_payment_id: params.paymentId,
+        hitpay_payment_request_id: params.paymentRequestId,
+        hitpay_status: params.status,
+      },
+    });
+
+    const { error: notificationError } = await adminClient
+      .from("notifications")
+      .insert({
+        user_id: params.booking.renter_id,
+        type: "payment_failed",
+        title: "Payment failed",
+        body: "Payment failed. Please try again.",
+        listing_id: params.booking.listing_id,
+        booking_id: params.bookingId,
+        from_user_id: params.booking.lister_id,
+        action_url: `/dashboard/bookings/${params.bookingId}`,
+      });
+
+    if (notificationError) {
+      console.error(
+        "[HITPAY_WEBHOOK] Failed to notify renter of failed payment:",
+        notificationError,
+      );
+    }
+  }
 }
 
 export async function GET() {
@@ -97,66 +372,213 @@ export async function HEAD() {
   return new NextResponse(null, { status: 200 });
 }
 
-export async function POST(request: Request) {
+export async function POST(request: NextRequest) {
+  const receivedAt = new Date().toISOString();
+
   try {
-    const signature =
-      request.headers.get("Hitpay-Signature") ??
-      request.headers.get("x-hitpay-signature") ??
-      "";
-    const contentType = request.headers.get("content-type") ?? "";
     const rawBody = await request.text();
+    const payload = parseWebhookBody(rawBody);
 
-    let normalizedPayload: Record<string, unknown>;
-    let fallbackSignature = "";
+    const { hmac, ...payloadWithoutHmac } = payload;
 
-    if (contentType.includes("application/json")) {
-      normalizedPayload = rawBody
-        ? (JSON.parse(rawBody) as Record<string, unknown>)
-        : {};
-    } else {
-      const formData = new URLSearchParams(rawBody);
-      const payload = Object.fromEntries(formData.entries());
-      normalizedPayload = payload as Record<string, unknown>;
-      fallbackSignature = payload.hmac ?? "";
+    console.log("[HITPAY_WEBHOOK] Webhook received:", {
+      payment_request_id: payload.payment_request_id ?? null,
+      status: payload.status ?? null,
+      reference_number: payload.reference_number ?? null,
+      received_at: receivedAt,
+    });
+
+    if (!hmac) {
+      console.error("[HITPAY_WEBHOOK] Missing HMAC signature");
+      return NextResponse.json({ error: "Missing signature" }, { status: 401 });
     }
 
-    const headerSignatureValid = verifyWebhookSignature(rawBody, signature);
-    const fallbackSignatureValid = fallbackSignature
-      ? verifyWebhookSignature(normalizedPayload as Record<string, string>, fallbackSignature)
-      : false;
-
-    if (!headerSignatureValid && !fallbackSignatureValid) {
+    if (!verifyHitPaySignature(payloadWithoutHmac, hmac)) {
+      console.error("[HITPAY_WEBHOOK] HMAC verification failed");
       return NextResponse.json({ error: "Invalid signature" }, { status: 401 });
     }
 
-    const normalized = normalizeEventPayload(normalizedPayload);
-    const normalizedStatus = normalized.status.toLowerCase();
-    const normalizedEvent = normalized.event.toLowerCase();
-    const isCompletedEvent =
-      normalizedEvent.includes("completed") ||
-      normalizedEvent.includes("paid") ||
-      normalizedStatus === "completed" ||
-      normalizedStatus === "succeeded" ||
-      normalizedStatus === "paid";
+    const paymentId = getRequiredField(payload, "payment_id");
+    const paymentRequestId = getRequiredField(payload, "payment_request_id");
+    const amountRaw = getRequiredField(payload, "amount");
+    const currency = getRequiredField(payload, "currency") || "SGD";
+    const status = getRequiredField(payload, "status").toLowerCase();
+    const bookingId = getRequiredField(payload, "reference_number");
 
-    if (isCompletedEvent && normalized.bookingId) {
-      await handlePaymentConfirmed({
-        hitpayPaymentId: normalized.paymentId || "",
-        hitpayPaymentRequestId: normalized.paymentRequestId || "",
-        bookingId: normalized.bookingId,
-        amount: normalized.amount ?? 0,
-        currency: normalized.currency || "SGD",
+    if (!bookingId || !paymentRequestId || !status) {
+      console.error("[HITPAY_WEBHOOK] Missing required fields:", {
+        bookingId,
+        paymentRequestId,
+        status,
       });
+      return NextResponse.json(
+        { error: "Missing required fields" },
+        { status: 400 },
+      );
     }
 
-    return NextResponse.json({ success: true }, { status: 200 });
-  } catch (error) {
-    console.error("[WEBHOOK] Error processing webhook:", error);
+    const parsedAmount = roundMoney(Number(amountRaw));
+    if (!Number.isFinite(parsedAmount) || parsedAmount < 0) {
+      console.error("[HITPAY_WEBHOOK] Invalid amount:", {
+        bookingId,
+        amount: amountRaw,
+      });
+      return NextResponse.json({ error: "Invalid amount" }, { status: 400 });
+    }
+
+    const booking = await fetchBooking(bookingId);
+    if (!booking) {
+      console.error("[HITPAY_WEBHOOK] Booking not found:", bookingId);
+      await notifyAdmins({
+        bookingId,
+        title: "Verified HitPay webhook for missing booking",
+        body: `HitPay sent a verified ${status} webhook for booking ${bookingId}, but no booking row was found.`,
+      });
+      return NextResponse.json(
+        { received: true, note: "booking_not_found" },
+        { status: 200 },
+      );
+    }
+
+    await markWebhookReceipt({
+      bookingId,
+      paymentId,
+      paymentRequestId,
+      status,
+      timestamp: receivedAt,
+    });
+
+    if (status === "completed") {
+      const lockAcquired = await tryAcquireBookingLock(bookingId);
+      if (!lockAcquired) {
+        console.log("[HITPAY_WEBHOOK] Booking lock not acquired; skipping duplicate in-flight webhook", {
+          bookingId,
+        });
+        return NextResponse.json(
+          { received: true, note: "lock_not_acquired" },
+          { status: 200 },
+        );
+      }
+
+      const idempotencyKey = `payment_confirmed_${bookingId}`;
+      const adminClient = createAdminClient();
+      const { data: existingTransaction, error: transactionLookupError } = await adminClient
+        .from("transactions")
+        .select("id, status")
+        .eq("idempotency_key", idempotencyKey)
+        .maybeSingle<{ id: string; status: string }>();
+
+      if (transactionLookupError) {
+        console.error(
+          "[HITPAY_WEBHOOK] Failed to check completed payment idempotency:",
+          transactionLookupError,
+        );
+      }
+
+      if (existingTransaction?.status === "completed") {
+        return NextResponse.json(
+          { received: true, note: "already_processed" },
+          { status: 200 },
+        );
+      }
+
+      if (!["awaiting_payment", "pending", "confirmed"].includes(booking.status)) {
+        console.log("[HITPAY_WEBHOOK] Ignoring completed webhook for booking status:", {
+          bookingId,
+          bookingStatus: booking.status,
+        });
+        return NextResponse.json(
+          { received: true, note: "ignored_for_status" },
+          { status: 200 },
+        );
+      }
+
+      await handlePaymentConfirmed({
+        hitpayPaymentId: paymentId,
+        hitpayPaymentRequestId: paymentRequestId,
+        bookingId,
+        amount: parsedAmount,
+        currency,
+      });
+
+      const verificationClient = createAdminClient();
+      const [bookingResult, transactionResult] = await Promise.all([
+        verificationClient
+          .from("bookings")
+          .select("status, hitpay_payment_status, paid_at")
+          .eq("id", bookingId)
+          .maybeSingle<{
+            status: string;
+            hitpay_payment_status: string | null;
+            paid_at: string | null;
+          }>(),
+        verificationClient
+          .from("transactions")
+          .select("status")
+          .eq("idempotency_key", idempotencyKey)
+          .maybeSingle<{ status: string }>(),
+      ]);
+
+      const bookingAfter = bookingResult.data;
+      const transactionAfter = transactionResult.data;
+      const completedSuccessfully =
+        bookingAfter?.status === "confirmed" &&
+        bookingAfter.hitpay_payment_status === "completed" &&
+        Boolean(bookingAfter.paid_at) &&
+        transactionAfter?.status === "completed";
+
+      if (!completedSuccessfully) {
+        console.error("[HITPAY_WEBHOOK] Payment confirmation did not fully persist:", {
+          bookingId,
+          bookingStatus: bookingAfter?.status ?? null,
+          paymentStatus: bookingAfter?.hitpay_payment_status ?? null,
+          transactionStatus: transactionAfter?.status ?? null,
+        });
+
+        await notifyAdmins({
+          bookingId,
+          title: "HitPay payment needs manual review",
+          body: `Verified completed payment webhook for booking ${bookingId} did not finish all persistence checks. Review immediately.`,
+        });
+
+        return NextResponse.json(
+          { received: true, note: "manual_review_required" },
+          { status: 200 },
+        );
+      }
+
+      return NextResponse.json({ received: true }, { status: 200 });
+    }
+
+    if (status === "failed") {
+      await handleFailedPayment({
+        booking,
+        bookingId,
+        paymentId,
+        paymentRequestId,
+        amount: parsedAmount,
+        currency,
+        status,
+        timestamp: receivedAt,
+      });
+
+      return NextResponse.json({ received: true }, { status: 200 });
+    }
+
+    console.log("[HITPAY_WEBHOOK] Ignoring unsupported status:", {
+      bookingId,
+      status,
+    });
+
     return NextResponse.json(
-      {
-        error: error instanceof Error ? error.message : "Webhook processing failed",
-      },
-      { status: 500 },
+      { received: true, note: "ignored_status" },
+      { status: 200 },
+    );
+  } catch (error) {
+    console.error("[HITPAY_WEBHOOK] Error processing webhook:", error);
+    return NextResponse.json(
+      { received: true, note: "processing_error" },
+      { status: 200 },
     );
   }
 }

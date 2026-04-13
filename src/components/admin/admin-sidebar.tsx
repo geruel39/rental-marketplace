@@ -17,12 +17,19 @@ import {
   ShieldAlert,
   ShieldCheck,
   Users,
+  WalletCards,
 } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
 
-export function AdminSidebar({ pendingKycCount = 0 }: { pendingKycCount?: number }) {
+export function AdminSidebar({
+  pendingKycCount = 0,
+  failedPayoutCount = 0,
+}: {
+  pendingKycCount?: number;
+  failedPayoutCount?: number;
+}) {
   const pathname = usePathname();
   const adminSections = [
     {
@@ -45,7 +52,13 @@ export function AdminSidebar({ pendingKycCount = 0 }: { pendingKycCount?: number
     {
       title: "Operations",
       items: [
-        { href: "/admin/payouts", label: "Payouts", icon: CircleDollarSign },
+        {
+          href: "/admin/payouts",
+          label: "Payouts",
+          icon: CircleDollarSign,
+          count: failedPayoutCount,
+        },
+        { href: "/admin/transactions", label: "Transactions", icon: WalletCards },
         {
           href: "/admin/kyc-verification",
           label: "KYC Verification",
@@ -115,10 +128,11 @@ export function AdminSidebar({ pendingKycCount = 0 }: { pendingKycCount?: number
                           <Badge
                             className={cn(
                               item.href === "/admin/kyc-verification"
+                                || item.href === "/admin/payouts"
                                 ? "bg-red-600 text-white hover:bg-red-600"
                                 : "bg-brand-sky text-brand-dark hover:bg-brand-sky",
                               isActive &&
-                                (item.href === "/admin/kyc-verification"
+                                (item.href === "/admin/kyc-verification" || item.href === "/admin/payouts"
                                   ? "bg-white/20 text-white hover:bg-white/20"
                                   : "bg-white/15 text-white hover:bg-white/15"),
                             )}

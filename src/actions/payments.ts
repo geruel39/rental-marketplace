@@ -83,6 +83,13 @@ function roundMoney(value: number) {
   return Math.round(value * 100) / 100;
 }
 
+function isHitPayExpiredRequestError(error: unknown) {
+  const message = error instanceof Error ? error.message : String(error);
+  return /HITPAY_REQUEST_EXPIRED|payment request.*expired|expired request|already expired/i.test(
+    message,
+  );
+}
+
 function formatMoney(value: number, currency = "SGD") {
   return new Intl.NumberFormat("en-SG", {
     style: "currency",
@@ -167,6 +174,7 @@ async function getAdmins() {
 }
 
 async function notifyAdmins(params: {
+  type?: string;
   title: string;
   body: string;
   bookingId?: string;
@@ -179,7 +187,7 @@ async function notifyAdmins(params: {
       admins.map((adminProfile) =>
         createNotification({
           userId: adminProfile.id,
-          type: "admin_alert",
+          type: params.type ?? "admin_alert",
           title: params.title,
           body: params.body,
           bookingId: params.bookingId,
@@ -364,7 +372,8 @@ async function getPayoutWithRelations(
 }
 
 function calculateHitPayFee(amount: number, fees: PlatformFees) {
-  return roundMoney(amount * fees.hitpay_percentage_fee + fees.hitpay_fixed_fee);
+  const variableFee = roundMoney(amount * fees.hitpay_percentage_fee);
+  return roundMoney(Math.max(fees.hitpay_fixed_fee, variableFee + fees.hitpay_fixed_fee));
 }
 
 async function updateTransaction(
@@ -540,6 +549,12 @@ async function createHitPayRefund(params: {
 
   const rawText = await response.text();
   if (!response.ok) {
+    if (
+      /payment request.*expired|expired request|already expired|invalid state/i.test(rawText)
+    ) {
+      throw new Error(`HITPAY_REQUEST_EXPIRED:${rawText}`);
+    }
+
     throw new Error(rawText || "Failed to create HitPay refund");
   }
 
@@ -687,6 +702,49 @@ async function createDisputeRefund(params: {
     const message =
       error instanceof Error ? error.message : "Refund processing failed";
 
+    if (isHitPayExpiredRequestError(error)) {
+      await admin
+        .from("refunds")
+        .update({
+          status: "processing",
+          failure_reason: message,
+          processed_by: params.adminId,
+        })
+        .eq("id", refundRow.id);
+
+      await updateTransaction(transactionId, {
+        status: "processing",
+        failure_reason: message,
+      });
+
+      await admin
+        .from("bookings")
+        .update({
+          refund_id: refundRow.id,
+          refund_amount: roundMoney(params.refundAmount),
+        })
+        .eq("id", params.booking.id);
+
+      await createNotification({
+        userId: params.booking.renter_id,
+        type: "refund_initiated",
+        title: "Refund of " + formatMoney(params.refundAmount) + " is being processed",
+        body: `Refund of ${formatMoney(params.refundAmount)} is being processed (5-10 days).`,
+        bookingId: params.booking.id,
+        actionUrl: `/dashboard/bookings/${params.booking.id}`,
+      });
+
+      await notifyAdmins({
+        type: "refund_failed",
+        title: `URGENT: Refund failed for booking ${params.booking.id}`,
+        body: `HitPay refund requires manual processing for booking ${params.booking.id}. ${message}`,
+        bookingId: params.booking.id,
+        actionUrl: `/admin/bookings/${params.booking.id}`,
+      });
+
+      return { refundId: refundRow.id, transactionId };
+    }
+
     await admin
       .from("refunds")
       .update({
@@ -811,8 +869,8 @@ export async function createPaymentForBooking(
       .update({
         hitpay_payment_request_id: paymentRequestId,
         hitpay_payment_url: paymentUrl,
-        hitpay_fee: hitpayFee,
-        net_collected: chargedToRenter,
+        hitpay_fee: roundMoney(hitpayFee),
+        net_collected: roundMoney(chargedToRenter),
       })
       .eq("id", booking.id);
 
@@ -831,6 +889,17 @@ export async function createPaymentForBooking(
       hitpay_payment_request_id: paymentRequestId,
       external_reference: paymentUrl,
       processed_at: new Date().toISOString(),
+    });
+
+    await createNotification({
+      userId: booking.renter_id,
+      type: "payment_initiated",
+      title: "Complete payment to confirm your booking",
+      body: "Complete payment to confirm your booking",
+      listingId: booking.listing_id,
+      bookingId: booking.id,
+      fromUserId: booking.lister_id,
+      actionUrl: `/dashboard/bookings/${booking.id}`,
     });
 
     revalidatePaymentViews();
@@ -944,9 +1013,9 @@ export async function handlePaymentConfirmed(params: {
     await Promise.all([
       createNotification({
         userId: booking.renter_id,
-        type: "payment_confirmed",
-        title: "Payment confirmed",
-        body: `Your payment of ${formatMoney(params.amount, params.currency)} has been confirmed.`,
+        type: "payment_completed",
+        title: "Payment confirmed!",
+        body: "Payment confirmed! Contact lister for handover",
         listingId: booking.listing_id,
         bookingId: booking.id,
         fromUserId: booking.lister_id,
@@ -955,8 +1024,8 @@ export async function handlePaymentConfirmed(params: {
       createNotification({
         userId: booking.lister_id,
         type: "payment_received",
-        title: "Payment received",
-        body: `${getDisplayName(booking.renter)} has completed payment. The booking is now confirmed.`,
+        title: "Payment received!",
+        body: "Payment received! Prepare item for handover.",
         listingId: booking.listing_id,
         bookingId: booking.id,
         fromUserId: booking.renter_id,
@@ -1159,9 +1228,9 @@ export async function processCancellationRefund(
 
       await createNotification({
         userId: booking.renter_id,
-        type: "refund_processed",
-        title: "Refund is on the way",
-        body: `Refund of ${formatMoney(refundAmount)} is on its way. It may take 5-10 business days to appear.`,
+        type: "refund_initiated",
+        title: `Refund of ${formatMoney(refundAmount)} is being processed`,
+        body: `Refund of ${formatMoney(refundAmount)} is being processed (5-10 business days)`,
         listingId: booking.listing_id,
         bookingId: booking.id,
         actionUrl: `/dashboard/bookings/${booking.id}`,
@@ -1170,8 +1239,8 @@ export async function processCancellationRefund(
       if (cancelledBy === "lister") {
         await createNotification({
           userId: booking.lister_id,
-          type: "refund_processed",
-          title: "Renter refunded",
+          type: "refund_completed",
+          title: "Refund completed",
           body: "You cancelled this booking and the renter has been refunded.",
           listingId: booking.listing_id,
           bookingId: booking.id,
@@ -1181,6 +1250,16 @@ export async function processCancellationRefund(
 
       revalidatePaymentViews();
 
+      await createNotification({
+        userId: booking.renter_id,
+        type: "refund_completed",
+        title: `Refund of ${formatMoney(refundAmount)} sent`,
+        body: `Refund of ${formatMoney(refundAmount)} sent back to your card/account`,
+        listingId: booking.listing_id,
+        bookingId: booking.id,
+        actionUrl: `/dashboard/bookings/${booking.id}`,
+      });
+
       return {
         refundAmount,
         message: `Refund of ${formatMoney(refundAmount)} processed.`,
@@ -1188,6 +1267,52 @@ export async function processCancellationRefund(
     } catch (error) {
       const message =
         error instanceof Error ? error.message : "Refund processing failed";
+
+      if (isHitPayExpiredRequestError(error)) {
+        await admin
+          .from("refunds")
+          .update({
+            status: "processing",
+            failure_reason: message,
+          })
+          .eq("id", refundRow.id);
+
+        await updateTransaction(transactionId, {
+          status: "processing",
+          failure_reason: message,
+        });
+
+        await admin
+          .from("bookings")
+          .update({
+            refund_id: refundRow.id,
+            refund_amount: roundMoney(refundAmount),
+          })
+          .eq("id", booking.id);
+
+        await createNotification({
+          userId: booking.renter_id,
+          type: "refund_initiated",
+          title: `Refund of ${formatMoney(refundAmount)} is being processed`,
+          body: `Refund of ${formatMoney(refundAmount)} is being processed (5-10 business days)`,
+          listingId: booking.listing_id,
+          bookingId: booking.id,
+          actionUrl: `/dashboard/bookings/${booking.id}`,
+        });
+
+        await notifyAdmins({
+          type: "refund_failed",
+          title: `URGENT: Refund failed for booking ${booking.id}`,
+          body: `HitPay refund requires manual processing for booking ${booking.id}. ${message}`,
+          bookingId: booking.id,
+          actionUrl: `/admin/bookings/${booking.id}`,
+        });
+
+        return {
+          refundAmount,
+          message: `Refund of ${formatMoney(refundAmount)} requires manual processing.`,
+        };
+      }
 
       await admin
         .from("refunds")
@@ -1215,6 +1340,7 @@ export async function processCancellationRefund(
       });
 
       await notifyAdmins({
+        type: "refund_failed",
         title: "URGENT: Refund failed",
         body: `Refund failed for booking ${booking.id}. ${message}`,
         bookingId: booking.id,
@@ -1289,8 +1415,8 @@ export async function handleFailedPayout(
       createNotification({
         userId: payout.lister_id,
         type: "payout_failed",
-        title: "Payout could not be processed",
-        body: `Reason: ${failureReason}. Please update your payout settings and request a retry.`,
+        title: "Payout failed",
+        body: "Payout failed — please update payout settings",
         bookingId: payout.booking_id ?? undefined,
         actionUrl: "/dashboard/settings/payments",
       }),
@@ -1305,8 +1431,9 @@ export async function handleFailedPayout(
     ]);
 
     await notifyAdmins({
-      title: "Payout failed",
-      body: `Payout failed for ${getDisplayName(payout.lister)}. Reason: ${failureReason}`,
+      type: "payout_failed_admin",
+      title: `Payout failed for lister ${getDisplayName(payout.lister)}`,
+      body: `Payout failed for lister ${getDisplayName(payout.lister)}. Reason: ${failureReason}`,
       bookingId: payout.booking_id ?? undefined,
       actionUrl: "/admin/payouts",
     });
@@ -1330,6 +1457,8 @@ export async function processPayoutToLister(
       return { error: "Only pending or failed payouts can be processed." };
     }
 
+    const currentPayoutMethod = payout.lister.payout_method ?? null;
+
     const payoutInitiatedId = await createTransactionRecord({
       bookingId: payout.booking_id,
       renterId: payout.booking.renter_id,
@@ -1345,7 +1474,17 @@ export async function processPayoutToLister(
       triggeredByRole: adminId ? "admin" : "system",
       metadata: {
         payout_id: payout.id,
+        payout_method: currentPayoutMethod,
       },
+    });
+
+    await createNotification({
+      userId: payout.lister_id,
+      type: "payout_initiated",
+      title: "Payout initiated",
+      body: `Your payout of ${formatMoney(payout.amount, payout.currency)} is being processed`,
+      bookingId: payout.booking_id ?? undefined,
+      actionUrl: "/dashboard/earnings",
     });
 
     if (!validatePayoutDetails(payout.lister)) {
@@ -1355,15 +1494,6 @@ export async function processPayoutToLister(
       });
 
       await handleFailedPayout(payout.id, "Invalid payout details");
-      await createNotification({
-        userId: payout.lister_id,
-        type: "payout_failed",
-        title: "Payout failed",
-        body: "Your payout failed. Please update your payout settings.",
-        bookingId: payout.booking_id ?? undefined,
-        actionUrl: "/dashboard/settings/payments",
-      });
-
       return { error: "Payout failed: invalid details" };
     }
 
@@ -1387,6 +1517,7 @@ export async function processPayoutToLister(
         processed_by: adminId ?? null,
         trigger_type: triggerType,
         net_amount: netAmount,
+        payout_method: currentPayoutMethod,
         reference_number: reference,
         failure_reason: null,
         can_retry: false,
@@ -1419,7 +1550,7 @@ export async function processPayoutToLister(
       processedAt: now,
       metadata: {
         payout_id: payout.id,
-        payout_method: payout.lister.payout_method,
+        payout_method: currentPayoutMethod,
       },
     });
 
@@ -1444,19 +1575,20 @@ export async function processPayoutToLister(
       previousStatus: payout.booking.status,
       actorRole: "system",
       title: "Payment sent to lister",
-      description: `Payout of ${formatMoney(payout.amount, payout.currency)} processed via ${payout.lister.payout_method ?? "configured method"}.`,
+      description: `Payout of ${formatMoney(payout.amount, payout.currency)} processed via ${currentPayoutMethod ?? "configured method"}.`,
       metadata: {
         payout_id: payout.id,
         amount: payout.amount,
         reference,
+        payout_method: currentPayoutMethod,
       },
     });
 
     await createNotification({
       userId: payout.lister_id,
       type: "payout_completed",
-      title: "Your payout has been processed",
-      body: `${formatMoney(payout.amount, payout.currency)} via ${payout.lister.payout_method ?? "configured method"} has been processed. Reference: ${reference}`,
+      title: "Payout completed",
+      body: `Payout of ${formatMoney(payout.amount, payout.currency)} sent via ${currentPayoutMethod ?? "configured method"}! Ref: ${reference}`,
       bookingId: payout.booking_id ?? undefined,
       actionUrl: "/dashboard/earnings",
     });
@@ -1481,6 +1613,68 @@ export async function autoTriggerPayout(bookingId: string): Promise<void> {
 
   try {
     const fees = await getFeeConfig();
+    const booking = await getBookingWithRelations(admin, bookingId);
+
+    if (!validatePayoutDetails(booking.lister)) {
+      let failedPayoutId = booking.payout_id;
+
+      if (failedPayoutId) {
+        const { error: failedUpdateError } = await admin
+          .from("payouts")
+          .update({
+            amount: roundMoney(booking.lister_payout),
+            gross_amount: roundMoney(booking.lister_payout),
+            platform_fee: roundMoney(booking.service_fee_lister),
+            hitpay_fee: roundMoney(booking.hitpay_fee ?? 0),
+            net_amount: roundMoney(booking.lister_payout),
+            payout_method: booking.lister.payout_method ?? null,
+            status: "failed",
+            trigger_type: "auto_after_completion",
+            can_retry: true,
+            failure_reason: "Invalid payout details",
+            notes: "Auto-payout could not start because payout settings are incomplete.",
+          })
+          .eq("id", failedPayoutId);
+
+        if (failedUpdateError) {
+          throw new Error(failedUpdateError.message);
+        }
+      } else {
+        const { data: failedPayout, error: failedPayoutError } = await admin
+          .from("payouts")
+          .insert({
+            lister_id: booking.lister_id,
+            booking_id: booking.id,
+            amount: roundMoney(booking.lister_payout),
+            gross_amount: roundMoney(booking.lister_payout),
+            platform_fee: roundMoney(booking.service_fee_lister),
+            hitpay_fee: roundMoney(booking.hitpay_fee ?? 0),
+            net_amount: roundMoney(booking.lister_payout),
+            currency: "SGD",
+            status: "failed",
+            payout_method: booking.lister.payout_method ?? null,
+            trigger_type: "auto_after_completion",
+            can_retry: true,
+            failure_reason: "Invalid payout details",
+            notes: "Auto-payout could not start because payout settings are incomplete.",
+          })
+          .select("id")
+          .maybeSingle<{ id: string }>();
+
+        if (failedPayoutError || !failedPayout) {
+          throw new Error(
+            failedPayoutError?.message ?? "Failed to create failed payout record",
+          );
+        }
+
+        failedPayoutId = failedPayout.id;
+        await admin.from("bookings").update({ payout_id: failedPayoutId }).eq("id", booking.id);
+      }
+
+      await handleFailedPayout(failedPayoutId, "Invalid payout details");
+      return;
+    }
+
     const { data, error } = await admin.rpc("trigger_auto_payout", {
       p_booking_id: bookingId,
     });
@@ -1574,6 +1768,7 @@ export async function retryFailedPayout(
     });
 
     await notifyAdmins({
+      type: "payout_retry_request",
       title: "Payout retry requested",
       body: `Lister ${getDisplayName(payout.lister)} has requested a payout retry.`,
       bookingId: payout.booking_id ?? undefined,
@@ -1642,10 +1837,20 @@ export async function holdPaymentForDispute(bookingId: string): Promise<void> {
     });
 
     await notifyAdmins({
+      type: "dispute_hold",
       title: "Payment held for dispute",
       body: `Payment of ${formatMoney(booking.net_collected ?? booking.total_price)} held due to dispute on booking ${booking.id}.`,
       bookingId: booking.id,
       actionUrl: `/admin/bookings/${booking.id}`,
+    });
+
+    await createNotification({
+      userId: booking.lister_id,
+      type: "dispute_hold",
+      title: "Payment held due to dispute",
+      body: "Payment held due to dispute",
+      bookingId: booking.id,
+      actionUrl: `/dashboard/bookings/${booking.id}`,
     });
   } catch (error) {
     console.error("holdPaymentForDispute failed:", error);
@@ -1661,9 +1866,11 @@ export async function resolveDisputePayment(params: {
   resolutionNotes: string;
   evidenceReviewed?: string;
 }): Promise<ActionResponse> {
-  const admin = createAdminClient();
-
   try {
+    const auth = await requireAdminUser();
+    const effectiveAdminId =
+      params.adminId === "self" || !params.adminId ? auth.user.id : params.adminId;
+    const admin = createAdminClient();
     const booking = await getBookingWithRelations(admin, params.bookingId);
     const total = roundMoney(booking.net_collected ?? booking.total_price);
     const platformFee = roundMoney(
@@ -1699,7 +1906,7 @@ export async function resolveDisputePayment(params: {
       .from("dispute_resolutions")
       .insert({
         booking_id: booking.id,
-        admin_id: params.adminId,
+        admin_id: effectiveAdminId,
         resolution_type: params.resolutionType,
         renter_refund_amount: renterRefundAmount,
         lister_payout_amount: listerPayoutAmount,
@@ -1729,7 +1936,7 @@ export async function resolveDisputePayment(params: {
           params.resolutionType === "split"
             ? "dispute_split"
             : "dispute_resolved_renter",
-        adminId: params.adminId,
+        adminId: effectiveAdminId,
         note: params.resolutionNotes,
         eventType:
           params.resolutionType === "split"
@@ -1746,12 +1953,15 @@ export async function resolveDisputePayment(params: {
         await admin
           .from("payouts")
           .update({
-            amount: listerPayoutAmount,
-            gross_amount: listerPayoutAmount,
-            net_amount: listerPayoutAmount,
+            amount: roundMoney(listerPayoutAmount),
+            gross_amount: roundMoney(listerPayoutAmount),
+            platform_fee: roundMoney(platformKeepsAmount),
+            net_amount: roundMoney(listerPayoutAmount),
             trigger_type: "dispute_resolved",
             status: "pending",
             can_retry: false,
+            payout_method: booking.lister.payout_method ?? null,
+            notes: `Updated from dispute resolution; platform_keeps_amount=${roundMoney(platformKeepsAmount).toFixed(2)}`,
           })
           .eq("id", existingPayoutId);
 
@@ -1762,17 +1972,17 @@ export async function resolveDisputePayment(params: {
           .insert({
             lister_id: booking.lister_id,
             booking_id: booking.id,
-            amount: listerPayoutAmount,
-            gross_amount: listerPayoutAmount,
-            platform_fee: 0,
+            amount: roundMoney(listerPayoutAmount),
+            gross_amount: roundMoney(listerPayoutAmount),
+            platform_fee: roundMoney(platformKeepsAmount),
             hitpay_fee: 0,
-            net_amount: listerPayoutAmount,
+            net_amount: roundMoney(listerPayoutAmount),
             currency: "SGD",
             status: "pending",
             payout_method: booking.lister.payout_method ?? null,
             trigger_type: "dispute_resolved",
             can_retry: false,
-            notes: "Created from dispute resolution",
+            notes: `Created from dispute resolution; platform_keeps_amount=${roundMoney(platformKeepsAmount).toFixed(2)}`,
           })
           .select("id")
           .maybeSingle<{ id: string }>();
@@ -1787,7 +1997,7 @@ export async function resolveDisputePayment(params: {
         await admin.from("bookings").update({ payout_id: payoutId }).eq("id", booking.id);
       }
 
-      await processPayoutToLister(payoutId, params.adminId);
+      await processPayoutToLister(payoutId, effectiveAdminId);
 
       await createTransactionRecord({
         bookingId: booking.id,
@@ -1799,17 +2009,18 @@ export async function resolveDisputePayment(params: {
             : "dispute_released_lister",
         grossAmount: listerPayoutAmount,
         hitpayFee: 0,
-        platformFee: 0,
+        platformFee: platformKeepsAmount,
         netAmount: listerPayoutAmount,
         currency: "SGD",
         idempotencyKey: `dispute_payout_release_${booking.id}_${params.resolutionType}`,
-        triggeredBy: params.adminId,
+        triggeredBy: effectiveAdminId,
         triggeredByRole: "admin",
         status: "completed",
         processedAt: new Date().toISOString(),
         metadata: {
           payout_id: payoutId,
           resolution_id: resolution.id,
+          platform_keeps_amount: roundMoney(platformKeepsAmount),
         },
       });
     }
@@ -1819,7 +2030,7 @@ export async function resolveDisputePayment(params: {
       .from("bookings")
       .update({
         status: "completed",
-        dispute_resolved_by: params.adminId,
+        dispute_resolved_by: effectiveAdminId,
         dispute_resolved_at: now,
         dispute_resolution: params.resolutionType,
       })
@@ -1829,7 +2040,7 @@ export async function resolveDisputePayment(params: {
       bookingId: booking.id,
       status: "completed",
       previousStatus: "disputed",
-      actorId: params.adminId,
+      actorId: effectiveAdminId,
       actorRole: "admin",
       title: "Dispute resolved by admin",
       description: `Admin decision: ${params.resolutionType}. ${params.resolutionNotes}`,
@@ -1847,7 +2058,7 @@ export async function resolveDisputePayment(params: {
         userId: booking.renter_id,
         type: "dispute_resolved",
         title: "Dispute resolved",
-        body: `Resolution: ${params.resolutionType}. Refund outcome: ${formatMoney(renterRefundAmount)}.`,
+        body: `Dispute resolved. You'll receive ${formatMoney(renterRefundAmount)} back.`,
         bookingId: booking.id,
         actionUrl: `/dashboard/bookings/${booking.id}`,
       }),
@@ -1855,14 +2066,14 @@ export async function resolveDisputePayment(params: {
         userId: booking.lister_id,
         type: "dispute_resolved",
         title: "Dispute resolved",
-        body: `Resolution: ${params.resolutionType}. Payout outcome: ${formatMoney(listerPayoutAmount)}.`,
+        body: `Dispute resolved. You'll receive ${formatMoney(listerPayoutAmount)}.`,
         bookingId: booking.id,
         actionUrl: `/dashboard/bookings/${booking.id}`,
       }),
     ]);
 
     await logAdminAction({
-      adminId: params.adminId,
+      adminId: effectiveAdminId,
       action: "dispute_resolved",
       targetType: "booking",
       targetId: booking.id,
@@ -1904,6 +2115,107 @@ export async function getTransactionsForBooking(
   } catch (error) {
     console.error("getTransactionsForBooking failed:", error);
     return [];
+  }
+}
+
+export async function getTransactionsForLister(
+  userId: string,
+): Promise<Transaction[]> {
+  try {
+    const supabase = await createClient();
+    const { data, error } = await supabase
+      .from("transactions")
+      .select("*")
+      .eq("lister_id", userId)
+      .order("created_at", { ascending: false });
+
+    if (error) {
+      throw new Error(error.message);
+    }
+
+    return (data ?? []) as Transaction[];
+  } catch (error) {
+    console.error("getTransactionsForLister failed:", error);
+    return [];
+  }
+}
+
+export async function markPayoutFailedByAdmin(
+  payoutId: string,
+  reason: string,
+): Promise<ActionResponse> {
+  try {
+    const auth = await requireAdminUser();
+    const admin = createAdminClient();
+    const trimmedReason = reason.trim();
+
+    if (trimmedReason.length < 3) {
+      return { error: "Failure reason must be at least 3 characters." };
+    }
+
+    const payout = await getPayoutWithRelations(admin, payoutId);
+    const now = new Date().toISOString();
+
+    const { error } = await admin
+      .from("payouts")
+      .update({
+        status: "failed",
+        failure_reason: trimmedReason,
+        can_retry: true,
+        updated_at: now,
+      })
+      .eq("id", payoutId);
+
+    if (error) {
+      return { error: error.message };
+    }
+
+    await createTransactionRecord({
+      bookingId: payout.booking_id,
+      renterId: payout.booking.renter_id,
+      listerId: payout.lister_id,
+      eventType: "payout_failed",
+      grossAmount: payout.amount,
+      hitpayFee: payout.hitpay_fee,
+      platformFee: payout.platform_fee,
+      netAmount: 0,
+      currency: payout.currency,
+      idempotencyKey: `payout_failed_admin_${payout.id}_${payout.retry_count}_${now}`,
+      triggeredBy: auth.user.id,
+      triggeredByRole: "admin",
+      status: "failed",
+      failureReason: trimmedReason,
+      processedAt: now,
+      metadata: {
+        payout_id: payout.id,
+      },
+    });
+
+    await createNotification({
+      userId: payout.lister_id,
+      type: "payout_failed",
+      title: "Payout failed",
+      body: `Your payout could not be processed. Reason: ${trimmedReason}`,
+      bookingId: payout.booking_id ?? undefined,
+      actionUrl: "/dashboard/earnings",
+    });
+
+    await logAdminAction({
+      adminId: auth.user.id,
+      action: "payout_marked_failed",
+      targetType: "payout",
+      targetId: payout.id,
+      details: {
+        reason: trimmedReason,
+      },
+    });
+
+    revalidatePaymentViews();
+
+    return { success: "Payout marked as failed." };
+  } catch (error) {
+    console.error("markPayoutFailedByAdmin failed:", error);
+    return { error: "Could not mark payout as failed." };
   }
 }
 

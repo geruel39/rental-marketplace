@@ -760,9 +760,9 @@ export async function uploadKYCDocument(
         ((adminUsers ?? []) as Array<Pick<Profile, "id">>).map((adminUser) =>
           createNotification({
             userId: adminUser.id,
-            type: "kyc_review_required",
-            title: "New KYC document to review",
-            body: `New KYC document to review from ${getUserDisplayName(profile)}`,
+            type: "new_kyc",
+            title: `New KYC to verify from ${getUserDisplayName(profile)}`,
+            body: `New KYC to verify from ${getUserDisplayName(profile)}`,
             fromUserId: user.id,
             actionUrl: `/admin/kyc-verification`,
           }),

@@ -306,6 +306,12 @@ export function BookingWidget({ listing, isOwner, isLoggedIn }: BookingWidgetPro
             <span>Total</span>
             <span>{formatCurrency(total)}</span>
           </p>
+          <p className="text-xs text-muted-foreground">
+            Fees and cancellation terms apply.{" "}
+            <Link className="font-medium text-brand-navy underline underline-offset-4" href="/fees">
+              View fee disclosure
+            </Link>
+          </p>
         </section>
 
         <section className="space-y-2">

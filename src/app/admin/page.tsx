@@ -17,7 +17,7 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import { formatRelativeTime } from "@/lib/utils";
+import { formatCurrency, formatRelativeTime } from "@/lib/utils";
 
 function toBoolean(value: unknown) {
   if (typeof value === "boolean") return value;
@@ -85,6 +85,45 @@ export default async function AdminPage() {
       ) : null}
 
       <AdminStatsCards stats={stats} />
+
+      <Card className="border-border/70 bg-white shadow-sm">
+        <CardHeader>
+          <CardTitle>Platform Fees Collected This Month</CardTitle>
+          <CardDescription>
+            Revenue collected from both sides of completed bookings, net of absorbed
+            HitPay costs.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+          <div className="rounded-2xl border border-brand-navy/10 bg-brand-light p-4">
+            <p className="text-sm text-muted-foreground">From renters</p>
+            <p className="mt-2 text-2xl font-semibold text-brand-navy">
+              {formatCurrency(stats.platformFeesFromRentersThisMonth)}
+            </p>
+          </div>
+          <div className="rounded-2xl border border-brand-navy/10 bg-brand-light p-4">
+            <p className="text-sm text-muted-foreground">From listers</p>
+            <p className="mt-2 text-2xl font-semibold text-brand-navy">
+              {formatCurrency(stats.platformFeesFromListersThisMonth)}
+            </p>
+          </div>
+          <div className="rounded-2xl border border-brand-navy/10 bg-brand-light p-4">
+            <p className="text-sm text-muted-foreground">HitPay fees absorbed</p>
+            <p className="mt-2 text-2xl font-semibold text-red-600">
+              {formatCurrency(stats.hitpayFeesAbsorbedThisMonth)}
+            </p>
+          </div>
+          <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-4">
+            <p className="text-sm text-muted-foreground">Net platform revenue</p>
+            <p className="mt-2 text-2xl font-semibold text-brand-navy">
+              {formatCurrency(stats.netPlatformRevenueThisMonth)}
+            </p>
+            <p className="mt-1 text-xs text-muted-foreground">
+              Total fees {formatCurrency(stats.platformFeesCollectedThisMonth)}
+            </p>
+          </div>
+        </CardContent>
+      </Card>
 
       <div className="grid gap-6 xl:grid-cols-[1.1fr_0.9fr]">
         <Card className="border-border/70 bg-white shadow-sm">

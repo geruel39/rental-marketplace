@@ -3,17 +3,21 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 
 import { cancelBooking, getMyRentals, raiseDispute } from "@/actions/bookings";
+import { getFeeConfig } from "@/actions/payments";
 import { BookingStatusBadge } from "@/components/bookings/booking-status-badge";
 import { PaymentButton } from "@/components/bookings/payment-button";
 import { PaymentCountdown } from "@/components/bookings/payment-countdown";
 import { RentalCountdown } from "@/components/bookings/rental-countdown";
 import { ReturnDialog } from "@/components/bookings/return-dialog";
+import { PaymentBreakdownCard } from "@/components/payments/payment-breakdown-card";
+import { RefundStatusCard } from "@/components/payments/refund-status-card";
 import { EmptyState } from "@/components/shared/empty-state";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { createClient } from "@/lib/supabase/server";
-import { cn, formatCurrency, getInitials } from "@/lib/utils";
-import type { BookingWithDetails } from "@/types";
+import { calculatePaymentBreakdown, cn, formatCurrency, getInitials } from "@/lib/utils";
+import type { BookingWithDetails, Refund } from "@/types";
 
 type SearchParams = Record<string, string | string[] | undefined>;
 type FilterKey =
@@ -84,6 +88,12 @@ function formatDuration(booking: BookingWithDetails) {
   return `${units} ${period}${units === 1 ? "" : "s"}`;
 }
 
+function maskPaymentReference(reference?: string | null) {
+  if (!reference) return "Pending";
+  if (reference.length <= 8) return reference;
+  return `${reference.slice(0, 4)}••••${reference.slice(-4)}`;
+}
+
 function getConditionTone(condition?: string | null) {
   switch (condition) {
     case "excellent":
@@ -137,19 +147,6 @@ function RentalActions({ booking }: { booking: BookingWithDetails }) {
             <PaymentCountdown expiresAt={booking.payment_expires_at} />
           </div>
         ) : null}
-        <form
-          action={
-            cancelBooking.bind(
-              null,
-              booking.id,
-              "Cancelled by renter before payment.",
-            ) as unknown as (formData: FormData) => Promise<void>
-          }
-        >
-          <Button size="sm" variant="outline">
-            Cancel
-          </Button>
-        </form>
       </div>
     );
   }
@@ -157,7 +154,12 @@ function RentalActions({ booking }: { booking: BookingWithDetails }) {
   if (booking.status === "confirmed") {
     return (
       <div className="space-y-2 text-right">
-        <p className="text-sm text-muted-foreground">Paid - arrange pickup with lister</p>
+        <Badge className="bg-emerald-100 text-emerald-900">
+          Paid ✓ {formatCurrency(booking.total_price)}
+        </Badge>
+        <p className="text-sm text-muted-foreground">
+          HitPay ref: {maskPaymentReference(booking.hitpay_payment_id)}
+        </p>
         <Button asChild size="sm" variant="outline">
           <Link href="/dashboard/messages">Message Lister</Link>
         </Button>
@@ -188,24 +190,6 @@ function RentalActions({ booking }: { booking: BookingWithDetails }) {
     );
   }
 
-  if (booking.status === "returned") {
-    return (
-      <div className="space-y-2 text-right">
-        <p className="text-sm text-muted-foreground">Waiting for lister to inspect...</p>
-        {booking.return_proof_urls.length > 0 ? (
-          <div className="grid grid-cols-4 gap-2">
-            {booking.return_proof_urls.slice(0, 4).map((url) => (
-              <a href={url} key={url} rel="noreferrer" target="_blank">
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img alt="Return proof" className="h-12 w-full rounded-md border object-cover" src={url} />
-              </a>
-            ))}
-          </div>
-        ) : null}
-      </div>
-    );
-  }
-
   if (booking.status === "completed") {
     return (
       <div className="space-y-2 text-right">
@@ -219,11 +203,6 @@ function RentalActions({ booking }: { booking: BookingWithDetails }) {
             {booking.return_condition.replaceAll("_", " ")}
           </span>
         ) : null}
-        {!booking.renter_reviewed ? (
-          <Button asChild size="sm" variant="outline">
-            <Link href="/dashboard/reviews">Leave Review</Link>
-          </Button>
-        ) : null}
       </div>
     );
   }
@@ -235,11 +214,11 @@ function RentalActions({ booking }: { booking: BookingWithDetails }) {
   );
 }
 
-interface MyRentalsPageProps {
+export default async function MyRentalsPage({
+  searchParams,
+}: {
   searchParams: Promise<SearchParams>;
-}
-
-export default async function MyRentalsPage({ searchParams }: MyRentalsPageProps) {
+}) {
   const supabase = await createClient();
   const {
     data: { user },
@@ -251,15 +230,31 @@ export default async function MyRentalsPage({ searchParams }: MyRentalsPageProps
 
   const resolvedSearchParams = await searchParams;
   const activeFilter = getFilter(getSingleValue(resolvedSearchParams.status));
-  const bookings = await getMyRentals(user.id);
+  const [bookings, fees] = await Promise.all([getMyRentals(user.id), getFeeConfig()]);
   const filteredBookings = bookings.filter((booking) => matchesFilter(booking, activeFilter));
+  const bookingIds = bookings.map((booking) => booking.id);
+
+  const refundMap = new Map<string, Refund>();
+  if (bookingIds.length > 0) {
+    const { data: refunds } = await supabase
+      .from("refunds")
+      .select("*")
+      .in("booking_id", bookingIds)
+      .order("created_at", { ascending: false });
+
+    for (const refund of (refunds ?? []) as Refund[]) {
+      if (!refundMap.has(refund.booking_id)) {
+        refundMap.set(refund.booking_id, refund);
+      }
+    }
+  }
 
   return (
     <div className="space-y-6">
       <div className="space-y-2">
         <h1 className="text-2xl font-semibold tracking-tight">My Rentals</h1>
         <p className="text-sm text-muted-foreground">
-          Track payment, handover, active rental deadlines, return proof, and completion.
+          Track payment, handover, refunds, and completion for every booking.
         </p>
       </div>
 
@@ -289,6 +284,14 @@ export default async function MyRentalsPage({ searchParams }: MyRentalsPageProps
         <div className="space-y-4">
           {filteredBookings.map((booking) => {
             const listerName = booking.lister.display_name || booking.lister.full_name;
+            const refund = refundMap.get(booking.id);
+            const breakdown = calculatePaymentBreakdown({
+              subtotal: booking.subtotal,
+              depositAmount: booking.deposit_amount,
+              pricingPeriod: booking.pricing_period,
+              fees,
+            });
+
             return (
               <article
                 key={booking.id}
@@ -336,6 +339,13 @@ export default async function MyRentalsPage({ searchParams }: MyRentalsPageProps
                         />
                       ) : null}
 
+                      {booking.status === "completed" ? (
+                        <p className="text-sm text-muted-foreground">
+                          Payment summary: paid {formatCurrency(booking.total_price)}
+                          {refund ? `, received refund ${formatCurrency(refund.refund_amount, refund.currency)}` : ""}
+                        </p>
+                      ) : null}
+
                       <Link
                         className="inline-flex text-sm font-medium text-brand-navy hover:underline"
                         href={`/dashboard/bookings/${booking.id}`}
@@ -349,6 +359,24 @@ export default async function MyRentalsPage({ searchParams }: MyRentalsPageProps
                     <RentalActions booking={booking} />
                   </div>
                 </div>
+
+                {(booking.status === "awaiting_payment" ||
+                  booking.status === "confirmed" ||
+                  booking.status === "completed" ||
+                  refund) ? (
+                  <div className="mt-5 space-y-4 border-t border-border/70 pt-5">
+                    {(booking.status === "awaiting_payment" || booking.status === "confirmed") ? (
+                      <PaymentBreakdownCard
+                        breakdown={breakdown}
+                        pricingPeriod={booking.pricing_period}
+                        quantity={booking.quantity}
+                        rentalUnits={booking.rental_units || booking.num_units || 1}
+                        viewer="renter"
+                      />
+                    ) : null}
+                    {refund ? <RefundStatusCard refund={refund} /> : null}
+                  </div>
+                ) : null}
               </article>
             );
           })}

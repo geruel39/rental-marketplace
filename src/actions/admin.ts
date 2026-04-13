@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { headers } from "next/headers";
 
 import { createNotification } from "@/actions/notifications";
+import { getFeeConfig } from "@/actions/payments";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
 import { formatCurrency } from "@/lib/utils";
@@ -369,7 +370,7 @@ export async function getAdminDashboardStats(): Promise<AdminDashboardStats> {
       .eq("status", "completed"),
     admin
       .from("bookings")
-      .select("service_fee_renter, service_fee_lister")
+      .select("service_fee_renter, service_fee_lister, hitpay_fee")
       .eq("status", "completed")
       .gte("updated_at", monthStart),
     admin
@@ -397,6 +398,7 @@ export async function getAdminDashboardStats(): Promise<AdminDashboardStats> {
   const revenueThisMonthRows = (monthRevenueResult.data ?? []) as Array<{
     service_fee_renter: number | null;
     service_fee_lister: number | null;
+    hitpay_fee: number | null;
   }>;
   const pendingPayoutRows = (pendingPayoutRowsResult.data ?? []) as Array<{
     amount: number | null;
@@ -404,6 +406,21 @@ export async function getAdminDashboardStats(): Promise<AdminDashboardStats> {
   const inventoryRows = (inventoryItemsResult.data ?? []) as Array<{
     quantity_total: number | null;
   }>;
+
+  const feeConfig = await getFeeConfig();
+  const platformFeesFromRentersThisMonth = revenueThisMonthRows.reduce(
+    (sum, row) => sum + (row.service_fee_renter ?? 0),
+    0,
+  );
+  const platformFeesFromListersThisMonth = revenueThisMonthRows.reduce(
+    (sum, row) => sum + (row.service_fee_lister ?? 0),
+    0,
+  );
+  const platformFeesCollectedThisMonth =
+    platformFeesFromRentersThisMonth + platformFeesFromListersThisMonth;
+  const hitpayFeesAbsorbedThisMonth = feeConfig.platform_absorbs_hitpay_fee
+    ? revenueThisMonthRows.reduce((sum, row) => sum + (row.hitpay_fee ?? 0), 0)
+    : 0;
 
   return {
     totalUsers: totalUsersResult.count ?? 0,
@@ -422,6 +439,12 @@ export async function getAdminDashboardStats(): Promise<AdminDashboardStats> {
       (sum, row) => sum + (row.service_fee_renter ?? 0) + (row.service_fee_lister ?? 0),
       0,
     ),
+    platformFeesFromRentersThisMonth,
+    platformFeesFromListersThisMonth,
+    platformFeesCollectedThisMonth,
+    hitpayFeesAbsorbedThisMonth,
+    netPlatformRevenueThisMonth:
+      platformFeesCollectedThisMonth - hitpayFeesAbsorbedThisMonth,
     pendingPayouts: pendingPayoutCountResult.count ?? 0,
     pendingPayoutsAmount: sumNumbers(pendingPayoutRows.map((row) => row.amount)),
     openReports: openReportsResult.count ?? 0,

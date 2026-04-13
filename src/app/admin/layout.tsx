@@ -38,11 +38,20 @@ export default async function AdminLayout({
 
   const displayName =
     profile.display_name || profile.full_name || profile.email || user.email || "Admin";
-  const { count: pendingKycCount } = await getPendingKYCVerifications();
+  const [{ count: pendingKycCount }, failedPayoutsResult] = await Promise.all([
+    getPendingKYCVerifications(),
+    supabase
+      .from("payouts")
+      .select("id", { count: "exact", head: true })
+      .eq("status", "failed"),
+  ]);
 
   return (
     <div className="min-h-[calc(100vh-4rem)] bg-brand-light">
-      <AdminSidebar pendingKycCount={pendingKycCount} />
+      <AdminSidebar
+        failedPayoutCount={failedPayoutsResult.count ?? 0}
+        pendingKycCount={pendingKycCount}
+      />
       <div className="lg:pl-72">
         <div className="border-b border-brand-navy/10 bg-brand-navy text-white">
           <div className="flex min-h-16 items-center justify-between gap-4 px-4 py-3 sm:px-6 lg:px-8">

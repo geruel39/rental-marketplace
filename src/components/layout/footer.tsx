@@ -23,6 +23,7 @@ const footerColumns = [
     links: [
       { label: "Help", href: "/" },
       { label: "Contact", href: "/" },
+      { label: "Fees", href: "/fees" },
     ],
   },
   {
