@@ -8,12 +8,12 @@ import {
   cancelBooking,
   declineBookingRequest,
   getIncomingRequests,
-  raiseDispute,
 } from "@/actions/bookings";
 import { BookingStatusBadge } from "@/components/bookings/booking-status-badge";
 import { ConditionCheckForm } from "@/components/bookings/condition-check-form";
 import { HandoverDialog } from "@/components/bookings/handover-dialog";
 import { PaymentCountdown } from "@/components/bookings/payment-countdown";
+import { RaiseDisputeDialog } from "@/components/bookings/raise-dispute-dialog";
 import { RentalCountdown } from "@/components/bookings/rental-countdown";
 import { EmptyState } from "@/components/shared/empty-state";
 import {
@@ -215,19 +215,9 @@ function RequestActions({ booking }: { booking: BookingWithDetails }) {
         <p className="text-sm text-muted-foreground">
           {booking.returned_at ? "Return was submitted" : "Waiting for renter to return"}
         </p>
-        <form
-          action={
-            raiseDispute.bind(
-              null,
-              booking.id,
-              "Issue reported by lister.",
-            ) as unknown as (formData: FormData) => Promise<void>
-          }
-        >
-          <Button size="sm" variant="outline">
-            Raise Dispute
-          </Button>
-        </form>
+        <div className="flex justify-end">
+          <RaiseDisputeDialog bookingId={booking.id} buttonSize="sm" />
+        </div>
       </div>
     );
   }

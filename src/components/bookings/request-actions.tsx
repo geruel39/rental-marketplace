@@ -2,13 +2,8 @@
 
 import { format } from "date-fns";
 import { useState, useTransition } from "react";
-import {
-  CheckCircle2,
-  Loader2,
-  ShieldAlert,
-  Truck,
-  XCircle,
-} from "lucide-react";
+import { CheckCircle2, Loader2, Truck, XCircle } from "lucide-react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 
@@ -19,11 +14,10 @@ import {
   markItemHandedOver,
   markItemReturned,
   markOutForDelivery,
-  raiseDispute,
 } from "@/actions/bookings";
 import { ConditionCheckForm } from "@/components/bookings/condition-check-form";
 import { PaymentCountdown } from "@/components/bookings/payment-countdown";
-import { DualReviewForm } from "@/components/reviews/dual-review-form";
+import { RaiseDisputeDialog } from "@/components/bookings/raise-dispute-dialog";
 import { ConfirmDialog } from "@/components/shared/confirm-dialog";
 import { Button } from "@/components/ui/button";
 import {
@@ -56,7 +50,6 @@ export function RequestActions({ booking }: RequestActionsProps) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
   const [deliveryNotes, setDeliveryNotes] = useState("");
-  const [disputeReason, setDisputeReason] = useState("");
 
   function runAction(action: () => Promise<{ success?: string; error?: string }>) {
     startTransition(async () => {
@@ -228,42 +221,7 @@ export function RequestActions({ booking }: RequestActionsProps) {
             {isPending ? <Loader2 className="size-4 animate-spin" /> : null}
             Mark Item Returned
           </Button>
-
-          <Dialog>
-            <DialogTrigger asChild>
-              <Button type="button" variant="outline">
-                <ShieldAlert className="size-4" />
-                Raise Dispute
-              </Button>
-            </DialogTrigger>
-            <DialogContent>
-              <DialogHeader>
-                <DialogTitle>Raise Dispute</DialogTitle>
-                <DialogDescription>
-                  Explain the issue so the platform team can review it.
-                </DialogDescription>
-              </DialogHeader>
-              <div className="space-y-2">
-                <Label htmlFor={`dispute-reason-${booking.id}`}>Reason</Label>
-                <Textarea
-                  id={`dispute-reason-${booking.id}`}
-                  onChange={(event) => setDisputeReason(event.target.value)}
-                  rows={4}
-                  value={disputeReason}
-                />
-              </div>
-              <DialogFooter>
-                <Button
-                  disabled={isPending || disputeReason.trim().length < 5}
-                  onClick={() => runAction(() => raiseDispute(booking.id, disputeReason))}
-                  type="button"
-                  variant="outline"
-                >
-                  Raise Dispute
-                </Button>
-              </DialogFooter>
-            </DialogContent>
-          </Dialog>
+          <RaiseDisputeDialog bookingId={booking.id} />
         </div>
       </div>
     );
@@ -281,15 +239,9 @@ export function RequestActions({ booking }: RequestActionsProps) {
           <p>Payout: {formatCurrency(booking.lister_payout)}</p>
         </div>
         {!booking.lister_reviewed ? (
-          <DualReviewForm
-            booking={booking}
-            currentUserId={booking.lister_id}
-            trigger={
-              <Button type="button" variant="outline">
-                Leave Review
-              </Button>
-            }
-          />
+          <Button asChild type="button" variant="outline">
+            <Link href="/dashboard/reviews">Leave Review</Link>
+          </Button>
         ) : null}
       </div>
     );

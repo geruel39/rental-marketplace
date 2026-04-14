@@ -2,11 +2,12 @@ import { PackageSearch, Star } from "lucide-react";
 import Link from "next/link";
 import { redirect } from "next/navigation";
 
-import { cancelBooking, getMyRentals, raiseDispute } from "@/actions/bookings";
+import { cancelBooking, getMyRentals } from "@/actions/bookings";
 import { getFeeConfig } from "@/actions/payments";
 import { BookingStatusBadge } from "@/components/bookings/booking-status-badge";
 import { PaymentButton } from "@/components/bookings/payment-button";
 import { PaymentCountdown } from "@/components/bookings/payment-countdown";
+import { RaiseDisputeDialog } from "@/components/bookings/raise-dispute-dialog";
 import { RentalCountdown } from "@/components/bookings/rental-countdown";
 import { ReturnDialog } from "@/components/bookings/return-dialog";
 import { PaymentBreakdownCard } from "@/components/payments/payment-breakdown-card";
@@ -173,19 +174,9 @@ function RentalActions({ booking }: { booking: BookingWithDetails }) {
         <div className="flex justify-end">
           <ReturnDialog booking={booking} />
         </div>
-        <form
-          action={
-            raiseDispute.bind(
-              null,
-              booking.id,
-              "Issue reported by renter.",
-            ) as unknown as (formData: FormData) => Promise<void>
-          }
-        >
-          <Button size="sm" variant="outline">
-            Raise Dispute
-          </Button>
-        </form>
+        <div className="flex justify-end">
+          <RaiseDisputeDialog bookingId={booking.id} buttonSize="sm" />
+        </div>
       </div>
     );
   }
@@ -202,6 +193,11 @@ function RentalActions({ booking }: { booking: BookingWithDetails }) {
           >
             {booking.return_condition.replaceAll("_", " ")}
           </span>
+        ) : null}
+        {!booking.renter_reviewed ? (
+          <Button asChild size="sm" variant="outline">
+            <Link href="/dashboard/reviews">Leave Review</Link>
+          </Button>
         ) : null}
       </div>
     );

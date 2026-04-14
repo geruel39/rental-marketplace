@@ -1,34 +1,19 @@
 "use client";
 
 import { format } from "date-fns";
-import { useState, useTransition } from "react";
-import {
-  Loader2,
-  ShieldAlert,
-  Star,
-  Truck,
-} from "lucide-react";
+import { useTransition } from "react";
+import { Loader2, Star, Truck } from "lucide-react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 
-import { cancelBooking, raiseDispute } from "@/actions/bookings";
+import { cancelBooking } from "@/actions/bookings";
 import { PaymentButton } from "@/components/bookings/payment-button";
 import { PaymentCountdown } from "@/components/bookings/payment-countdown";
+import { RaiseDisputeDialog } from "@/components/bookings/raise-dispute-dialog";
 import { ReturnForm } from "@/components/bookings/return-form";
-import { DualReviewForm } from "@/components/reviews/dual-review-form";
 import { ConfirmDialog } from "@/components/shared/confirm-dialog";
 import { Button } from "@/components/ui/button";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-  DialogTrigger,
-} from "@/components/ui/dialog";
-import { Label } from "@/components/ui/label";
-import { Textarea } from "@/components/ui/textarea";
 import type { BookingWithDetails } from "@/types";
 
 interface RentalActionsProps {
@@ -46,7 +31,6 @@ function formatDateTime(value?: string | null) {
 export function RentalActions({ booking }: RentalActionsProps) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
-  const [disputeReason, setDisputeReason] = useState("");
 
   function refreshWithToast(result: { success?: string; error?: string }) {
     if (result.error) {
@@ -170,47 +154,7 @@ export function RentalActions({ booking }: RentalActionsProps) {
         </p>
         <div className="flex flex-wrap justify-end gap-2">
           <ReturnForm booking={booking} />
-
-          <Dialog>
-            <DialogTrigger asChild>
-              <Button type="button" variant="outline">
-                <ShieldAlert className="size-4" />
-                Raise Dispute
-              </Button>
-            </DialogTrigger>
-            <DialogContent>
-              <DialogHeader>
-                <DialogTitle>Raise Dispute</DialogTitle>
-                <DialogDescription>
-                  Tell us what went wrong and we&apos;ll help resolve it.
-                </DialogDescription>
-              </DialogHeader>
-              <div className="space-y-2">
-                <Label htmlFor={`renter-dispute-${booking.id}`}>Reason</Label>
-                <Textarea
-                  id={`renter-dispute-${booking.id}`}
-                  onChange={(event) => setDisputeReason(event.target.value)}
-                  rows={4}
-                  value={disputeReason}
-                />
-              </div>
-              <DialogFooter>
-                <Button
-                  disabled={isPending || disputeReason.trim().length < 5}
-                  onClick={() => {
-                    startTransition(async () => {
-                      const result = await raiseDispute(booking.id, disputeReason);
-                      refreshWithToast(result);
-                    });
-                  }}
-                  type="button"
-                  variant="outline"
-                >
-                  Raise Dispute
-                </Button>
-              </DialogFooter>
-            </DialogContent>
-          </Dialog>
+          <RaiseDisputeDialog bookingId={booking.id} />
         </div>
       </div>
     );
@@ -234,16 +178,12 @@ export function RentalActions({ booking }: RentalActionsProps) {
           </p>
         </div>
         {!booking.renter_reviewed ? (
-          <DualReviewForm
-            booking={booking}
-            currentUserId={booking.renter_id}
-            trigger={
-              <Button type="button" variant="outline">
-                <Star className="size-4" />
-                Leave Review
-              </Button>
-            }
-          />
+          <Button asChild type="button" variant="outline">
+            <Link href="/dashboard/reviews">
+              <Star className="size-4" />
+              Leave Review
+            </Link>
+          </Button>
         ) : null}
       </div>
     );

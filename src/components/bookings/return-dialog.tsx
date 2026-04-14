@@ -88,7 +88,7 @@ export function ReturnDialog({ booking, onSuccess }: ReturnDialogProps) {
           Confirm Return
         </Button>
       </DialogTrigger>
-      <DialogContent className="sm:max-w-2xl">
+      <DialogContent className="flex max-h-[90vh] flex-col overflow-hidden bg-white sm:max-w-2xl">
         <DialogHeader>
           <DialogTitle>Confirm Item Return</DialogTitle>
           <DialogDescription>
@@ -96,7 +96,11 @@ export function ReturnDialog({ booking, onSuccess }: ReturnDialogProps) {
           </DialogDescription>
         </DialogHeader>
 
-        <div className="space-y-4">
+        <div
+          className="flex-1 space-y-4 overflow-y-scroll pr-2 focus:outline-none"
+          style={{ scrollbarGutter: "stable" }}
+          tabIndex={0}
+        >
           <div className="rounded-xl border bg-muted/20 p-3 text-sm">
             <p className="font-medium">{booking.listing.title}</p>
             <p className="text-muted-foreground">

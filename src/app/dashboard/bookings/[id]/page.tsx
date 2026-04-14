@@ -7,7 +7,6 @@ import {
   cancelBooking,
   getBookingDetails,
   getBookingTimeline,
-  raiseDispute,
 } from "@/actions/bookings";
 import {
   getFeeConfig,
@@ -20,6 +19,7 @@ import { ConditionCheckForm } from "@/components/bookings/condition-check-form";
 import { HandoverDialog } from "@/components/bookings/handover-dialog";
 import { PaymentButton } from "@/components/bookings/payment-button";
 import { PaymentCountdown } from "@/components/bookings/payment-countdown";
+import { RaiseDisputeDialog } from "@/components/bookings/raise-dispute-dialog";
 import { RentalCountdown } from "@/components/bookings/rental-countdown";
 import { ReturnDialog } from "@/components/bookings/return-dialog";
 import { DisputeResolutionForm } from "@/components/payments/dispute-resolution-form";
@@ -151,6 +151,9 @@ export default async function BookingDetailPage({ params }: BookingDetailPagePro
     booking.status === "awaiting_payment" ||
     booking.status === "confirmed";
   const canDispute = booking.status === "active" || booking.status === "returned";
+  const canLeaveReview =
+    booking.status === "completed" &&
+    ((isRenter && !booking.renter_reviewed) || (isLister && !booking.lister_reviewed));
   const isLateReturn =
     Boolean(booking.returned_at) &&
     Boolean(booking.rental_ends_at) &&
@@ -472,19 +475,12 @@ export default async function BookingDetailPage({ params }: BookingDetailPagePro
                 </form>
               ) : null}
               {canDispute ? (
-                <form
-                  action={
-                    raiseDispute.bind(
-                      null,
-                      booking.id,
-                      "Dispute raised from booking details page.",
-                    ) as unknown as (formData: FormData) => Promise<void>
-                  }
-                >
-                  <Button className="w-full" variant="outline">
-                    Raise Dispute
-                  </Button>
-                </form>
+                <RaiseDisputeDialog bookingId={booking.id} fullWidth />
+              ) : null}
+              {canLeaveReview ? (
+                <Button asChild className="w-full" variant="outline">
+                  <Link href="/dashboard/reviews">Leave Review</Link>
+                </Button>
               ) : null}
             </div>
           </section>
