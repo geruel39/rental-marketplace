@@ -574,10 +574,279 @@ export interface Favorite {
   created_at: string;
 }
 
+export interface BundlePreviewItem {
+  text: string;
+  from_name?: string;
+  related_title?: string;
+  created_at: string;
+}
+
+export const NOTIFICATION_CONFIG = {
+  new_message: {
+    label: "New Message",
+    icon: "MessageSquare",
+    color: "text-blue-500",
+    shouldBundle: true,
+    bundleKey: "messages_{userId}",
+    bundleTitleTemplate: "You have {count} new message(s)",
+    defaultActionUrl: "/dashboard/messages",
+    priority: "low",
+  },
+  review_received: {
+    label: "New Review",
+    icon: "Star",
+    color: "text-yellow-500",
+    shouldBundle: true,
+    bundleKey: "reviews_{userId}",
+    bundleTitleTemplate: "You have {count} new review(s)",
+    defaultActionUrl: "/dashboard/reviews",
+    priority: "low",
+  },
+  low_stock: {
+    label: "Low Stock",
+    icon: "AlertTriangle",
+    color: "text-yellow-500",
+    shouldBundle: true,
+    bundleKey: "low_stock_{userId}",
+    bundleTitleTemplate: "{count} of your listing(s) are running low on stock",
+    defaultActionUrl: "/dashboard/inventory",
+    priority: "medium",
+  },
+  out_of_stock: {
+    label: "Out of Stock",
+    icon: "XCircle",
+    color: "text-red-500",
+    shouldBundle: true,
+    bundleKey: "out_of_stock_{userId}",
+    bundleTitleTemplate: "{count} of your listing(s) are out of stock",
+    defaultActionUrl: "/dashboard/inventory",
+    priority: "medium",
+  },
+  booking_request: {
+    label: "Booking Request",
+    icon: "CalendarPlus",
+    color: "text-brand-navy",
+    shouldBundle: true,
+    bundleKey: "booking_requests_{userId}",
+    bundleTitleTemplate: "You have {count} new booking request(s)",
+    defaultActionUrl: "/dashboard/requests",
+    priority: "medium",
+  },
+  booking_accepted: {
+    label: "Booking Accepted",
+    icon: "CheckCircle",
+    color: "text-green-500",
+    shouldBundle: false,
+    defaultActionUrl: "/dashboard/my-rentals",
+    priority: "urgent",
+  },
+  booking_declined: {
+    label: "Booking Declined",
+    icon: "XCircle",
+    color: "text-red-500",
+    shouldBundle: false,
+    defaultActionUrl: "/dashboard/my-rentals",
+    priority: "high",
+  },
+  booking_cancelled: {
+    label: "Booking Cancelled",
+    icon: "XCircle",
+    color: "text-red-500",
+    shouldBundle: false,
+    defaultActionUrl: "/dashboard/my-rentals",
+    priority: "high",
+  },
+  booking_completed: {
+    label: "Booking Completed",
+    icon: "CheckCircle2",
+    color: "text-green-500",
+    shouldBundle: false,
+    defaultActionUrl: "/dashboard/my-rentals",
+    priority: "medium",
+  },
+  payment_confirmed: {
+    label: "Payment Confirmed",
+    icon: "CreditCard",
+    color: "text-green-500",
+    shouldBundle: false,
+    defaultActionUrl: "/dashboard/my-rentals",
+    priority: "urgent",
+  },
+  payment_received: {
+    label: "Payment Received",
+    icon: "DollarSign",
+    color: "text-green-500",
+    shouldBundle: false,
+    defaultActionUrl: "/dashboard/earnings",
+    priority: "urgent",
+  },
+  payment_failed: {
+    label: "Payment Failed",
+    icon: "AlertCircle",
+    color: "text-red-500",
+    shouldBundle: false,
+    defaultActionUrl: "/dashboard/my-rentals",
+    priority: "urgent",
+  },
+  payout_initiated: {
+    label: "Payout Initiated",
+    icon: "Banknote",
+    color: "text-blue-500",
+    shouldBundle: false,
+    defaultActionUrl: "/dashboard/earnings",
+    priority: "medium",
+  },
+  payout_completed: {
+    label: "Payout Completed",
+    icon: "Banknote",
+    color: "text-green-500",
+    shouldBundle: false,
+    defaultActionUrl: "/dashboard/earnings",
+    priority: "high",
+  },
+  payout_failed: {
+    label: "Payout Failed",
+    icon: "AlertCircle",
+    color: "text-red-500",
+    shouldBundle: false,
+    defaultActionUrl: "/dashboard/settings/payments",
+    priority: "urgent",
+  },
+  refund_initiated: {
+    label: "Refund Initiated",
+    icon: "RefreshCcw",
+    color: "text-blue-500",
+    shouldBundle: false,
+    defaultActionUrl: "/dashboard/my-rentals",
+    priority: "high",
+  },
+  refund_completed: {
+    label: "Refund Completed",
+    icon: "RefreshCcw",
+    color: "text-green-500",
+    shouldBundle: false,
+    defaultActionUrl: "/dashboard/my-rentals",
+    priority: "high",
+  },
+  dispute_raised: {
+    label: "Dispute Raised",
+    icon: "AlertTriangle",
+    color: "text-red-500",
+    shouldBundle: false,
+    defaultActionUrl: "/dashboard/bookings",
+    priority: "urgent",
+  },
+  dispute_resolved: {
+    label: "Dispute Resolved",
+    icon: "Shield",
+    color: "text-blue-500",
+    shouldBundle: false,
+    defaultActionUrl: "/dashboard/bookings",
+    priority: "high",
+  },
+  rental_started: {
+    label: "Rental Started",
+    icon: "Play",
+    color: "text-green-500",
+    shouldBundle: false,
+    defaultActionUrl: "/dashboard/my-rentals",
+    priority: "high",
+  },
+  item_returned: {
+    label: "Item Returned",
+    icon: "RotateCcw",
+    color: "text-blue-500",
+    shouldBundle: false,
+    defaultActionUrl: "/dashboard/requests",
+    priority: "high",
+  },
+  booking_expired: {
+    label: "Booking Expired",
+    icon: "Clock",
+    color: "text-red-500",
+    shouldBundle: false,
+    defaultActionUrl: "/dashboard/my-rentals",
+    priority: "high",
+  },
+  kyc_verified: {
+    label: "KYC Verified",
+    icon: "BadgeCheck",
+    color: "text-green-500",
+    shouldBundle: false,
+    defaultActionUrl: "/dashboard/settings/payments",
+    priority: "high",
+  },
+  kyc_rejected: {
+    label: "KYC Rejected",
+    icon: "AlertCircle",
+    color: "text-red-500",
+    shouldBundle: false,
+    defaultActionUrl: "/dashboard/settings/payments",
+    priority: "urgent",
+  },
+  payout_retry_requested: {
+    label: "Payout Retry Requested",
+    icon: "RefreshCw",
+    color: "text-orange-500",
+    shouldBundle: false,
+    defaultActionUrl: "/admin/payouts",
+    priority: "high",
+  },
+  return_condition_issue: {
+    label: "Return Condition Issue",
+    icon: "AlertTriangle",
+    color: "text-red-500",
+    shouldBundle: false,
+    defaultActionUrl: "/dashboard/bookings",
+    priority: "urgent",
+  },
+  admin_alert: {
+    label: "Admin Alert",
+    icon: "AlertCircle",
+    color: "text-red-500",
+    shouldBundle: false,
+    defaultActionUrl: "/admin",
+    priority: "urgent",
+  },
+  new_kyc_submission: {
+    label: "KYC Submission",
+    icon: "FileText",
+    color: "text-blue-500",
+    shouldBundle: true,
+    bundleKey: "kyc_submissions_admin",
+    bundleTitleTemplate: "{count} new KYC document(s) to review",
+    defaultActionUrl: "/admin/kyc-verification",
+    priority: "medium",
+  },
+  system_error: {
+    label: "System Error",
+    icon: "AlertCircle",
+    color: "text-red-500",
+    shouldBundle: false,
+    defaultActionUrl: "/admin",
+    priority: "urgent",
+  },
+} as const satisfies Record<
+  string,
+  {
+    label: string;
+    icon: string;
+    color: string;
+    shouldBundle: boolean;
+    bundleKey?: string;
+    bundleTitleTemplate?: string;
+    defaultActionUrl: string;
+    priority: "low" | "medium" | "high" | "urgent";
+  }
+>;
+
+export type NotificationType = keyof typeof NOTIFICATION_CONFIG;
+export type NotificationConfig = (typeof NOTIFICATION_CONFIG)[NotificationType];
+
 export interface Notification {
   id: string;
   user_id: string;
-  type: string;
+  type: NotificationType;
   title: string;
   body: string | null;
   listing_id: string | null;
@@ -585,6 +854,11 @@ export interface Notification {
   from_user_id: string | null;
   action_url: string | null;
   is_read: boolean;
+  bundle_key?: string;
+  bundle_count: number;
+  is_bundled: boolean;
+  bundle_preview: BundlePreviewItem[];
+  last_bundled_at?: string;
   created_at: string;
 }
 
