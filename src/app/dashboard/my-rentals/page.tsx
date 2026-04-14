@@ -12,7 +12,7 @@ import { RentalCountdown } from "@/components/bookings/rental-countdown";
 import { ReturnDialog } from "@/components/bookings/return-dialog";
 import { PaymentBreakdownCard } from "@/components/payments/payment-breakdown-card";
 import { RefundStatusCard } from "@/components/payments/refund-status-card";
-import { DualReviewForm } from "@/components/reviews/dual-review-form";
+import { ReviewActionButton } from "@/components/reviews/review-action-button";
 import { EmptyState } from "@/components/shared/empty-state";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
@@ -195,15 +195,7 @@ function RentalActions({ booking }: { booking: BookingWithDetails }) {
             {booking.return_condition.replaceAll("_", " ")}
           </span>
         ) : null}
-        <DualReviewForm
-          booking={booking}
-          currentUserId={booking.renter_id}
-          trigger={
-            <Button size="sm" type="button" variant="outline">
-              Leave Review
-            </Button>
-          }
-        />
+        <ReviewActionButton booking={booking} currentUserId={booking.renter_id} size="sm" />
       </div>
     );
   }

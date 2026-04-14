@@ -28,7 +28,7 @@ import { PayoutStatusCard } from "@/components/payments/payout-status-card";
 import { RefundStatusCard } from "@/components/payments/refund-status-card";
 import { TransactionList } from "@/components/payments/transaction-list";
 import { MessageProfileButton } from "@/components/profile/message-profile-button";
-import { DualReviewForm } from "@/components/reviews/dual-review-form";
+import { ReviewActionButton } from "@/components/reviews/review-action-button";
 import { TrustBadges } from "@/components/profile/trust-badges";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
@@ -477,15 +477,7 @@ export default async function BookingDetailPage({ params }: BookingDetailPagePro
                 <RaiseDisputeDialog bookingId={booking.id} fullWidth />
               ) : null}
               {canLeaveReview ? (
-                <DualReviewForm
-                  booking={booking}
-                  currentUserId={user.id}
-                  trigger={
-                    <Button className="w-full" type="button" variant="outline">
-                      Leave Review
-                    </Button>
-                  }
-                />
+                <ReviewActionButton booking={booking} currentUserId={user.id} fullWidth size="default" />
               ) : null}
             </div>
           </section>

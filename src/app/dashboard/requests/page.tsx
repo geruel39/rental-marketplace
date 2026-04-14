@@ -15,7 +15,7 @@ import { HandoverDialog } from "@/components/bookings/handover-dialog";
 import { PaymentCountdown } from "@/components/bookings/payment-countdown";
 import { RaiseDisputeDialog } from "@/components/bookings/raise-dispute-dialog";
 import { RentalCountdown } from "@/components/bookings/rental-countdown";
-import { DualReviewForm } from "@/components/reviews/dual-review-form";
+import { ReviewActionButton } from "@/components/reviews/review-action-button";
 import { EmptyState } from "@/components/shared/empty-state";
 import {
   AlertDialog,
@@ -256,15 +256,7 @@ function RequestActions({ booking }: { booking: BookingWithDetails }) {
             {booking.return_condition.replaceAll("_", " ")}
           </span>
         ) : null}
-        <DualReviewForm
-          booking={booking}
-          currentUserId={booking.lister_id}
-          trigger={
-            <Button size="sm" type="button" variant="outline">
-              Leave Review
-            </Button>
-          }
-        />
+        <ReviewActionButton booking={booking} currentUserId={booking.lister_id} size="sm" />
         <p className="text-xs text-muted-foreground">
           Payout: {booking.payout_at ? `Processed ${format(new Date(booking.payout_at), "PPP")}` : "Pending"}
         </p>
