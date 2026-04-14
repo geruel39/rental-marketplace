@@ -177,18 +177,16 @@ export function RentalActions({ booking }: RentalActionsProps) {
             Deposit status: {booking.deposit_returned ? "Returned" : booking.return_condition === "damaged" || booking.return_condition === "missing_parts" ? "Partially held or under review" : "Processing"}
           </p>
         </div>
-        {!booking.renter_reviewed ? (
-          <DualReviewForm
-            booking={booking}
-            currentUserId={booking.renter_id}
-            trigger={
-              <Button type="button" variant="outline">
-                <Star className="size-4" />
-                Leave Review
-              </Button>
-            }
-          />
-        ) : null}
+        <DualReviewForm
+          booking={booking}
+          currentUserId={booking.renter_id}
+          trigger={
+            <Button type="button" variant="outline">
+              <Star className="size-4" />
+              Leave Review
+            </Button>
+          }
+        />
       </div>
     );
   }

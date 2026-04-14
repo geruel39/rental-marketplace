@@ -152,9 +152,7 @@ export default async function BookingDetailPage({ params }: BookingDetailPagePro
     booking.status === "awaiting_payment" ||
     booking.status === "confirmed";
   const canDispute = booking.status === "active" || booking.status === "returned";
-  const canLeaveReview =
-    booking.status === "completed" &&
-    ((isRenter && !booking.renter_reviewed) || (isLister && !booking.lister_reviewed));
+  const canLeaveReview = booking.status === "completed" && (isRenter || isLister);
   const isLateReturn =
     Boolean(booking.returned_at) &&
     Boolean(booking.rental_ends_at) &&

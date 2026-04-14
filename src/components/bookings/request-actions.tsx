@@ -238,17 +238,15 @@ export function RequestActions({ booking }: RequestActionsProps) {
           <p>Completed successfully</p>
           <p>Payout: {formatCurrency(booking.lister_payout)}</p>
         </div>
-        {!booking.lister_reviewed ? (
-          <DualReviewForm
-            booking={booking}
-            currentUserId={booking.lister_id}
-            trigger={
-              <Button type="button" variant="outline">
-                Leave Review
-              </Button>
-            }
-          />
-        ) : null}
+        <DualReviewForm
+          booking={booking}
+          currentUserId={booking.lister_id}
+          trigger={
+            <Button type="button" variant="outline">
+              Leave Review
+            </Button>
+          }
+        />
       </div>
     );
   }

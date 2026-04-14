@@ -195,17 +195,15 @@ function RentalActions({ booking }: { booking: BookingWithDetails }) {
             {booking.return_condition.replaceAll("_", " ")}
           </span>
         ) : null}
-        {!booking.renter_reviewed ? (
-          <DualReviewForm
-            booking={booking}
-            currentUserId={booking.renter_id}
-            trigger={
-              <Button size="sm" type="button" variant="outline">
-                Leave Review
-              </Button>
-            }
-          />
-        ) : null}
+        <DualReviewForm
+          booking={booking}
+          currentUserId={booking.renter_id}
+          trigger={
+            <Button size="sm" type="button" variant="outline">
+              Leave Review
+            </Button>
+          }
+        />
       </div>
     );
   }

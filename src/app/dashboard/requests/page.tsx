@@ -256,17 +256,15 @@ function RequestActions({ booking }: { booking: BookingWithDetails }) {
             {booking.return_condition.replaceAll("_", " ")}
           </span>
         ) : null}
-        {!booking.lister_reviewed ? (
-          <DualReviewForm
-            booking={booking}
-            currentUserId={booking.lister_id}
-            trigger={
-              <Button size="sm" type="button" variant="outline">
-                Leave Review
-              </Button>
-            }
-          />
-        ) : null}
+        <DualReviewForm
+          booking={booking}
+          currentUserId={booking.lister_id}
+          trigger={
+            <Button size="sm" type="button" variant="outline">
+              Leave Review
+            </Button>
+          }
+        />
         <p className="text-xs text-muted-foreground">
           Payout: {booking.payout_at ? `Processed ${format(new Date(booking.payout_at), "PPP")}` : "Pending"}
         </p>
