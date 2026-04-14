@@ -6,6 +6,7 @@ import {
   getPendingReviews,
   getReviewsForUser,
 } from "@/actions/reviews";
+import { DualReviewForm } from "@/components/reviews/dual-review-form";
 import { ReviewList } from "@/components/reviews/review-list";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -48,24 +49,47 @@ export default async function ReviewsPage() {
               {pendingReviews.length === 1 ? "" : "s"} to review
             </p>
             <p className="text-sm text-amber-900/80">
-              Open the relevant booking page to leave your review from the booking card.
+              Leave your pending reviews directly from here.
             </p>
           </div>
-          <div className="flex flex-wrap gap-2">
-            {pendingAsRenter.length > 0 ? (
-              <Button asChild className="bg-amber-950 text-white hover:bg-amber-900">
-                <Link href="/dashboard/my-rentals">
-                  Open My Rentals ({pendingAsRenter.length})
-                </Link>
-              </Button>
-            ) : null}
-            {pendingAsLister.length > 0 ? (
-              <Button asChild variant="outline">
-                <Link href="/dashboard/requests">
-                  Open Requests ({pendingAsLister.length})
-                </Link>
-              </Button>
-            ) : null}
+          <div className="space-y-3">
+            {pendingReviews.map((booking) => {
+              const isRenter = booking.renter_id === user.id;
+              const otherPartyName = isRenter
+                ? booking.lister.display_name || booking.lister.full_name
+                : booking.renter.display_name || booking.renter.full_name;
+
+              return (
+                <div
+                  className="flex flex-col gap-3 rounded-2xl border border-amber-200 bg-white p-4 md:flex-row md:items-center md:justify-between"
+                  key={booking.id}
+                >
+                  <div className="space-y-1">
+                    <p className="font-medium text-foreground">{booking.listing.title}</p>
+                    <p className="text-sm text-muted-foreground">
+                      {isRenter ? "Review lister" : "Review renter"}: {otherPartyName}
+                    </p>
+                    <p className="text-xs text-muted-foreground">Booking #{booking.id.slice(0, 8)}</p>
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    <DualReviewForm
+                      booking={booking}
+                      currentUserId={user.id}
+                      trigger={
+                        <Button className="bg-amber-950 text-white hover:bg-amber-900" type="button">
+                          Leave Review
+                        </Button>
+                      }
+                    />
+                    <Button asChild type="button" variant="outline">
+                      <Link href={isRenter ? "/dashboard/my-rentals" : "/dashboard/requests"}>
+                        Open Booking List
+                      </Link>
+                    </Button>
+                  </div>
+                </div>
+              );
+            })}
           </div>
         </div>
       ) : null}
