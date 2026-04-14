@@ -3,7 +3,6 @@
 import { format } from "date-fns";
 import { useState, useTransition } from "react";
 import { CheckCircle2, Loader2, Truck, XCircle } from "lucide-react";
-import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 
@@ -18,6 +17,7 @@ import {
 import { ConditionCheckForm } from "@/components/bookings/condition-check-form";
 import { PaymentCountdown } from "@/components/bookings/payment-countdown";
 import { RaiseDisputeDialog } from "@/components/bookings/raise-dispute-dialog";
+import { DualReviewForm } from "@/components/reviews/dual-review-form";
 import { ConfirmDialog } from "@/components/shared/confirm-dialog";
 import { Button } from "@/components/ui/button";
 import {
@@ -239,9 +239,15 @@ export function RequestActions({ booking }: RequestActionsProps) {
           <p>Payout: {formatCurrency(booking.lister_payout)}</p>
         </div>
         {!booking.lister_reviewed ? (
-          <Button asChild type="button" variant="outline">
-            <Link href="/dashboard/reviews">Leave Review</Link>
-          </Button>
+          <DualReviewForm
+            booking={booking}
+            currentUserId={booking.lister_id}
+            trigger={
+              <Button type="button" variant="outline">
+                Leave Review
+              </Button>
+            }
+          />
         ) : null}
       </div>
     );

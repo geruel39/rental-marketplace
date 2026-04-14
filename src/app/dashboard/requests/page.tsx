@@ -15,6 +15,7 @@ import { HandoverDialog } from "@/components/bookings/handover-dialog";
 import { PaymentCountdown } from "@/components/bookings/payment-countdown";
 import { RaiseDisputeDialog } from "@/components/bookings/raise-dispute-dialog";
 import { RentalCountdown } from "@/components/bookings/rental-countdown";
+import { DualReviewForm } from "@/components/reviews/dual-review-form";
 import { EmptyState } from "@/components/shared/empty-state";
 import {
   AlertDialog,
@@ -256,9 +257,15 @@ function RequestActions({ booking }: { booking: BookingWithDetails }) {
           </span>
         ) : null}
         {!booking.lister_reviewed ? (
-          <Button asChild size="sm" variant="outline">
-            <Link href="/dashboard/reviews">Leave Review</Link>
-          </Button>
+          <DualReviewForm
+            booking={booking}
+            currentUserId={booking.lister_id}
+            trigger={
+              <Button size="sm" type="button" variant="outline">
+                Leave Review
+              </Button>
+            }
+          />
         ) : null}
         <p className="text-xs text-muted-foreground">
           Payout: {booking.payout_at ? `Processed ${format(new Date(booking.payout_at), "PPP")}` : "Pending"}

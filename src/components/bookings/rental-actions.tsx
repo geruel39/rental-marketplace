@@ -3,7 +3,6 @@
 import { format } from "date-fns";
 import { useTransition } from "react";
 import { Loader2, Star, Truck } from "lucide-react";
-import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 
@@ -12,6 +11,7 @@ import { PaymentButton } from "@/components/bookings/payment-button";
 import { PaymentCountdown } from "@/components/bookings/payment-countdown";
 import { RaiseDisputeDialog } from "@/components/bookings/raise-dispute-dialog";
 import { ReturnForm } from "@/components/bookings/return-form";
+import { DualReviewForm } from "@/components/reviews/dual-review-form";
 import { ConfirmDialog } from "@/components/shared/confirm-dialog";
 import { Button } from "@/components/ui/button";
 import type { BookingWithDetails } from "@/types";
@@ -178,12 +178,16 @@ export function RentalActions({ booking }: RentalActionsProps) {
           </p>
         </div>
         {!booking.renter_reviewed ? (
-          <Button asChild type="button" variant="outline">
-            <Link href="/dashboard/reviews">
-              <Star className="size-4" />
-              Leave Review
-            </Link>
-          </Button>
+          <DualReviewForm
+            booking={booking}
+            currentUserId={booking.renter_id}
+            trigger={
+              <Button type="button" variant="outline">
+                <Star className="size-4" />
+                Leave Review
+              </Button>
+            }
+          />
         ) : null}
       </div>
     );
