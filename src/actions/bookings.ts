@@ -401,21 +401,36 @@ async function getBookingRecord(
   supabase: AnySupabaseClient,
   bookingId: string,
 ) {
-  const { data, error } = await supabase
-    .from("bookings")
-    .select(
-      `
-        *,
-        listing:listings!bookings_listing_id_fkey(*),
-        renter:profiles!bookings_renter_id_fkey(*),
-        lister:profiles!bookings_lister_id_fkey(*)
-      `,
-    )
-    .eq("id", bookingId)
-    .maybeSingle<BookingRecord>();
+  async function fetchBooking() {
+    return supabase
+      .from("bookings")
+      .select(
+        `
+          *,
+          listing:listings!bookings_listing_id_fkey(*),
+          renter:profiles!bookings_renter_id_fkey(*),
+          lister:profiles!bookings_lister_id_fkey(*)
+        `,
+      )
+      .eq("id", bookingId)
+      .maybeSingle<BookingRecord>();
+  }
+
+  let { data, error } = await fetchBooking();
 
   if (error || !data) {
     throw new Error("Booking not found");
+  }
+
+  if (data.status === "completed" && !data.payout_id) {
+    const payoutResult = await autoTriggerPayout(bookingId);
+    if (!payoutResult.success) {
+      console.error("getBookingRecord autoTriggerPayout failed:", payoutResult.error);
+    } else {
+      const refreshed = await fetchBooking();
+      data = refreshed.data ?? data;
+      error = refreshed.error ?? null;
+    }
   }
 
   const listing = unwrapRelation(data.listing);
