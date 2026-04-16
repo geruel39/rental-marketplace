@@ -3,6 +3,7 @@ import crypto from "node:crypto";
 import { NextRequest, NextResponse } from "next/server";
 
 import { handlePaymentConfirmed } from "@/actions/payments";
+import { getAdminIds, sendNotification } from "@/lib/notifications";
 import { createAdminClient } from "@/lib/supabase/admin";
 
 export const runtime = "nodejs";
@@ -124,44 +125,24 @@ async function notifyAdmins(params: {
   body: string;
   actionUrl?: string;
 }) {
-  const adminClient = createAdminClient();
-  const { data: admins, error } = await adminClient
-    .from("profiles")
-    .select("id")
-    .eq("is_admin", true);
-
-  if (error) {
-    console.error("[HITPAY_WEBHOOK] Failed to load admins:", error);
-    return;
-  }
-
-  const adminIds = (admins ?? [])
-    .map((admin) => (typeof admin.id === "string" ? admin.id : ""))
-    .filter(Boolean);
+  const adminIds = await getAdminIds();
 
   if (adminIds.length === 0) {
     return;
   }
 
-  const { error: notificationError } = await adminClient
-    .from("notifications")
-    .insert(
-      adminIds.map((userId) => ({
-        user_id: userId,
+  await Promise.all(
+    adminIds.map((userId) =>
+      sendNotification({
+        userId,
         type: "admin_alert",
         title: params.title,
         body: params.body,
-        booking_id: params.bookingId,
-        action_url: params.actionUrl ?? `/admin/bookings/${params.bookingId}`,
-      })),
-    );
-
-  if (notificationError) {
-    console.error(
-      "[HITPAY_WEBHOOK] Failed to notify admins:",
-      notificationError,
-    );
-  }
+        bookingId: params.bookingId,
+        actionUrl: params.actionUrl ?? `/admin/bookings/${params.bookingId}`,
+      }),
+    ),
+  );
 }
 
 async function addTimelineEntry(params: {
@@ -342,25 +323,14 @@ async function handleFailedPayment(params: {
       },
     });
 
-    const { error: notificationError } = await adminClient
-      .from("notifications")
-      .insert({
-        user_id: params.booking.renter_id,
-        type: "payment_failed",
-        title: "Payment failed",
-        body: "Payment failed. Please try again.",
-        listing_id: params.booking.listing_id,
-        booking_id: params.bookingId,
-        from_user_id: params.booking.lister_id,
-        action_url: `/dashboard/bookings/${params.bookingId}`,
-      });
-
-    if (notificationError) {
-      console.error(
-        "[HITPAY_WEBHOOK] Failed to notify renter of failed payment:",
-        notificationError,
-      );
-    }
+    await sendNotification({
+      userId: params.booking.renter_id,
+      type: "payment_failed",
+      title: "Payment failed",
+      body: "Your payment could not be processed. Please try again.",
+      actionUrl: `/dashboard/bookings/${params.bookingId}`,
+      bookingId: params.bookingId,
+    });
   }
 }
 

@@ -5,6 +5,13 @@ import { headers } from "next/headers";
 
 import { createNotification } from "@/actions/notifications";
 import { getAppUrl, getHitPayApiUrl } from "@/lib/env";
+import {
+  notifyDisputeResolved,
+  notifyPaymentConfirmed,
+  notifyPayoutCompleted,
+  notifyPayoutFailed,
+  notifyRefundInitiated,
+} from "@/lib/notifications";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
 import type {
@@ -1010,28 +1017,13 @@ export async function handlePaymentConfirmed(params: {
       },
     });
 
-    await Promise.all([
-      createNotification({
-        userId: booking.renter_id,
-        type: "payment_completed",
-        title: "Payment confirmed!",
-        body: "Payment confirmed! Contact lister for handover",
-        listingId: booking.listing_id,
-        bookingId: booking.id,
-        fromUserId: booking.lister_id,
-        actionUrl: `/dashboard/bookings/${booking.id}`,
-      }),
-      createNotification({
-        userId: booking.lister_id,
-        type: "payment_received",
-        title: "Payment received!",
-        body: "Payment received! Prepare item for handover.",
-        listingId: booking.listing_id,
-        bookingId: booking.id,
-        fromUserId: booking.renter_id,
-        actionUrl: `/dashboard/bookings/${booking.id}`,
-      }),
-    ]);
+    await notifyPaymentConfirmed({
+      renterId: booking.renter_id,
+      listerId: booking.lister_id,
+      listingTitle: booking.listing.title,
+      bookingId: booking.id,
+      amount: params.amount,
+    });
 
     revalidatePaymentViews();
   } catch (error) {
@@ -1105,16 +1097,6 @@ export async function processCancellationRefund(
         },
         status: "completed",
         processedAt: new Date().toISOString(),
-      });
-
-      await createNotification({
-        userId: booking.renter_id,
-        type: "refund_not_applicable",
-        title: "No refund issued",
-        body: reason,
-        listingId: booking.listing_id,
-        bookingId: booking.id,
-        actionUrl: `/dashboard/bookings/${booking.id}`,
       });
 
       return { refundAmount: 0, message: reason };
@@ -1226,39 +1208,17 @@ export async function processCancellationRefund(
         },
       });
 
-      await createNotification({
-        userId: booking.renter_id,
-        type: "refund_initiated",
-        title: `Refund of ${formatMoney(refundAmount)} is being processed`,
-        body: `Refund of ${formatMoney(refundAmount)} is being processed (5-10 business days)`,
-        listingId: booking.listing_id,
+      void notifyRefundInitiated({
+        renterId: booking.renter_id,
+        refundAmount,
+        originalAmount: booking.total_price,
+        reason,
         bookingId: booking.id,
-        actionUrl: `/dashboard/bookings/${booking.id}`,
+      }).catch((error) => {
+        console.error("processCancellationRefund notification failed:", error);
       });
-
-      if (cancelledBy === "lister") {
-        await createNotification({
-          userId: booking.lister_id,
-          type: "refund_completed",
-          title: "Refund completed",
-          body: "You cancelled this booking and the renter has been refunded.",
-          listingId: booking.listing_id,
-          bookingId: booking.id,
-          actionUrl: `/dashboard/bookings/${booking.id}`,
-        });
-      }
 
       revalidatePaymentViews();
-
-      await createNotification({
-        userId: booking.renter_id,
-        type: "refund_completed",
-        title: `Refund of ${formatMoney(refundAmount)} sent`,
-        body: `Refund of ${formatMoney(refundAmount)} sent back to your card/account`,
-        listingId: booking.listing_id,
-        bookingId: booking.id,
-        actionUrl: `/dashboard/bookings/${booking.id}`,
-      });
 
       return {
         refundAmount,
@@ -1290,14 +1250,14 @@ export async function processCancellationRefund(
           })
           .eq("id", booking.id);
 
-        await createNotification({
-          userId: booking.renter_id,
-          type: "refund_initiated",
-          title: `Refund of ${formatMoney(refundAmount)} is being processed`,
-          body: `Refund of ${formatMoney(refundAmount)} is being processed (5-10 business days)`,
-          listingId: booking.listing_id,
+        void notifyRefundInitiated({
+          renterId: booking.renter_id,
+          refundAmount,
+          originalAmount: booking.total_price,
+          reason,
           bookingId: booking.id,
-          actionUrl: `/dashboard/bookings/${booking.id}`,
+        }).catch((error) => {
+          console.error("processCancellationRefund notification failed:", error);
         });
 
         await notifyAdmins({
@@ -1412,13 +1372,11 @@ export async function handleFailedPayout(
     });
 
     await Promise.all([
-      createNotification({
-        userId: payout.lister_id,
-        type: "payout_failed",
-        title: "Payout failed",
-        body: "Payout failed — please update payout settings",
-        bookingId: payout.booking_id ?? undefined,
-        actionUrl: "/dashboard/settings/payments",
+      notifyPayoutFailed({
+        listerId: payout.lister_id,
+        amount: payout.amount,
+        reason: failureReason,
+        bookingId: payout.booking_id ?? payout.booking.id,
       }),
       createNotification({
         userId: payout.lister_id,
@@ -1476,15 +1434,6 @@ export async function processPayoutToLister(
         payout_id: payout.id,
         payout_method: currentPayoutMethod,
       },
-    });
-
-    await createNotification({
-      userId: payout.lister_id,
-      type: "payout_initiated",
-      title: "Payout initiated",
-      body: `Your payout of ${formatMoney(payout.amount, payout.currency)} is being processed`,
-      bookingId: payout.booking_id ?? undefined,
-      actionUrl: "/dashboard/earnings",
     });
 
     if (!validatePayoutDetails(payout.lister)) {
@@ -1584,13 +1533,14 @@ export async function processPayoutToLister(
       },
     });
 
-    await createNotification({
-      userId: payout.lister_id,
-      type: "payout_completed",
-      title: "Payout completed",
-      body: `Payout of ${formatMoney(payout.amount, payout.currency)} sent via ${currentPayoutMethod ?? "configured method"}! Ref: ${reference}`,
-      bookingId: payout.booking_id ?? undefined,
-      actionUrl: "/dashboard/earnings",
+    void notifyPayoutCompleted({
+      listerId: payout.lister_id,
+      amount: payout.amount,
+      method: currentPayoutMethod ?? "configured method",
+      reference,
+      bookingId: payout.booking_id ?? payout.booking.id,
+    }).catch((error) => {
+      console.error("processPayoutToLister completion notification failed:", error);
     });
 
     revalidatePaymentViews();
@@ -2053,24 +2003,14 @@ export async function resolveDisputePayment(params: {
       },
     });
 
-    await Promise.all([
-      createNotification({
-        userId: booking.renter_id,
-        type: "dispute_resolved",
-        title: "Dispute resolved",
-        body: `Dispute resolved. You'll receive ${formatMoney(renterRefundAmount)} back.`,
-        bookingId: booking.id,
-        actionUrl: `/dashboard/bookings/${booking.id}`,
-      }),
-      createNotification({
-        userId: booking.lister_id,
-        type: "dispute_resolved",
-        title: "Dispute resolved",
-        body: `Dispute resolved. You'll receive ${formatMoney(listerPayoutAmount)}.`,
-        bookingId: booking.id,
-        actionUrl: `/dashboard/bookings/${booking.id}`,
-      }),
-    ]);
+    await notifyDisputeResolved({
+      renterId: booking.renter_id,
+      listerId: booking.lister_id,
+      renterAmount: renterRefundAmount,
+      listerAmount: listerPayoutAmount,
+      bookingId: booking.id,
+      resolutionType: params.resolutionType,
+    });
 
     await logAdminAction({
       adminId: effectiveAdminId,
@@ -2191,13 +2131,13 @@ export async function markPayoutFailedByAdmin(
       },
     });
 
-    await createNotification({
-      userId: payout.lister_id,
-      type: "payout_failed",
-      title: "Payout failed",
-      body: `Your payout could not be processed. Reason: ${trimmedReason}`,
-      bookingId: payout.booking_id ?? undefined,
-      actionUrl: "/dashboard/earnings",
+    void notifyPayoutFailed({
+      listerId: payout.lister_id,
+      amount: payout.amount,
+      reason: trimmedReason,
+      bookingId: payout.booking_id ?? payout.id,
+    }).catch((error) => {
+      console.error("markPayoutFailed notification failed:", error);
     });
 
     await logAdminAction({

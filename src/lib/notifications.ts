@@ -1,9 +1,22 @@
 import { createAdminClient } from "@/lib/supabase/admin";
-import { NOTIFICATION_CONFIG, type BundlePreviewItem } from "@/types";
+import {
+  NOTIFICATION_CONFIG,
+  type BundlePreviewItem,
+  type NotificationType,
+} from "@/types";
+
+let adminIdsCache:
+  | {
+      fetchedAt: number;
+      ids: string[];
+    }
+  | null = null;
+
+const ADMIN_IDS_CACHE_MS = 5 * 60 * 1000;
 
 interface SendNotificationParams {
   userId: string;
-  type: string;
+  type: NotificationType;
   title?: string;
   body?: string;
   actionUrl?: string;
@@ -572,4 +585,33 @@ export async function notifyBookingExpired(params: {
       bookingId: params.bookingId,
     }),
   ]);
+}
+
+export async function getAdminIds(): Promise<string[]> {
+  const now = Date.now();
+  if (adminIdsCache && now - adminIdsCache.fetchedAt < ADMIN_IDS_CACHE_MS) {
+    return adminIdsCache.ids;
+  }
+
+  const adminClient = createAdminClient();
+  const { data, error } = await adminClient
+    .from("profiles")
+    .select("id")
+    .eq("is_admin", true);
+
+  if (error) {
+    console.error("getAdminIds failed:", error);
+    return [];
+  }
+
+  const ids = (data ?? [])
+    .map((profile) => (typeof profile.id === "string" ? profile.id : ""))
+    .filter(Boolean);
+
+  adminIdsCache = {
+    fetchedAt: now,
+    ids,
+  };
+
+  return ids;
 }

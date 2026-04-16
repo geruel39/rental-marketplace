@@ -1,6 +1,6 @@
 "use server";
 
-import { createNotification } from "@/actions/notifications";
+import { notifyNewReview } from "@/lib/notifications";
 import { createClient } from "@/lib/supabase/server";
 import { reviewSchema } from "@/lib/validations";
 import type {
@@ -129,14 +129,26 @@ export async function submitReview(
       return { error: "Could not submit your review. Please try again." };
     }
 
-    await createNotification({
-      userId: revieweeId,
-      type: "review_received",
-      title: "You received a new review",
-      bookingId: booking.id,
-      listingId: booking.listing_id,
-      fromUserId: user.id,
-      actionUrl: "/dashboard/reviews",
+    const [{ data: reviewerProfile }, { data: listing }] = await Promise.all([
+      supabase
+        .from("profiles")
+        .select("display_name")
+        .eq("id", user.id)
+        .maybeSingle<{ display_name: string | null }>(),
+      supabase
+        .from("listings")
+        .select("title")
+        .eq("id", booking.listing_id)
+        .maybeSingle<{ title: string | null }>(),
+    ]);
+
+    void notifyNewReview({
+      revieweeId,
+      reviewerName: reviewerProfile?.display_name || "Someone",
+      rating: parsed.data.overall_rating,
+      listingTitle: listing?.title || "your listing",
+    }).catch((error) => {
+      console.error("submitReview notification failed:", error);
     });
 
     return { success: "Review submitted!" };

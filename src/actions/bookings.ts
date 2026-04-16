@@ -11,6 +11,18 @@ import {
   holdPaymentForDispute,
   processCancellationRefund,
 } from "@/actions/payments";
+import {
+  getAdminIds,
+  notifyBookingAccepted,
+  notifyBookingCancelled,
+  notifyBookingCompleted,
+  notifyBookingDeclined,
+  notifyDisputeRaised,
+  notifyItemReturned,
+  notifyNewBookingRequest,
+  notifyPaymentConfirmed,
+  notifyRentalStarted,
+} from "@/lib/notifications";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
 import { bookingRequestSchema, confirmReturnSchema } from "@/lib/validations";
@@ -228,17 +240,6 @@ async function startRentalPeriodDirect(params: {
     },
   });
 
-  await createNotification({
-    userId: params.booking.renter_id,
-    type: "rental_started",
-    title: "Rental started",
-    body: "The lister confirmed handover. Your rental period is now active.",
-    listingId: params.booking.listing_id,
-    bookingId: params.booking.id,
-    fromUserId: params.userId,
-    actionUrl: `/dashboard/bookings/${params.booking.id}`,
-  });
-
   return fallbackRentalEndsAt;
 }
 
@@ -290,18 +291,7 @@ async function markReturnToListerDirect(params: {
     },
   });
 
-  await createNotification({
-    userId: params.booking.lister_id,
-    type: "booking_returned",
-    title: "Item returned",
-    body: isLateReturn
-      ? "The renter marked the item as returned after the deadline. Please inspect it."
-      : "The renter marked the item as returned. Please inspect it and complete the booking.",
-    listingId: params.booking.listing_id,
-    bookingId: params.booking.id,
-    fromUserId: params.userId,
-    actionUrl: `/dashboard/bookings/${params.booking.id}`,
-  });
+  return isLateReturn;
 }
 
 async function addTimeline(params: {
@@ -601,15 +591,15 @@ async function acceptBookingRequestInternal(params: {
     return { error: paymentResult.error };
   }
 
-  await createNotification({
-    userId: booking.renter_id,
-    type: "booking_accepted",
-    title: "Booking accepted - payment required",
-    body: `Your booking has been accepted! Complete payment to confirm. Payment link: ${paymentResult.paymentUrl}`,
-    listingId: booking.listing_id,
+  void notifyBookingAccepted({
+    renterId: booking.renter_id,
+    listingTitle: booking.listing.title,
     bookingId: booking.id,
-    fromUserId: booking.lister_id,
-    actionUrl: paymentResult.paymentUrl,
+    paymentUrl: paymentResult.paymentUrl,
+    paymentExpiresAt,
+    totalPrice: booking.total_price,
+  }).catch((error) => {
+    console.error("acceptBookingRequest notification failed:", error);
   });
 
   revalidateBookingViews();
@@ -665,28 +655,13 @@ async function confirmPaymentInternal(params: {
     },
   });
 
-  await Promise.all([
-    createNotification({
-      userId: booking.lister_id,
-      type: "payment_received",
-      title: "Payment received",
-      body: "Payment received! Please arrange handover with the renter and mark the item as received when done.",
-      listingId: booking.listing_id,
-      bookingId: booking.id,
-      fromUserId: booking.renter_id,
-      actionUrl: `/dashboard/bookings/${booking.id}`,
-    }),
-    createNotification({
-      userId: booking.renter_id,
-      type: "payment_confirmed",
-      title: "Payment confirmed",
-      body: "Payment confirmed! Contact the lister to arrange item handover.",
-      listingId: booking.listing_id,
-      bookingId: booking.id,
-      fromUserId: booking.lister_id,
-      actionUrl: `/dashboard/bookings/${booking.id}`,
-    }),
-  ]);
+  await notifyPaymentConfirmed({
+    renterId: booking.renter_id,
+    listerId: booking.lister_id,
+    listingTitle: booking.listing.title,
+    bookingId: booking.id,
+    amount: booking.total_price,
+  });
 
   revalidateBookingViews();
   return { success: "Payment confirmed." };
@@ -805,15 +780,16 @@ export async function createBookingRequest(
       },
     });
 
-    await createNotification({
-      userId: listing.owner_id,
-      type: "booking_request_received",
-      title: "New booking request",
-      body: `New booking request for ${listing.title} - ${parsed.data.rental_units} ${parsed.data.pricing_period}(s), ${formatMoney(totalPrice)}.`,
-      listingId: listing.id,
+    void notifyNewBookingRequest({
+      listerId: listing.owner_id,
+      renterName: auth.profile?.display_name || renterName,
+      listingTitle: listing.title,
       bookingId: createdBooking.id,
-      fromUserId: auth.user.id,
-      actionUrl: `/dashboard/bookings/${createdBooking.id}`,
+      rentalUnits: parsed.data.rental_units,
+      pricingPeriod: parsed.data.pricing_period,
+      totalPrice,
+    }).catch((error) => {
+      console.error("createBookingRequest notification failed:", error);
     });
 
     if (listing.instant_book) {
@@ -918,15 +894,13 @@ export async function declineBookingRequest(
         metadata: { reason: declineReason, stock_released: stockRestored },
     });
 
-    await createNotification({
-      userId: booking.renter_id,
-      type: "booking_declined",
-      title: "Booking request declined",
-      body: `Your booking request was declined. Reason: ${declineReason}`,
-      listingId: booking.listing_id,
+    void notifyBookingDeclined({
+      renterId: booking.renter_id,
+      listingTitle: booking.listing.title,
       bookingId: booking.id,
-      fromUserId: auth.user.id,
-      actionUrl: `/dashboard/bookings/${booking.id}`,
+      reason: declineReason,
+    }).catch((error) => {
+      console.error("declineBookingRequest notification failed:", error);
     });
 
     let successMessage = "Booking request declined.";
@@ -1089,6 +1063,17 @@ export async function markReceivedByRenter(
       });
     }
 
+    if (rentalEndsAt) {
+      void notifyRentalStarted({
+        renterId: booking.renter_id,
+        listingTitle: booking.listing.title,
+        bookingId: booking.id,
+        rentalEndsAt,
+      }).catch((error) => {
+        console.error("markReceivedByRenter notification failed:", error);
+      });
+    }
+
     revalidateBookingViews();
     return {
       success: `Item marked as received! Rental period started. Return deadline: ${formatDateTime(rentalEndsAt)}.`,
@@ -1138,8 +1123,10 @@ export async function markReturnedToLister(
     const notes = normalizeText(formData.get("notes")?.toString());
     const photoUrls = await uploadProofPhotos(booking.id, "return", proofFiles);
 
+    let isLateReturn = false;
+
     try {
-      await callRpcWithFallbacks(
+      const rpcData = await callRpcWithFallbacks(
         auth.supabase,
         "mark_item_returned_by_renter",
         [
@@ -1157,12 +1144,19 @@ export async function markReturnedToLister(
           },
         ],
       );
+
+      isLateReturn = Boolean(
+        rpcData &&
+          typeof rpcData === "object" &&
+          "is_late" in rpcData &&
+          (rpcData as { is_late?: unknown }).is_late,
+      );
     } catch (error) {
       if (!isMissingRpcSignatureError(error, "mark_item_returned_by_renter")) {
         throw error;
       }
 
-      await markReturnToListerDirect({
+      isLateReturn = await markReturnToListerDirect({
         supabase: auth.supabase,
         booking,
         userId: auth.user.id,
@@ -1170,6 +1164,17 @@ export async function markReturnedToLister(
         photoUrls,
       });
     }
+
+    void notifyItemReturned({
+      listerId: booking.lister_id,
+      renterName:
+        auth.profile?.display_name || getActorDisplayName(auth.profile, auth.user.email),
+      listingTitle: booking.listing.title,
+      bookingId: booking.id,
+      isLate: isLateReturn,
+    }).catch((error) => {
+      console.error("markReturnedToLister notification failed:", error);
+    });
 
     revalidateBookingViews();
     return {
@@ -1305,28 +1310,14 @@ export async function confirmReturnAndComplete(
       ]);
     }
 
-    await Promise.all([
-      createNotification({
-        userId: booking.lister_id,
-        type: "booking_completed",
-        title: "Booking completed",
-        body: "Booking completed! Please leave a review.",
-        listingId: booking.listing_id,
-        bookingId: booking.id,
-        fromUserId: booking.renter_id,
-        actionUrl: `/dashboard/bookings/${booking.id}`,
-      }),
-      createNotification({
-        userId: booking.renter_id,
-        type: "booking_completed",
-        title: "Booking completed",
-        body: "Booking completed! Please leave a review.",
-        listingId: booking.listing_id,
-        bookingId: booking.id,
-        fromUserId: booking.lister_id,
-        actionUrl: `/dashboard/bookings/${booking.id}`,
-      }),
-    ]);
+    void notifyBookingCompleted({
+      renterId: booking.renter_id,
+      listerId: booking.lister_id,
+      listingTitle: booking.listing.title,
+      bookingId: booking.id,
+    }).catch((error) => {
+      console.error("confirmReturnAndComplete notification failed:", error);
+    });
 
     revalidateBookingViews();
     return { success: "Booking completed successfully." };
@@ -1407,15 +1398,15 @@ export async function cancelBooking(
     });
 
     const otherUserId = actorRole === "renter" ? booking.lister_id : booking.renter_id;
-    await createNotification({
-      userId: otherUserId,
-      type: "booking_cancelled",
-      title: "Booking cancelled",
-      body: `The booking was cancelled. Reason: ${cancellationReason}`,
-      listingId: booking.listing_id,
+    void notifyBookingCancelled({
+      recipientId: otherUserId,
+      listingTitle: booking.listing.title,
       bookingId: booking.id,
-      fromUserId: auth.user.id,
-      actionUrl: `/dashboard/bookings/${booking.id}`,
+      cancelledByName:
+        auth.profile?.display_name || getActorDisplayName(auth.profile, auth.user.email),
+      reason: cancellationReason,
+    }).catch((error) => {
+      console.error("cancelBooking notification failed:", error);
     });
 
     let successMessage = "Booking cancelled.";
@@ -1485,37 +1476,16 @@ export async function raiseDispute(
       metadata: { reason: disputeReason },
     });
 
-    await createNotification({
-      userId: actorRole === "renter" ? booking.lister_id : booking.renter_id,
-      type: "booking_disputed",
-      title: "Dispute raised",
-      body: disputeReason,
-      listingId: booking.listing_id,
+    const adminIds = await getAdminIds();
+    await notifyDisputeRaised({
+      otherPartyId: actorRole === "renter" ? booking.lister_id : booking.renter_id,
+      adminIds,
+      listingTitle: booking.listing.title,
       bookingId: booking.id,
-      fromUserId: auth.user.id,
-      actionUrl: `/dashboard/bookings/${booking.id}`,
+      raisedByName:
+        auth.profile?.display_name || getActorDisplayName(auth.profile, auth.user.email),
+      amount: booking.total_price,
     });
-
-    const admin = createAdminClient();
-    const { data: admins } = await admin
-      .from("profiles")
-      .select("id")
-      .eq("is_admin", true);
-
-    await Promise.all(
-      (admins ?? []).map((adminProfile) =>
-        createNotification({
-          userId: String((adminProfile as { id: string }).id),
-          type: "dispute_raised",
-          title: `New dispute on booking ${booking.id} - ${formatMoney(booking.total_price)} at stake`,
-          body: `New dispute on booking ${booking.id} - ${formatMoney(booking.total_price)} at stake`,
-          listingId: booking.listing_id,
-          bookingId: booking.id,
-          fromUserId: auth.user.id,
-          actionUrl: `/admin/bookings/${booking.id}`,
-        }),
-      ),
-    );
 
     await holdPaymentForDispute(booking.id);
 

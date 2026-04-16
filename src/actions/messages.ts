@@ -1,6 +1,6 @@
 "use server";
 
-import { createNotification } from "@/actions/notifications";
+import { notifyNewMessage } from "@/lib/notifications";
 import { createClient } from "@/lib/supabase/server";
 import { messageSchema } from "@/lib/validations";
 import type {
@@ -451,14 +451,13 @@ export async function sendMessage(
     const senderName =
       senderProfile?.display_name || senderProfile?.full_name || "Someone";
 
-    await createNotification({
-      userId: recipientId,
-      type: "new_message",
-      title: `New message from ${senderName}`,
-      body: parsed.data.content.slice(0, 140),
-      listingId: conversation.listing_id ?? undefined,
-      fromUserId: user.id,
-      actionUrl: `/dashboard/messages/${conversation.id}`,
+    void notifyNewMessage({
+      recipientId,
+      senderName,
+      messagePreview: parsed.data.content,
+      conversationId: conversation.id,
+    }).catch((error) => {
+      console.error("sendMessage notification failed:", error);
     });
 
     return {

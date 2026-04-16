@@ -4,6 +4,12 @@ import { revalidatePath } from "next/cache";
 import { headers } from "next/headers";
 
 import { createNotification } from "@/actions/notifications";
+import {
+  getAdminIds,
+  notifyKYCRejected,
+  notifyKYCSubmitted,
+  notifyKYCVerified,
+} from "@/lib/notifications";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
 import { kycUploadSchema, payoutMethodSchema } from "@/lib/validations";
@@ -740,35 +746,14 @@ export async function uploadKYCDocument(
 
     await removeStoredKycDocument(previousDocumentUrl);
 
-    await createNotification({
+    const adminIds = await getAdminIds();
+    void notifyKYCSubmitted({
       userId: user.id,
-      type: "kyc_uploaded",
-      title: "KYC document uploaded",
-      body: "Your KYC document has been submitted and is now awaiting review.",
-      actionUrl: "/dashboard/settings/payments",
+      adminIds,
+      userName: getUserDisplayName(profile),
+    }).catch((error) => {
+      console.error("uploadKYCDocument notification failed:", error);
     });
-
-    const { data: adminUsers, error: adminUsersError } = await admin
-      .from("profiles")
-      .select("id")
-      .eq("is_admin", true);
-
-    if (adminUsersError) {
-      console.error("uploadKYCDocument admin fetch failed:", adminUsersError);
-    } else {
-      await Promise.all(
-        ((adminUsers ?? []) as Array<Pick<Profile, "id">>).map((adminUser) =>
-          createNotification({
-            userId: adminUser.id,
-            type: "new_kyc",
-            title: `New KYC to verify from ${getUserDisplayName(profile)}`,
-            body: `New KYC to verify from ${getUserDisplayName(profile)}`,
-            fromUserId: user.id,
-            actionUrl: `/admin/kyc-verification`,
-          }),
-        ),
-      );
-    }
 
     revalidatePayoutViews();
     return {
@@ -830,15 +815,18 @@ export async function verifyKYC(
       await removeStoredKycDocument(previousDocumentUrl);
     }
 
-    await createNotification({
-      userId,
-      type: approved ? "kyc_verified" : "kyc_rejected",
-      title: approved ? "KYC verified" : "KYC rejected",
-      body: approved
-        ? `Your KYC has been verified! Your ${targetProfile.bank_name || "bank"} account is ready for payouts.`
-        : `Your KYC document was rejected. Please upload a new one. Reason: ${notes?.trim() || "No reason provided"}`,
-      actionUrl: "/dashboard/settings/payments",
-    });
+    if (approved) {
+      void notifyKYCVerified({ userId }).catch((notificationError) => {
+        console.error("verifyKYC approval notification failed:", notificationError);
+      });
+    } else {
+      void notifyKYCRejected({
+        userId,
+        reason: notes?.trim() || "No reason provided",
+      }).catch((notificationError) => {
+        console.error("verifyKYC rejection notification failed:", notificationError);
+      });
+    }
 
     await logAdminAction({
       adminId,
