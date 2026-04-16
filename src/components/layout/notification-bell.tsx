@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useReducer } from "react";
+import { useEffect, useState } from "react";
 import { Bell } from "lucide-react";
 
 import { NotificationList } from "@/components/notifications/notification-list";
@@ -18,79 +18,55 @@ interface NotificationBellProps {
   initialUnreadCount: number;
 }
 
-type BellState = {
-  notifications: Notification[];
-  unreadCount: number;
-};
-
-type BellAction =
-  | { type: "incoming"; notification: Notification }
-  | { type: "read_one"; notificationId: string }
-  | { type: "read_all" };
-
-function bellReducer(state: BellState, action: BellAction): BellState {
-  switch (action.type) {
-    case "incoming":
-      return {
-        notifications: [
-          action.notification,
-          ...state.notifications.filter((item) => item.id !== action.notification.id),
-        ].slice(0, 5),
-        unreadCount: action.notification.is_read ? state.unreadCount : state.unreadCount + 1,
-      };
-    case "read_one": {
-      const target = state.notifications.find(
-        (notification) => notification.id === action.notificationId,
-      );
-
-      return {
-        notifications: state.notifications.map((notification) =>
-          notification.id === action.notificationId
-            ? { ...notification, is_read: true }
-            : notification,
-        ),
-        unreadCount:
-          target && !target.is_read ? Math.max(0, state.unreadCount - 1) : state.unreadCount,
-      };
-    }
-    case "read_all":
-      return {
-        notifications: state.notifications.map((notification) => ({
-          ...notification,
-          is_read: true,
-        })),
-        unreadCount: 0,
-      };
-    default:
-      return state;
-  }
-}
-
 export function NotificationBell({
   userId,
   initialNotifications,
   initialUnreadCount,
 }: NotificationBellProps) {
-  const { newNotification } = useRealtimeNotifications(userId);
-  const [state, dispatch] = useReducer(bellReducer, {
-    notifications: initialNotifications,
-    unreadCount: initialUnreadCount,
-  });
+  const { latestNotification, unreadCount: realtimeUnreadCount } =
+    useRealtimeNotifications(userId, initialUnreadCount);
+  const [notifications, setNotifications] = useState(initialNotifications);
+  const [unreadCount, setUnreadCount] = useState(initialUnreadCount);
 
   useEffect(() => {
-    if (!newNotification) {
+    setNotifications(initialNotifications);
+  }, [initialNotifications]);
+
+  useEffect(() => {
+    setUnreadCount(initialUnreadCount);
+  }, [initialUnreadCount]);
+
+  useEffect(() => {
+    setUnreadCount(realtimeUnreadCount);
+  }, [realtimeUnreadCount]);
+
+  useEffect(() => {
+    if (!latestNotification) {
       return;
     }
 
-    dispatch({ type: "incoming", notification: newNotification });
-  }, [newNotification]);
+    setNotifications((current) =>
+      [latestNotification, ...current.filter((item) => item.id !== latestNotification.id)].slice(
+        0,
+        5,
+      ),
+    );
+  }, [latestNotification]);
 
   function handleNotificationRead(notificationId: string) {
-    dispatch({ type: "read_one", notificationId });
+    setNotifications((current) =>
+      current.map((notification) =>
+        notification.id === notificationId ? { ...notification, is_read: true } : notification,
+      ),
+    );
+    setUnreadCount((current) => Math.max(0, current - 1));
   }
 
   function handleAllRead() {
-    dispatch({ type: "read_all" });
+    setNotifications((current) =>
+      current.map((notification) => ({ ...notification, is_read: true })),
+    );
+    setUnreadCount(0);
   }
 
   return (
@@ -98,15 +74,15 @@ export function NotificationBell({
       <PopoverTrigger asChild>
         <Button aria-label="Open notifications" className="relative" size="icon" variant="ghost">
           <Bell
-            key={newNotification?.id ?? "bell"}
+            key={latestNotification?.id ?? "bell"}
             className={cn(
               "size-5",
-              newNotification ? "motion-safe:animate-[bell-shake_0.45s_ease-in-out]" : "",
+              latestNotification ? "motion-safe:animate-[bell-shake_0.45s_ease-in-out]" : "",
             )}
           />
-          {state.unreadCount > 0 ? (
+          {unreadCount > 0 ? (
             <span className="absolute right-1 top-1 flex min-w-5 items-center justify-center rounded-full bg-rose-600 px-1 text-[10px] font-semibold text-white">
-              {state.unreadCount > 99 ? "99+" : state.unreadCount}
+              {unreadCount > 99 ? "99+" : unreadCount}
             </span>
           ) : null}
           <span className="sr-only">Notifications</span>
@@ -118,8 +94,8 @@ export function NotificationBell({
             <div>
               <p className="font-semibold">Notifications</p>
               <p className="text-xs text-muted-foreground">
-                {state.unreadCount > 0
-                  ? `${state.unreadCount} unread`
+                {unreadCount > 0
+                  ? `${unreadCount} unread`
                   : "No unread notifications"}
               </p>
             </div>
@@ -130,7 +106,7 @@ export function NotificationBell({
         <div className="max-h-[420px] overflow-y-auto p-3">
           <NotificationList
             compact
-            notifications={state.notifications}
+            notifications={notifications}
             onNotificationRead={handleNotificationRead}
           />
         </div>

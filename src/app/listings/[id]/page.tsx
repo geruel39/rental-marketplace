@@ -10,6 +10,7 @@ import { BookingWidget } from "@/components/listings/booking-widget";
 import { FavoriteButton } from "@/components/listings/favorite-button";
 import { ImageGallery } from "@/components/listings/image-gallery";
 import { ListingGrid } from "@/components/listings/listing-grid";
+import { MessageListerButton } from "@/components/listings/message-lister-button";
 import { StockLevelBadge } from "@/components/inventory/stock-level-badge";
 import { ProfileCard } from "@/components/profile/profile-card";
 import { ReviewCard } from "@/components/reviews/review-card";
@@ -155,6 +156,13 @@ export default async function ListingDetailPage({
                   size="sm"
                   variant="outline"
                 />
+                {user && !isOwner ? (
+                  <MessageListerButton
+                    currentUserId={user.id}
+                    listingId={data.listing.id}
+                    ownerId={data.listing.owner_id}
+                  />
+                ) : null}
                 {user && !isOwner ? (
                   <ReportDialog targetId={data.listing.id} targetType="listing" />
                 ) : null}

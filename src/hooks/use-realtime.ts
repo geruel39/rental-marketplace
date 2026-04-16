@@ -1,7 +1,8 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useTransition } from "react";
 
+import { getUnreadCount } from "@/actions/notifications";
 import { createClient } from "@/lib/supabase/client";
 import type { Message, Notification } from "@/types";
 
@@ -39,10 +40,22 @@ export function useRealtimeMessages(conversationId: string) {
   return { newMessages };
 }
 
-export function useRealtimeNotifications(userId: string) {
-  const [newNotification, setNewNotification] = useState<Notification | null>(null);
-  const [newNotifications, setNewNotifications] = useState<Notification[]>([]);
-  const [unreadCount, setUnreadCount] = useState(0);
+export function useRealtimeNotifications(userId: string, initialUnreadCount = 0) {
+  const [latestNotification, setLatestNotification] = useState<Notification | null>(null);
+  const [unreadCount, setUnreadCount] = useState(initialUnreadCount);
+  const [, startTransition] = useTransition();
+
+  function refresh() {
+    if (!userId) {
+      setUnreadCount(0);
+      return;
+    }
+
+    startTransition(async () => {
+      const nextCount = await getUnreadCount(userId);
+      setUnreadCount(nextCount);
+    });
+  }
 
   useEffect(() => {
     if (!userId) {
@@ -56,16 +69,34 @@ export function useRealtimeNotifications(userId: string) {
       .on(
         "postgres_changes",
         {
-          event: "INSERT",
+          event: "*",
           schema: "public",
           table: "notifications",
           filter: `user_id=eq.${userId}`,
         },
         (payload) => {
+          if (!payload.new) {
+            return;
+          }
+
           const notification = payload.new as Notification;
-          setNewNotification(notification);
-          setNewNotifications((current) => [...current, notification]);
-          setUnreadCount((current) => current + 1);
+          setLatestNotification(notification);
+
+          if (payload.eventType === "INSERT") {
+            if (!notification.is_read) {
+              setUnreadCount((current) => current + 1);
+            }
+
+            refresh();
+            return;
+          }
+
+          if (payload.eventType === "UPDATE" && notification.is_bundled) {
+            refresh();
+            return;
+          }
+
+          refresh();
         },
       )
       .subscribe();
@@ -75,5 +106,9 @@ export function useRealtimeNotifications(userId: string) {
     };
   }, [userId]);
 
-  return { newNotification, newNotifications, unreadCount };
+  useEffect(() => {
+    setUnreadCount(initialUnreadCount);
+  }, [initialUnreadCount]);
+
+  return { unreadCount, latestNotification, refresh };
 }

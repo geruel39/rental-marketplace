@@ -1,114 +1,117 @@
 import type { LucideIcon } from "lucide-react";
 import {
+  AlertCircle,
   AlertTriangle,
-  Calendar,
+  BadgeCheck,
+  Banknote,
+  Bell,
+  CalendarPlus,
   CheckCircle,
+  CheckCircle2,
   Clock,
+  CreditCard,
   DollarSign,
+  FileText,
   MessageSquare,
-  Package,
+  Play,
+  RefreshCcw,
+  RefreshCw,
   RotateCcw,
+  Shield,
   Star,
-  Truck,
   XCircle,
 } from "lucide-react";
+
+import {
+  NOTIFICATION_CONFIG,
+  type BundlePreviewItem,
+  type Notification,
+  type NotificationType,
+} from "@/types";
+
+const ICON_MAP = {
+  AlertCircle,
+  AlertTriangle,
+  BadgeCheck,
+  Banknote,
+  CalendarPlus,
+  CheckCircle,
+  CheckCircle2,
+  Clock,
+  CreditCard,
+  DollarSign,
+  FileText,
+  MessageSquare,
+  Play,
+  RefreshCcw,
+  RefreshCw,
+  RotateCcw,
+  Shield,
+  Star,
+  XCircle,
+} satisfies Record<string, LucideIcon>;
 
 export function getNotificationMeta(type: string): {
   icon: LucideIcon;
   iconClassName: string;
   iconContainerClassName: string;
 } {
-  switch (type) {
-    case "booking_request":
-      return {
-        icon: Calendar,
-        iconClassName: "text-blue-600",
-        iconContainerClassName: "bg-blue-100",
-      };
-    case "booking_confirmed":
-    case "payment_confirmed":
-    case "booking_completed":
-      return {
-        icon: CheckCircle,
-        iconClassName: "text-emerald-600",
-        iconContainerClassName: "bg-emerald-100",
-      };
-    case "payment_received":
-      return {
-        icon: DollarSign,
-        iconClassName: "text-emerald-700",
-        iconContainerClassName: "bg-emerald-100",
-      };
-    case "booking_expired":
-      return {
-        icon: Clock,
-        iconClassName: "text-rose-700",
-        iconContainerClassName: "bg-rose-100",
-      };
-    case "item_shipped":
-    case "booking_out_for_delivery":
-      return {
-        icon: Truck,
-        iconClassName: "text-violet-700",
-        iconContainerClassName: "bg-violet-100",
-      };
-    case "item_delivered":
-    case "item_picked_up":
-      return {
-        icon: Package,
-        iconClassName: "text-emerald-700",
-        iconContainerClassName: "bg-emerald-100",
-      };
-    case "return_initiated":
-      return {
-        icon: RotateCcw,
-        iconClassName: "text-sky-700",
-        iconContainerClassName: "bg-sky-100",
-      };
-    case "item_returned":
-      return {
-        icon: RotateCcw,
-        iconClassName: "text-emerald-700",
-        iconContainerClassName: "bg-emerald-100",
-      };
-    case "condition_issue":
-    case "return_condition_issue":
-      return {
-        icon: AlertTriangle,
-        iconClassName: "text-amber-700",
-        iconContainerClassName: "bg-amber-100",
-      };
-    case "new_message":
-      return {
-        icon: MessageSquare,
-        iconClassName: "text-sky-600",
-        iconContainerClassName: "bg-sky-100",
-      };
-    case "review_received":
-      return {
-        icon: Star,
-        iconClassName: "text-amber-600",
-        iconContainerClassName: "bg-amber-100",
-      };
-    case "low_stock":
-      return {
-        icon: AlertTriangle,
-        iconClassName: "text-amber-700",
-        iconContainerClassName: "bg-amber-100",
-      };
-    case "out_of_stock":
-    case "booking_declined":
-    case "booking_cancelled":
-      return {
-        icon: XCircle,
-        iconClassName: "text-rose-600",
-        iconContainerClassName: "bg-rose-100",
-      };
-    default:
-      return {
-        icon: AlertTriangle,
-        iconClassName: "text-muted-foreground",
-        iconContainerClassName: "bg-muted",
-      };
+  const config = type in NOTIFICATION_CONFIG
+    ? NOTIFICATION_CONFIG[type as NotificationType]
+    : null;
+  const Icon = (config?.icon ? ICON_MAP[config.icon] : null) ?? Bell;
+
+  return {
+    icon: Icon,
+    iconClassName: config?.color ?? "text-brand-steel",
+    iconContainerClassName: "bg-brand-light",
+  };
+}
+
+export function getNotificationPriority(type: string) {
+  if (!(type in NOTIFICATION_CONFIG)) {
+    return "low" as const;
   }
+
+  return NOTIFICATION_CONFIG[type as NotificationType].priority;
+}
+
+export function getNotificationTarget(notification: Notification) {
+  if (!(notification.type in NOTIFICATION_CONFIG)) {
+    return notification.action_url ?? "/dashboard/notifications";
+  }
+
+  const config = NOTIFICATION_CONFIG[notification.type];
+
+  if (notification.is_bundled) {
+    return config.defaultActionUrl;
+  }
+
+  return notification.action_url ?? config.defaultActionUrl;
+}
+
+export function getNotificationTimestamp(notification: Notification) {
+  return notification.last_bundled_at ?? notification.created_at;
+}
+
+function truncateText(value: string, maxLength: number) {
+  if (value.length <= maxLength) {
+    return value;
+  }
+
+  return `${value.slice(0, Math.max(0, maxLength - 1)).trimEnd()}…`;
+}
+
+export function formatBundlePreviewItem(
+  item: BundlePreviewItem,
+  options?: {
+    maxTextLength?: number;
+    quoted?: boolean;
+  },
+) {
+  const maxTextLength = options?.maxTextLength ?? 60;
+  const text = truncateText(item.text, maxTextLength);
+  const content = options?.quoted ? `"${text}"` : text;
+
+  return item.from_name ? `${item.from_name}: ${content}` : content;
 }
