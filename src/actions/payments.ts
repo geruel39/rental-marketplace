@@ -607,6 +607,145 @@ function validatePayoutDetails(lister: Profile) {
   }
 }
 
+function isMissingColumnError(error: unknown, columnName: string) {
+  const message =
+    error instanceof Error
+      ? error.message
+      : typeof error === "string"
+        ? error
+        : "";
+
+  return (
+    message.includes(columnName) &&
+    /column|schema cache|does not exist|Could not find/i.test(message)
+  );
+}
+
+async function linkPayoutToBookingIfSupported(
+  client: AnyClient,
+  bookingId: string,
+  payoutId: string,
+) {
+  const { error } = await client
+    .from("bookings")
+    .update({ payout_id: payoutId })
+    .eq("id", bookingId);
+
+  if (error) {
+    if (isMissingColumnError(error.message, "payout_id")) {
+      console.warn(
+        "bookings.payout_id column is missing; payout record created without booking link",
+      );
+      return;
+    }
+
+    throw new Error(error.message);
+  }
+}
+
+async function insertPayoutRecord(
+  client: AnyClient,
+  payload: {
+    lister_id: string;
+    booking_id: string;
+    amount: number;
+    gross_amount?: number;
+    platform_fee?: number;
+    hitpay_fee?: number;
+    net_amount?: number;
+    currency: string;
+    status: Payout["status"];
+    payout_method: string | null;
+    trigger_type?: PayoutTrigger;
+    can_retry?: boolean;
+    failure_reason?: string;
+    notes?: string;
+  },
+): Promise<string> {
+  const fullInsert = await client
+    .from("payouts")
+    .insert(payload)
+    .select("id")
+    .maybeSingle<{ id: string }>();
+
+  if (!fullInsert.error && fullInsert.data?.id) {
+    return fullInsert.data.id;
+  }
+
+  const shouldRetryWithMinimalShape =
+    fullInsert.error &&
+    [
+      "gross_amount",
+      "platform_fee",
+      "hitpay_fee",
+      "net_amount",
+      "trigger_type",
+      "can_retry",
+      "failure_reason",
+    ].some((column) => isMissingColumnError(fullInsert.error?.message, column));
+
+  if (!shouldRetryWithMinimalShape) {
+    throw new Error(fullInsert.error?.message ?? "Failed to create payout record");
+  }
+
+  const { data: fallbackInsert, error: fallbackInsertError } = await client
+    .from("payouts")
+    .insert({
+      lister_id: payload.lister_id,
+      booking_id: payload.booking_id,
+      amount: payload.amount,
+      currency: payload.currency,
+      status: payload.status,
+      payout_method: payload.payout_method,
+      notes: payload.notes ?? null,
+    })
+    .select("id")
+    .maybeSingle<{ id: string }>();
+
+  if (fallbackInsertError || !fallbackInsert?.id) {
+    throw new Error(
+      fallbackInsertError?.message ?? "Failed to create payout record",
+    );
+  }
+
+  return fallbackInsert.id;
+}
+
+async function getCompletedBookingsForPayoutReconciliation(client: AnyClient, userId: string) {
+  const withPayoutLink = await client
+    .from("bookings")
+    .select("id, payout_id")
+    .eq("lister_id", userId)
+    .eq("status", "completed");
+
+  if (!withPayoutLink.error) {
+    return (withPayoutLink.data ?? []) as Array<Pick<Booking, "id" | "payout_id">>;
+  }
+
+  if (!isMissingColumnError(withPayoutLink.error.message, "payout_id")) {
+    throw new Error(withPayoutLink.error.message);
+  }
+
+  console.warn(
+    "bookings.payout_id column is missing; falling back to booking-only payout reconciliation",
+  );
+
+  const withoutPayoutLink = await client
+    .from("bookings")
+    .select("id")
+    .eq("lister_id", userId)
+    .eq("status", "completed");
+
+  if (withoutPayoutLink.error) {
+    throw new Error(withoutPayoutLink.error.message);
+  }
+
+  return ((withoutPayoutLink.data ?? []) as Array<Pick<Booking, "id">>).map((booking) => ({
+    ...booking,
+    payout_id: undefined,
+  }));
+}
+
 async function createAutomaticPayoutRecord(
   client: AnyClient,
   booking: BookingWithRelations,
@@ -653,38 +792,23 @@ async function createAutomaticPayoutRecord(
   }
 
   const payoutAmount = roundMoney(booking.lister_payout);
-  const { data: payout, error: payoutError } = await client
-    .from("payouts")
-    .insert({
-      lister_id: booking.lister_id,
-      booking_id: booking.id,
-      amount: payoutAmount,
-      gross_amount: payoutAmount,
-      platform_fee: roundMoney(booking.service_fee_lister),
-      hitpay_fee: roundMoney(booking.hitpay_fee ?? 0),
-      net_amount: payoutAmount,
-      currency: "SGD",
-      status: "pending",
-      payout_method: booking.lister.payout_method ?? null,
-      trigger_type: "auto_after_completion",
-      can_retry: false,
-      notes: "Created by app-level fallback after booking completion.",
-    })
-    .select("id")
-    .maybeSingle<{ id: string }>();
+  const payoutId = await insertPayoutRecord(client, {
+    lister_id: booking.lister_id,
+    booking_id: booking.id,
+    amount: payoutAmount,
+    gross_amount: payoutAmount,
+    platform_fee: roundMoney(booking.service_fee_lister),
+    hitpay_fee: roundMoney(booking.hitpay_fee ?? 0),
+    net_amount: payoutAmount,
+    currency: "SGD",
+    status: "pending",
+    payout_method: booking.lister.payout_method ?? null,
+    trigger_type: "auto_after_completion",
+    can_retry: false,
+    notes: "Created by app-level fallback after booking completion.",
+  });
 
-  if (payoutError || !payout?.id) {
-    throw new Error(payoutError?.message ?? "Failed to create payout record");
-  }
-
-  const { error: bookingUpdateError } = await client
-    .from("bookings")
-    .update({ payout_id: payout.id })
-    .eq("id", booking.id);
-
-  if (bookingUpdateError) {
-    throw new Error(bookingUpdateError.message);
-  }
+  await linkPayoutToBookingIfSupported(client, booking.id, payoutId);
 
   await addTimeline({
     bookingId: booking.id,
@@ -697,7 +821,7 @@ async function createAutomaticPayoutRecord(
       `Payout of ${formatMoney(payoutAmount, "SGD")} to lister has been queued. ` +
       `Processing via ${booking.lister.payout_method ?? "configured method"}.`,
     metadata: {
-      payout_id: payout.id,
+      payout_id: payoutId,
       amount: payoutAmount,
       source: "app_fallback",
     },
@@ -713,7 +837,7 @@ async function createAutomaticPayoutRecord(
     actionUrl: "/dashboard/earnings",
   });
 
-  return payout.id;
+  return payoutId;
 }
 
 async function createDisputeRefund(params: {
@@ -1701,35 +1825,23 @@ export async function autoTriggerPayout(
           throw new Error(failedUpdateError.message);
         }
       } else {
-        const { data: failedPayout, error: failedPayoutError } = await admin
-          .from("payouts")
-          .insert({
-            lister_id: booking.lister_id,
-            booking_id: booking.id,
-            amount: roundMoney(booking.lister_payout),
-            gross_amount: roundMoney(booking.lister_payout),
-            platform_fee: roundMoney(booking.service_fee_lister),
-            hitpay_fee: roundMoney(booking.hitpay_fee ?? 0),
-            net_amount: roundMoney(booking.lister_payout),
-            currency: "SGD",
-            status: "failed",
-            payout_method: booking.lister.payout_method ?? null,
-            trigger_type: "auto_after_completion",
-            can_retry: true,
-            failure_reason: "Invalid payout details",
-            notes: "Auto-payout could not start because payout settings are incomplete.",
-          })
-          .select("id")
-          .maybeSingle<{ id: string }>();
-
-        if (failedPayoutError || !failedPayout) {
-          throw new Error(
-            failedPayoutError?.message ?? "Failed to create failed payout record",
-          );
-        }
-
-        failedPayoutId = failedPayout.id;
-        await admin.from("bookings").update({ payout_id: failedPayoutId }).eq("id", booking.id);
+        failedPayoutId = await insertPayoutRecord(admin, {
+          lister_id: booking.lister_id,
+          booking_id: booking.id,
+          amount: roundMoney(booking.lister_payout),
+          gross_amount: roundMoney(booking.lister_payout),
+          platform_fee: roundMoney(booking.service_fee_lister),
+          hitpay_fee: roundMoney(booking.hitpay_fee ?? 0),
+          net_amount: roundMoney(booking.lister_payout),
+          currency: "SGD",
+          status: "failed",
+          payout_method: booking.lister.payout_method ?? null,
+          trigger_type: "auto_after_completion",
+          can_retry: true,
+          failure_reason: "Invalid payout details",
+          notes: "Auto-payout could not start because payout settings are incomplete.",
+        });
+        await linkPayoutToBookingIfSupported(admin, booking.id, failedPayoutId);
       }
 
       await handleFailedPayout(failedPayoutId, "Invalid payout details");
@@ -1789,39 +1901,30 @@ export async function reconcileMissingPayoutsForLister(userId: string): Promise<
   const admin = createAdminClient();
 
   try {
-    const [{ data: bookings, error: bookingsError }, { data: payouts, error: payoutsError }] =
-      await Promise.all([
-        admin
-          .from("bookings")
-          .select("id, payout_id")
-          .eq("lister_id", userId)
-          .eq("status", "completed"),
-        admin
-          .from("payouts")
-          .select("id, booking_id")
-          .eq("lister_id", userId),
-      ]);
+    const [bookings, payoutsResult] = await Promise.all([
+      getCompletedBookingsForPayoutReconciliation(admin, userId),
+      admin
+        .from("payouts")
+        .select("id, booking_id")
+        .eq("lister_id", userId),
+    ]);
 
-    if (bookingsError) {
-      throw new Error(bookingsError.message);
-    }
-
-    if (payoutsError) {
-      throw new Error(payoutsError.message);
+    if (payoutsResult.error) {
+      throw new Error(payoutsResult.error.message);
     }
 
     const payoutsByBookingId = new Map(
-      ((payouts ?? []) as Array<Pick<Payout, "id" | "booking_id">>)
+      ((payoutsResult.data ?? []) as Array<Pick<Payout, "id" | "booking_id">>)
         .filter((payout) => Boolean(payout.booking_id))
         .map((payout) => [payout.booking_id as string, payout.id]),
     );
 
-    for (const booking of (bookings ?? []) as Array<Pick<Booking, "id" | "payout_id">>) {
+    for (const booking of bookings) {
       const existingPayoutId = payoutsByBookingId.get(booking.id) ?? null;
 
       if (existingPayoutId) {
         if (booking.payout_id !== existingPayoutId) {
-          await admin.from("bookings").update({ payout_id: existingPayoutId }).eq("id", booking.id);
+          await linkPayoutToBookingIfSupported(admin, booking.id, existingPayoutId);
         }
         continue;
       }
