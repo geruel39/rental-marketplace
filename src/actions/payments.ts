@@ -607,6 +607,115 @@ function validatePayoutDetails(lister: Profile) {
   }
 }
 
+async function createAutomaticPayoutRecord(
+  client: AnyClient,
+  booking: BookingWithRelations,
+): Promise<string> {
+  if (booking.payout_id) {
+    const { data: linkedPayout, error: linkedPayoutError } = await client
+      .from("payouts")
+      .select("id")
+      .eq("id", booking.payout_id)
+      .maybeSingle<{ id: string }>();
+
+    if (linkedPayoutError) {
+      throw new Error(linkedPayoutError.message);
+    }
+
+    if (linkedPayout?.id) {
+      return linkedPayout.id;
+    }
+  }
+
+  const { data: existingPayout, error: existingPayoutError } = await client
+    .from("payouts")
+    .select("id")
+    .eq("booking_id", booking.id)
+    .maybeSingle<{ id: string }>();
+
+  if (existingPayoutError) {
+    throw new Error(existingPayoutError.message);
+  }
+
+  if (existingPayout?.id) {
+    if (booking.payout_id !== existingPayout.id) {
+      const { error: bookingLinkError } = await client
+        .from("bookings")
+        .update({ payout_id: existingPayout.id })
+        .eq("id", booking.id);
+
+      if (bookingLinkError) {
+        throw new Error(bookingLinkError.message);
+      }
+    }
+
+    return existingPayout.id;
+  }
+
+  const payoutAmount = roundMoney(booking.lister_payout);
+  const { data: payout, error: payoutError } = await client
+    .from("payouts")
+    .insert({
+      lister_id: booking.lister_id,
+      booking_id: booking.id,
+      amount: payoutAmount,
+      gross_amount: payoutAmount,
+      platform_fee: roundMoney(booking.service_fee_lister),
+      hitpay_fee: roundMoney(booking.hitpay_fee ?? 0),
+      net_amount: payoutAmount,
+      currency: "SGD",
+      status: "pending",
+      payout_method: booking.lister.payout_method ?? null,
+      trigger_type: "auto_after_completion",
+      can_retry: false,
+      notes: "Created by app-level fallback after booking completion.",
+    })
+    .select("id")
+    .maybeSingle<{ id: string }>();
+
+  if (payoutError || !payout?.id) {
+    throw new Error(payoutError?.message ?? "Failed to create payout record");
+  }
+
+  const { error: bookingUpdateError } = await client
+    .from("bookings")
+    .update({ payout_id: payout.id })
+    .eq("id", booking.id);
+
+  if (bookingUpdateError) {
+    throw new Error(bookingUpdateError.message);
+  }
+
+  await addTimeline({
+    bookingId: booking.id,
+    status: "completed",
+    previousStatus: "completed",
+    actorId: null,
+    actorRole: "system",
+    title: "Payout initiated",
+    description:
+      `Payout of ${formatMoney(payoutAmount, "SGD")} to lister has been queued. ` +
+      `Processing via ${booking.lister.payout_method ?? "configured method"}.`,
+    metadata: {
+      payout_id: payout.id,
+      amount: payoutAmount,
+      source: "app_fallback",
+    },
+  });
+
+  await createNotification({
+    userId: booking.lister_id,
+    type: "payout_initiated",
+    title: "Payout is being processed",
+    body: `Your payout of ${formatMoney(payoutAmount, "SGD")} is being processed.`,
+    bookingId: booking.id,
+    fromUserId: null,
+    actionUrl: "/dashboard/earnings",
+  });
+
+  return payout.id;
+}
+
 async function createDisputeRefund(params: {
   booking: BookingWithRelations;
   refundAmount: number;
@@ -1630,26 +1739,34 @@ export async function autoTriggerPayout(
       };
     }
 
-    const { data, error } = await admin.rpc("trigger_auto_payout", {
-      p_booking_id: bookingId,
-    });
+    let payoutId: string | null = null;
 
-    if (error) {
-      throw new Error(error.message);
-    }
+    try {
+      const { data, error } = await admin.rpc("trigger_auto_payout", {
+        p_booking_id: bookingId,
+      });
 
-    const payload = (data ?? {}) as Record<string, unknown>;
-    const payloadError =
-      typeof payload.error === "string" ? payload.error : null;
-    const payoutId =
-      typeof payload.payout_id === "string" ? payload.payout_id : null;
+      if (error) {
+        throw new Error(error.message);
+      }
 
-    if (payloadError) {
-      throw new Error(payloadError);
-    }
+      const payload = (data ?? {}) as Record<string, unknown>;
+      const payloadError =
+        typeof payload.error === "string" ? payload.error : null;
 
-    if (!payoutId) {
-      throw new Error("Payout trigger returned without creating a payout record.");
+      payoutId =
+        typeof payload.payout_id === "string" ? payload.payout_id : null;
+
+      if (payloadError) {
+        throw new Error(payloadError);
+      }
+
+      if (!payoutId) {
+        throw new Error("Payout trigger returned without creating a payout record.");
+      }
+    } catch (rpcError) {
+      console.error("autoTriggerPayout RPC failed, falling back to app insert:", rpcError);
+      payoutId = await createAutomaticPayoutRecord(admin, booking);
     }
 
     if (fees.payout_delay_days === 0 && payoutId) {
