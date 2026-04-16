@@ -1248,10 +1248,12 @@ export async function confirmReturnAndComplete(
       parsed.data.return_condition === "damaged" ||
       parsed.data.return_condition === "missing_parts";
 
-    try {
-      await autoTriggerPayout(booking.id);
-    } catch (payoutError) {
-      console.error("confirmReturnAndComplete autoTriggerPayout failed:", payoutError);
+    const payoutResult = await autoTriggerPayout(booking.id);
+    if (!payoutResult.success) {
+      console.error(
+        "confirmReturnAndComplete autoTriggerPayout failed:",
+        payoutResult.error,
+      );
     }
 
     const notesText = parsed.data.return_condition_notes
@@ -1266,12 +1268,15 @@ export async function confirmReturnAndComplete(
       title: "Rental completed",
       description: depositRequiresReview
         ? `Item condition: ${parsed.data.return_condition}.${notesText} Stock restored. Deposit review is required before any deposit disposition.`
-        : `Item condition: ${parsed.data.return_condition}.${notesText} Stock restored. Deposit released with no claim and payout flow has been queued for processing.`,
+        : payoutResult.success
+          ? `Item condition: ${parsed.data.return_condition}.${notesText} Stock restored. Deposit released with no claim and payout flow has been queued for processing.`
+          : `Item condition: ${parsed.data.return_condition}.${notesText} Stock restored. Deposit released with no claim, but payout creation needs attention: ${payoutResult.error}`,
       metadata: {
         return_condition: parsed.data.return_condition,
         payout_amount: booking.lister_payout,
         deposit_amount: booking.deposit_amount,
         deposit_review_required: depositRequiresReview,
+        payout_error: payoutResult.success ? null : payoutResult.error,
       },
     });
 
@@ -1320,7 +1325,11 @@ export async function confirmReturnAndComplete(
     });
 
     revalidateBookingViews();
-    return { success: "Booking completed successfully." };
+    return {
+      success: payoutResult.success
+        ? "Booking completed successfully."
+        : "Booking completed, but payout could not be created automatically.",
+    };
   } catch (error) {
     console.error("confirmReturnAndComplete failed:", error);
     return { error: "Something went wrong. Please try again." };

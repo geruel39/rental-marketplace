@@ -1558,7 +1558,9 @@ export async function processPayoutToLister(
   }
 }
 
-export async function autoTriggerPayout(bookingId: string): Promise<void> {
+export async function autoTriggerPayout(
+  bookingId: string,
+): Promise<{ success: true; payoutId?: string } | { success: false; error: string }> {
   const admin = createAdminClient();
 
   try {
@@ -1622,7 +1624,10 @@ export async function autoTriggerPayout(bookingId: string): Promise<void> {
       }
 
       await handleFailedPayout(failedPayoutId, "Invalid payout details");
-      return;
+      return {
+        success: false,
+        error: "Payout could not start because payout settings are incomplete.",
+      };
     }
 
     const { data, error } = await admin.rpc("trigger_auto_payout", {
@@ -1634,16 +1639,32 @@ export async function autoTriggerPayout(bookingId: string): Promise<void> {
     }
 
     const payload = (data ?? {}) as Record<string, unknown>;
+    const payloadError =
+      typeof payload.error === "string" ? payload.error : null;
     const payoutId =
       typeof payload.payout_id === "string" ? payload.payout_id : null;
+
+    if (payloadError) {
+      throw new Error(payloadError);
+    }
+
+    if (!payoutId) {
+      throw new Error("Payout trigger returned without creating a payout record.");
+    }
 
     if (fees.payout_delay_days === 0 && payoutId) {
       await processPayoutToLister(payoutId);
     }
 
     revalidatePaymentViews();
+    return { success: true, payoutId };
   } catch (error) {
     console.error("autoTriggerPayout failed:", error);
+    return {
+      success: false,
+      error:
+        error instanceof Error ? error.message : "Could not create payout.",
+    };
   }
 }
 
