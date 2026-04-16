@@ -330,7 +330,10 @@ export function ListingForm({ listing, categories }: ListingFormProps) {
     formData.set("track_inventory", "true");
     formData.set("quantity_total", String(values.quantity_total ?? 1));
     formData.set("low_stock_threshold", String(values.low_stock_threshold ?? 1));
-    formData.set("cancellation_policy", values.cancellation_policy ?? "flexible");
+    formData.set(
+      "cancellation_policy",
+      listing ? values.cancellation_policy ?? "flexible" : "flexible",
+    );
 
     if (values.category_id) {
       formData.set("category_id", values.category_id);
@@ -677,43 +680,50 @@ export function ListingForm({ listing, categories }: ListingFormProps) {
               </div>
             </section>
 
-            <section className="space-y-4">
-              {renderSectionHeading("Rules & Policies")}
-              <div className="grid gap-4">
-                <div className="grid gap-2">
-                  <FieldLabel
-                    hint={fieldHelpText.cancellationPolicy}
-                    label="Cancellation policy"
-                    required
-                  />
-                  <Select
-                    onValueChange={(value) =>
-                      form.setValue(
-                        "cancellation_policy",
-                        value as ListingFormValues["cancellation_policy"],
-                        { shouldValidate: true },
-                      )
-                    }
-                    value={cancellationPolicy}
-                  >
-                    <SelectTrigger>
-                      <SelectValue placeholder="Select policy" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="flexible">Flexible</SelectItem>
-                      <SelectItem value="moderate">Moderate</SelectItem>
-                      <SelectItem value="strict">Strict</SelectItem>
-                    </SelectContent>
-                  </Select>
-                  <input type="hidden" {...form.register("cancellation_policy")} />
-                  {errors.cancellation_policy ? (
-                    <p className="text-sm text-destructive">
-                      {errors.cancellation_policy.message}
-                    </p>
-                  ) : null}
+            {listing ? (
+              <section className="space-y-4">
+                {renderSectionHeading("Rules & Policies")}
+                <div className="grid gap-4">
+                  <div className="grid gap-2">
+                    <FieldLabel
+                      hint={fieldHelpText.cancellationPolicy}
+                      label="Cancellation policy"
+                      required
+                    />
+                    <Select
+                      onValueChange={(value) =>
+                        form.setValue(
+                          "cancellation_policy",
+                          value as ListingFormValues["cancellation_policy"],
+                          { shouldValidate: true },
+                        )
+                      }
+                      value={cancellationPolicy}
+                    >
+                      <SelectTrigger>
+                        <SelectValue placeholder="Select policy" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="flexible">Flexible</SelectItem>
+                        <SelectItem value="moderate">Moderate</SelectItem>
+                        <SelectItem value="strict">Strict</SelectItem>
+                      </SelectContent>
+                    </Select>
+                    {errors.cancellation_policy ? (
+                      <p className="text-sm text-destructive">
+                        {errors.cancellation_policy.message}
+                      </p>
+                    ) : null}
+                  </div>
                 </div>
-              </div>
-            </section>
+              </section>
+            ) : null}
+
+            <input
+              type="hidden"
+              value={listing ? cancellationPolicy : "flexible"}
+              {...form.register("cancellation_policy")}
+            />
 
             <section className="flex flex-col gap-3 border-t border-border pt-6 sm:flex-row">
               <Button disabled={isPending} type="submit" value="active">
