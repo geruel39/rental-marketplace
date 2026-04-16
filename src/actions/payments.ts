@@ -1668,6 +1668,54 @@ export async function autoTriggerPayout(
   }
 }
 
+export async function reconcileMissingPayoutsForLister(userId: string): Promise<void> {
+  const admin = createAdminClient();
+
+  try {
+    const [{ data: bookings, error: bookingsError }, { data: payouts, error: payoutsError }] =
+      await Promise.all([
+        admin
+          .from("bookings")
+          .select("id, payout_id")
+          .eq("lister_id", userId)
+          .eq("status", "completed"),
+        admin
+          .from("payouts")
+          .select("id, booking_id")
+          .eq("lister_id", userId),
+      ]);
+
+    if (bookingsError) {
+      throw new Error(bookingsError.message);
+    }
+
+    if (payoutsError) {
+      throw new Error(payoutsError.message);
+    }
+
+    const payoutsByBookingId = new Map(
+      ((payouts ?? []) as Array<Pick<Payout, "id" | "booking_id">>)
+        .filter((payout) => Boolean(payout.booking_id))
+        .map((payout) => [payout.booking_id as string, payout.id]),
+    );
+
+    for (const booking of (bookings ?? []) as Array<Pick<Booking, "id" | "payout_id">>) {
+      const existingPayoutId = payoutsByBookingId.get(booking.id) ?? null;
+
+      if (existingPayoutId) {
+        if (booking.payout_id !== existingPayoutId) {
+          await admin.from("bookings").update({ payout_id: existingPayoutId }).eq("id", booking.id);
+        }
+        continue;
+      }
+
+      await autoTriggerPayout(booking.id);
+    }
+  } catch (error) {
+    console.error("reconcileMissingPayoutsForLister failed:", error);
+  }
+}
+
 export async function retryFailedPayout(
   payoutId: string,
 ): Promise<ActionResponse> {

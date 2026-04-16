@@ -2,7 +2,11 @@ import Link from "next/link";
 import { AlertTriangle, Building2, CreditCard, Download, Smartphone, Wallet } from "lucide-react";
 import { redirect } from "next/navigation";
 
-import { getEarningsSummary, getTransactionsForLister } from "@/actions/payments";
+import {
+  getEarningsSummary,
+  getTransactionsForLister,
+  reconcileMissingPayoutsForLister,
+} from "@/actions/payments";
 import { PayoutStatusCard } from "@/components/payments/payout-status-card";
 import { TransactionList } from "@/components/payments/transaction-list";
 import { PayoutDetailsDisplay } from "@/components/payout/payout-details-display";
@@ -67,6 +71,8 @@ export default async function EarningsPage({
 
   const resolvedSearchParams = await searchParams;
   const transactionFilter = getSingleValue(resolvedSearchParams.filter) ?? "all";
+
+  await reconcileMissingPayoutsForLister(user.id);
 
   const [summary, transactions, profileResult, payoutsResult, availableBalanceResult] =
     await Promise.all([
