@@ -341,7 +341,7 @@ export default async function MyRentalsPage({
 
                       <Link
                         className="inline-flex text-sm font-medium text-brand-navy hover:underline"
-                        href={`/dashboard/bookings/${booking.id}`}
+                        href={`/renter/rentals/${booking.id}`}
                       >
                         View Details →
                       </Link>

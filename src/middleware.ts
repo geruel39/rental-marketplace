@@ -1,7 +1,7 @@
 import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
 
-const protectedRoutes = ["/dashboard", "/listings/new"];
+const protectedRoutes = ["/lister", "/renter", "/account"];
 const authRoutes = ["/login", "/register"];
 
 function matchesRoute(pathname: string, routes: string[]) {
@@ -65,6 +65,13 @@ export async function middleware(request: NextRequest) {
 
   const { pathname } = request.nextUrl;
 
+  if (pathname === "/dashboard") {
+    const redirectUrl = request.nextUrl.clone();
+    redirectUrl.pathname = "/listings";
+    redirectUrl.searchParams.delete("redirectedFrom");
+    return NextResponse.redirect(redirectUrl);
+  }
+
   if (!user && matchesRoute(pathname, protectedRoutes)) {
     const redirectUrl = request.nextUrl.clone();
     redirectUrl.pathname = "/login";
@@ -74,7 +81,7 @@ export async function middleware(request: NextRequest) {
 
   if (user && matchesRoute(pathname, authRoutes)) {
     const redirectUrl = request.nextUrl.clone();
-    redirectUrl.pathname = "/dashboard";
+    redirectUrl.pathname = "/listings";
     redirectUrl.searchParams.delete("redirectedFrom");
     return NextResponse.redirect(redirectUrl);
   }

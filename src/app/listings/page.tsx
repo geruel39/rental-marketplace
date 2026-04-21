@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import Link from "next/link";
 import { Suspense } from "react";
 
 import { checkFavorites } from "@/actions/favorites";
@@ -8,6 +9,7 @@ import { ListingGrid } from "@/components/listings/listing-grid";
 import { ListingSort } from "@/components/listings/listing-sort";
 import { ListingGridSkeleton } from "@/components/shared/loading-skeleton";
 import { Pagination } from "@/components/shared/pagination";
+import { Button } from "@/components/ui/button";
 import { createClient } from "@/lib/supabase/server";
 
 type SearchParams = Record<string, string | string[] | undefined>;
@@ -92,6 +94,23 @@ async function ListingsContent({
 
   return (
     <main className="bg-brand-light mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
+      {user ? (
+        <div className="mb-6 flex flex-col gap-4 rounded-3xl border border-brand-navy/10 bg-white p-5 shadow-sm sm:flex-row sm:items-center sm:justify-between">
+          <div className="space-y-1">
+            <p className="text-lg font-semibold text-brand-navy">
+              {"\u{1F44B}"} Welcome! Browse to rent, or{" "}
+              <span className="text-brand-steel">Start Listing</span> to earn
+            </p>
+            <p className="text-sm text-muted-foreground">
+              Switch between renter and lister dashboards anytime from the account menu.
+            </p>
+          </div>
+          <Button asChild className="bg-brand-navy text-white hover:bg-brand-steel">
+            <Link href="/lister/listings/new">Start Listing</Link>
+          </Button>
+        </div>
+      ) : null}
+
       <div className="mb-6 space-y-2">
         <h1 className="text-brand-dark text-3xl font-semibold tracking-tight">Browse Listings</h1>
         <p className="text-muted-foreground">

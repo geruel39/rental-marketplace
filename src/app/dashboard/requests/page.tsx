@@ -377,7 +377,7 @@ export default async function RequestsPage({ searchParams }: RequestsPageProps) 
 
                       <Link
                         className="inline-flex text-sm font-medium text-brand-navy hover:underline"
-                        href={`/dashboard/bookings/${booking.id}`}
+                        href={`/lister/bookings/${booking.id}`}
                       >
                         View Details →
                       </Link>

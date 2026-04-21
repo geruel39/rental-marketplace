@@ -1845,7 +1845,3 @@ export async function getListingEligibility(
     };
   }
 }
-
-export const verificationUtils = {
-  getSignedUrl,
-};

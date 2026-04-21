@@ -2,21 +2,14 @@ import Link from "next/link";
 import { headers } from "next/headers";
 import {
   Bell,
-  CreditCard,
-  Heart,
+  Compass,
   LayoutDashboard,
   LogOut,
   Menu,
   MessageSquare,
-  Package,
-  Plus,
-  Receipt,
   Settings,
-  ShieldCheck,
   Shield,
-  Star,
   User as UserIcon,
-  Wallet,
 } from "lucide-react";
 
 import { getNotifications, getUnreadCount } from "@/actions/notifications";
@@ -32,8 +25,8 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import {
-  SheetClose,
   Sheet,
+  SheetClose,
   SheetContent,
   SheetHeader,
   SheetTitle,
@@ -49,41 +42,21 @@ const publicNavItems = [
   { href: "/register", label: "Sign Up" },
 ];
 
-const mobileDashboardSections = [
+const authenticatedMobileSections = [
   {
-    title: "Overview",
+    title: "Dashboards",
     items: [
-      { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
-      { href: "/dashboard/notifications", label: "Notifications", icon: Bell },
-      { href: "/dashboard/messages", label: "Messages", icon: MessageSquare },
-    ],
-  },
-  {
-    title: "As Lister",
-    items: [
-      { href: "/dashboard/my-listings", label: "My Listings", icon: Package },
-      { href: "/dashboard/inventory", label: "Inventory", icon: ShieldCheck },
-      { href: "/dashboard/requests", label: "Booking Requests", icon: Receipt },
-      { href: "/dashboard/earnings", label: "Earnings", icon: Wallet },
-    ],
-  },
-  {
-    title: "As Renter",
-    items: [
-      { href: "/dashboard/my-rentals", label: "My Rentals", icon: CreditCard },
-      { href: "/dashboard/favorites", label: "Favorites", icon: Heart },
+      { href: "/renter/dashboard", label: "Renter Dashboard", icon: LayoutDashboard },
+      { href: "/lister/dashboard", label: "Lister Dashboard", icon: LayoutDashboard },
+      { href: "/listings", label: "Browse Items", icon: Compass },
     ],
   },
   {
     title: "Account",
     items: [
-      { href: "/dashboard/settings", label: "Settings", icon: Settings },
-      {
-        href: "/dashboard/settings/payments",
-        label: "Payments",
-        icon: Wallet,
-      },
-      { href: "/dashboard/reviews", label: "Reviews", icon: Star },
+      { href: "/account/notifications", label: "Notifications", icon: Bell },
+      { href: "/account/messages", label: "Messages", icon: MessageSquare },
+      { href: "/account/profile", label: "Account Settings", icon: Settings },
     ],
   },
 ] as const;
@@ -103,8 +76,9 @@ export async function Navbar() {
         user_metadata?: Record<string, unknown>;
       }
     | null = null;
-  let profile: Pick<Profile, "avatar_url" | "display_name" | "full_name"> | null = null;
-  let isAdmin = false;
+  let profile:
+    | Pick<Profile, "avatar_url" | "display_name" | "full_name" | "is_admin">
+    | null = null;
   let latestNotifications: Notification[] = [];
   let unreadNotifications = 0;
 
@@ -120,10 +94,11 @@ export async function Navbar() {
         .from("profiles")
         .select("avatar_url, display_name, full_name, is_admin")
         .eq("id", sessionUser.id)
-        .maybeSingle<Pick<Profile, "avatar_url" | "display_name" | "full_name" | "is_admin">>();
+        .maybeSingle<
+          Pick<Profile, "avatar_url" | "display_name" | "full_name" | "is_admin">
+        >();
 
       profile = userProfile ?? null;
-      isAdmin = userProfile?.is_admin ?? false;
 
       const [notifications, unreadCount] = await Promise.all([
         getNotifications(sessionUser.id, 1),
@@ -146,10 +121,12 @@ export async function Navbar() {
       : null) ??
     user?.email ??
     "User";
-  const avatarUrl = profile?.avatar_url ??
+  const avatarUrl =
+    profile?.avatar_url ??
     (typeof user?.user_metadata?.avatar_url === "string"
       ? user.user_metadata.avatar_url
       : undefined);
+  const isAdmin = profile?.is_admin ?? false;
 
   return (
     <header className="sticky top-0 z-40 border-b border-border/70 bg-white/95 backdrop-blur">
@@ -161,7 +138,6 @@ export async function Navbar() {
               className="inline-flex size-9 items-center justify-center rounded-md text-brand-navy transition-colors hover:bg-brand-light hover:text-brand-steel focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring lg:hidden"
             >
               <Menu className="size-5" />
-              <span className="sr-only">Open navigation</span>
             </SheetTrigger>
             <SheetContent side="left" className="w-[85vw] max-w-sm">
               <SheetHeader className="-mx-6 -mt-6 mb-4 bg-brand-navy px-6 py-5 text-white">
@@ -169,106 +145,75 @@ export async function Navbar() {
               </SheetHeader>
               <div className="space-y-6 px-4 pb-6">
                 <SearchBar />
-                <div className="space-y-3">
+                {!user ? (
                   <div className="grid gap-2">
                     <SheetClose asChild>
-                      <Button asChild className="justify-start text-brand-navy hover:bg-brand-light hover:text-brand-steel" variant="ghost">
-                        <Link href="/">Home</Link>
+                      <Button asChild className="justify-start" variant="ghost">
+                        <Link href="/listings">Browse Items</Link>
+                      </Button>
+                    </SheetClose>
+                    {publicNavItems.map((item) => (
+                      <SheetClose key={item.href} asChild>
+                        <Button
+                          asChild
+                          className={item.href === "/register" ? "bg-brand-navy text-white hover:bg-brand-steel" : "justify-start"}
+                          variant={item.href === "/register" ? "default" : "ghost"}
+                        >
+                          <Link href={item.href}>{item.label}</Link>
+                        </Button>
+                      </SheetClose>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="space-y-5">
+                    {authenticatedMobileSections.map((section) => (
+                      <div className="space-y-2" key={section.title}>
+                        <p className="px-1 text-xs font-semibold uppercase tracking-[0.18em] text-brand-navy/70">
+                          {section.title}
+                        </p>
+                        <div className="grid gap-1">
+                          {section.items.map((item) => {
+                            const Icon = item.icon;
+
+                            return (
+                              <SheetClose asChild key={item.href}>
+                                <Button asChild className="justify-start" variant="ghost">
+                                  <Link href={item.href}>
+                                    <Icon className="size-4" />
+                                    {item.label}
+                                  </Link>
+                                </Button>
+                              </SheetClose>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    ))}
+
+                    <SheetClose asChild>
+                      <Button asChild className="justify-start" variant="ghost">
+                        <Link href={`/users/${user.id}`}>
+                          <UserIcon className="size-4" />
+                          My Profile
+                        </Link>
                       </Button>
                     </SheetClose>
                     <SheetClose asChild>
-                      <Button asChild className="justify-start text-brand-navy hover:bg-brand-light hover:text-brand-steel" variant="ghost">
-                        <Link href="/listings">Browse Listings</Link>
+                      <Button asChild className="justify-start" variant="ghost">
+                        <a href="/auth/logout">
+                          <LogOut className="size-4" />
+                          Logout
+                        </a>
                       </Button>
                     </SheetClose>
                   </div>
-                  <SheetClose asChild>
-                    <Button asChild className="w-full justify-start bg-brand-navy text-white hover:bg-brand-steel">
-                      <Link href="/listings/new">
-                        <Plus className="size-4" />
-                        List an Item
-                      </Link>
-                    </Button>
-                  </SheetClose>
-
-                  {!user ? (
-                    <div className="grid gap-2">
-                      {publicNavItems.map((item) => (
-                        <SheetClose key={item.href} asChild>
-                          <Button
-                            asChild
-                            className={item.href === "/register"
-                              ? "justify-start bg-brand-navy text-white hover:bg-brand-steel"
-                              : "justify-start text-brand-navy hover:bg-brand-light hover:text-brand-steel"}
-                            variant={item.href === "/register" ? "default" : "ghost"}
-                          >
-                            <Link href={item.href}>{item.label}</Link>
-                          </Button>
-                        </SheetClose>
-                      ))}
-                    </div>
-                  ) : (
-                    <div className="grid gap-2">
-                      {mobileDashboardSections.map((section) => (
-                        <div key={section.title} className="space-y-2">
-                          <p className="px-1 text-xs font-semibold uppercase tracking-[0.18em] text-brand-navy/70">
-                            {section.title}
-                          </p>
-                          <div className="grid gap-1">
-                            {section.items.map((item) => {
-                              const Icon = item.icon;
-
-                              return (
-                                <SheetClose key={item.href} asChild>
-                                  <Button
-                                    asChild
-                                    className="justify-start text-brand-navy hover:bg-brand-light hover:text-brand-steel"
-                                    variant="ghost"
-                                  >
-                                    <Link href={item.href}>
-                                      <Icon className="size-4" />
-                                      {item.label}
-                                    </Link>
-                                  </Button>
-                                </SheetClose>
-                              );
-                            })}
-                          </div>
-                        </div>
-                      ))}
-                      <SheetClose asChild>
-                        <Button
-                          asChild
-                          className="justify-start text-brand-navy hover:bg-brand-light hover:text-brand-steel"
-                          variant="ghost"
-                        >
-                          <Link href={`/users/${user.id}`}>
-                            <UserIcon className="size-4" />
-                            My Profile
-                          </Link>
-                        </Button>
-                      </SheetClose>
-                      <SheetClose asChild>
-                        <Button
-                          asChild
-                          className="justify-start text-brand-navy hover:bg-brand-light hover:text-brand-steel"
-                          variant="ghost"
-                        >
-                          <a href="/auth/logout">
-                            <LogOut className="size-4" />
-                            Logout
-                          </a>
-                        </Button>
-                      </SheetClose>
-                    </div>
-                  )}
-                </div>
+                )}
               </div>
             </SheetContent>
           </Sheet>
 
           <Link
-            className="text-brand-navy rounded-sm text-xl font-bold tracking-tight focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            className="rounded-sm text-xl font-bold tracking-tight text-brand-navy focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
             href="/"
           >
             RentHub
@@ -279,50 +224,73 @@ export async function Navbar() {
           <SearchBar />
         </div>
 
-        <div className="ml-auto hidden items-center gap-2 lg:flex">
+        <div className="ml-auto flex items-center gap-2">
           {!user ? (
-            <>
-              <Button asChild className="bg-brand-navy text-white hover:bg-brand-steel">
-                <Link href="/listings/new">List an Item</Link>
+            <div className="hidden items-center gap-2 lg:flex">
+              <Button asChild variant="ghost">
+                <Link href="/listings">Browse</Link>
               </Button>
-              <Button asChild className="border-brand-navy text-brand-navy hover:bg-brand-navy/10 hover:text-brand-steel" variant="outline">
+              <Button asChild variant="outline">
                 <Link href="/login">Login</Link>
               </Button>
               <Button asChild className="bg-brand-navy text-white hover:bg-brand-steel">
                 <Link href="/register">Sign Up</Link>
               </Button>
-            </>
+            </div>
           ) : (
             <>
-              <Button asChild className="bg-brand-navy text-white hover:bg-brand-steel">
-                <Link href="/listings/new">List an Item</Link>
+              <Button asChild className="hidden lg:inline-flex" variant="ghost">
+                <Link href="/listings">
+                  <Compass className="size-4" />
+                  Browse
+                </Link>
               </Button>
               <NotificationBell
                 initialNotifications={latestNotifications}
                 initialUnreadCount={unreadNotifications}
                 userId={user.id}
               />
+              <Button asChild size="icon" variant="ghost">
+                <Link aria-label="Messages" href="/account/messages">
+                  <MessageSquare className="size-5" />
+                </Link>
+              </Button>
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
                   <Button
                     aria-label="Open account menu"
-                    className="rounded-full p-0"
-                    size="icon"
+                    className="flex items-center gap-2 rounded-full pl-1 pr-2"
                     variant="ghost"
                   >
-                    <Avatar>
-                      {avatarUrl ? <AvatarImage alt={displayName} src={avatarUrl} /> : null}
+                    <Avatar className="size-8">
+                      <AvatarImage alt={displayName} src={avatarUrl} />
                       <AvatarFallback>{getInitials(displayName)}</AvatarFallback>
                     </Avatar>
+                    <span className="hidden text-sm font-medium lg:inline">
+                      {displayName}
+                    </span>
                   </Button>
                 </DropdownMenuTrigger>
-                <DropdownMenuContent align="end" className="w-56">
+                <DropdownMenuContent align="end" className="w-60">
                   <DropdownMenuItem asChild>
-                    <Link href="/dashboard">
+                    <Link href="/renter/dashboard">
                       <LayoutDashboard className="size-4" />
-                      Dashboard
+                      Renter Dashboard
                     </Link>
                   </DropdownMenuItem>
+                  <DropdownMenuItem asChild>
+                    <Link href="/lister/dashboard">
+                      <LayoutDashboard className="size-4" />
+                      Lister Dashboard
+                    </Link>
+                  </DropdownMenuItem>
+                  <DropdownMenuItem asChild>
+                    <Link href="/listings">
+                      <Compass className="size-4" />
+                      Browse Items
+                    </Link>
+                  </DropdownMenuItem>
+                  <DropdownMenuSeparator />
                   <DropdownMenuItem asChild>
                     <Link href={`/users/${user.id}`}>
                       <UserIcon className="size-4" />
@@ -330,9 +298,9 @@ export async function Navbar() {
                     </Link>
                   </DropdownMenuItem>
                   <DropdownMenuItem asChild>
-                    <Link href="/dashboard/settings">
+                    <Link href="/account/profile">
                       <Settings className="size-4" />
-                      Settings
+                      Account Settings
                     </Link>
                   </DropdownMenuItem>
                   {isAdmin ? (

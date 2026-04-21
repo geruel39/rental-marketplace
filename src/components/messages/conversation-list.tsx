@@ -14,11 +14,13 @@ import type { ConversationWithDetails } from "@/types";
 interface ConversationListProps {
   conversations: ConversationWithDetails[];
   activeConversationId?: string;
+  basePath?: string;
 }
 
 export function ConversationList({
   conversations,
   activeConversationId,
+  basePath = "/dashboard/messages",
 }: ConversationListProps) {
   const [search, setSearch] = useState("");
 
@@ -83,7 +85,7 @@ export function ConversationList({
                   "flex items-start gap-3 rounded-2xl px-3 py-2.5 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
                   isActive ? "bg-primary/8 shadow-sm" : "hover:bg-muted/50",
                 )}
-                href={`/dashboard/messages/${conversation.id}`}
+                href={`${basePath}/${conversation.id}`}
               >
                 <Avatar>
                   <AvatarImage

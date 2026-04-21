@@ -9,6 +9,9 @@ export function FooterGate() {
 
   if (
     pathname.startsWith("/dashboard") ||
+    pathname.startsWith("/lister") ||
+    pathname.startsWith("/renter") ||
+    pathname.startsWith("/account") ||
     pathname.startsWith("/admin") ||
     pathname === "/maintenance"
   ) {

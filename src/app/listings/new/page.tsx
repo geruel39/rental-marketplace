@@ -1,6 +1,6 @@
 import { redirect } from "next/navigation";
 
-import { canCreateListing } from "@/actions/payout";
+import { getListingEligibility } from "@/actions/verification";
 import { getCategories } from "@/actions/listings";
 import { ListingForm } from "@/components/listings/listing-form";
 import { Button } from "@/components/ui/button";
@@ -24,90 +24,52 @@ export default async function NewListingPage() {
     redirect("/login");
   }
 
-  const listingAccess = await canCreateListing(user.id);
+  const listingAccess = await getListingEligibility(user.id);
 
   if (!listingAccess.allowed) {
-    const isKycPending = listingAccess.reason?.includes("being reviewed");
-    const isKycRejected = listingAccess.reason?.includes("was rejected");
+    const isPending = listingAccess.reason?.includes("pending");
+    const isRejected = listingAccess.reason?.includes("rejected");
 
     return (
       <main className="mx-auto flex min-h-[70vh] max-w-4xl items-center px-4 py-8 sm:px-6 lg:px-8">
         <Card className="w-full rounded-3xl border-border/70 bg-white shadow-sm">
           <CardHeader className="space-y-2">
             <CardTitle className="text-3xl text-brand-navy">
-              {isKycPending ? "Your KYC is pending verification" : "Payout Setup Required"}
+              {isPending ? "Your verification is pending review" : "Verification Required"}
             </CardTitle>
             <CardDescription className="text-base">
-              {isKycPending
-                ? "Your bank payout setup is almost done. Once your document is approved, you'll be able to create listings."
-                : listingAccess.reason ||
-                  "You must set up your payout method before creating listings. This ensures you can receive payments."}
+              {listingAccess.message ||
+                listingAccess.reason ||
+                "Complete your verification requirements before creating listings."}
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-6">
-            {isKycPending ? (
+            {isPending ? (
               <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
                 <p className="font-medium">Expected review time: 1-3 business days</p>
-                <p className="mt-1">
-                  Need to replace your upload? You can submit a new document from
-                  Payment Settings.
-                </p>
+                <p className="mt-1">We&apos;ll notify you as soon as your verification is approved.</p>
               </div>
             ) : null}
 
-            {isKycRejected ? (
+            {isRejected ? (
               <div className="rounded-2xl border border-red-200 bg-red-50 p-4 text-sm text-red-900">
-                Your last KYC document was rejected. Upload a new document in
-                Payment Settings to continue.
+                Your last verification submission was rejected. Review the notes and resubmit the required documents.
               </div>
             ) : null}
 
             <details className="rounded-2xl border border-brand-navy/10 bg-brand-light p-4">
               <summary className="cursor-pointer list-none font-medium text-brand-navy">
-                Why do I need payout setup?
+                Why do I need verification?
               </summary>
               <p className="mt-3 text-sm leading-6 text-muted-foreground">
-                To ensure you can receive payments from renters, you must configure
-                your payout method. This is a one-time setup. Choose from bank
-                transfer, GCash, or Maya.
+                Verification helps us protect renters and listers on the platform.
+                Once your account is approved, you&apos;ll be able to publish listings
+                and start earning from your items.
               </p>
             </details>
 
-            <div className="overflow-hidden rounded-2xl border border-border/70">
-              <table className="w-full text-left text-sm">
-                <thead className="bg-brand-light text-brand-navy">
-                  <tr>
-                    <th className="px-4 py-3 font-medium">Method</th>
-                    <th className="px-4 py-3 font-medium">Setup Time</th>
-                    <th className="px-4 py-3 font-medium">Verification</th>
-                    <th className="px-4 py-3 font-medium">Payout Speed</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-border bg-white">
-                  <tr>
-                    <td className="px-4 py-3">Bank</td>
-                    <td className="px-4 py-3">2-3 days</td>
-                    <td className="px-4 py-3">KYC Required</td>
-                    <td className="px-4 py-3">1-2 days</td>
-                  </tr>
-                  <tr>
-                    <td className="px-4 py-3">GCash</td>
-                    <td className="px-4 py-3">Instant</td>
-                    <td className="px-4 py-3">None</td>
-                    <td className="px-4 py-3">Instant</td>
-                  </tr>
-                  <tr>
-                    <td className="px-4 py-3">Maya</td>
-                    <td className="px-4 py-3">Instant</td>
-                    <td className="px-4 py-3">None</td>
-                    <td className="px-4 py-3">Instant</td>
-                  </tr>
-                </tbody>
-              </table>
-            </div>
-
             <Button asChild className="bg-brand-navy text-white hover:bg-brand-steel">
-              <Link href="/dashboard/settings/payments">Set Up Payout Now</Link>
+              <Link href="/account/verify">Complete Verification</Link>
             </Button>
           </CardContent>
         </Card>
