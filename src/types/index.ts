@@ -1,23 +1,43 @@
 export type AccountType = "individual" | "business";
 export type VerificationStatus =
-  | "unverified"
+  | "incomplete"
   | "pending"
-  | "verified"
-  | "rejected";
+  | "approved"
+  | "rejected"
+  | "suspended"
+  /** @deprecated Legacy value retained until verification flow consumers are migrated. */
+  | "unverified"
+  /** @deprecated Legacy value retained until verification flow consumers are migrated. */
+  | "verified";
+export type GovernmentIDType =
+  | "national_id"
+  | "drivers_license"
+  | "passport"
+  | "voter_id";
+export type BusinessDocumentType =
+  | "dti_certificate"
+  | "sec_registration"
+  | "mayors_permit"
+  | "bir_certificate"
+  | "business_permit"
+  | "other";
 export type ListingStatus = "draft" | "active" | "paused" | "archived";
 export type PricingPeriod = "hour" | "day" | "week" | "month";
 export type BookingStatus =
-  | "pending"
-  | "awaiting_payment"
+  | "lister_confirmation"
   | "confirmed"
-  /** @deprecated Legacy status retained temporarily for backward compatibility. */
-  | "out_for_delivery"
   | "active"
   | "returned"
   | "completed"
   | "cancelled_by_renter"
   | "cancelled_by_lister"
-  | "disputed";
+  | "disputed"
+  /** @deprecated Legacy status retained until booking flow consumers are migrated. */
+  | "pending"
+  /** @deprecated Legacy status retained until booking flow consumers are migrated. */
+  | "awaiting_payment"
+  /** @deprecated Legacy status retained until booking flow consumers are migrated. */
+  | "out_for_delivery";
 /** @deprecated Deprecated booking fulfillment flow. */
 export type FulfillmentType = "pickup" | "delivery";
 /** @deprecated Deprecated booking return flow. */
@@ -125,6 +145,8 @@ export interface Profile {
   id: string;
   email: string;
   full_name: string;
+  first_name?: string;
+  last_name?: string;
   display_name: string;
   avatar_url: string | null;
   phone: string | null;
@@ -132,6 +154,10 @@ export interface Profile {
   account_type: AccountType;
   business_name: string | null;
   business_registration: string | null;
+  representative_first_name?: string;
+  representative_last_name?: string;
+  terms_agreed_at?: string;
+  terms_version?: string;
   website_url: string | null;
   location: string | null;
   city: string | null;
@@ -178,6 +204,85 @@ export interface Profile {
   last_active: string;
   created_at: string;
   updated_at: string;
+}
+
+export interface IndividualVerification {
+  id: string;
+  user_id: string;
+  email_verified: boolean;
+  email_verified_at?: string;
+  phone_number?: string;
+  phone_verified: boolean;
+  phone_verified_at?: string;
+  gov_id_document_type?: GovernmentIDType;
+  gov_id_front_url?: string;
+  gov_id_back_url?: string;
+  gov_id_submitted_at?: string;
+  gov_id_verified: boolean;
+  gov_id_verified_at?: string;
+  gov_id_rejection_reason?: string;
+  selfie_url?: string;
+  selfie_submitted_at?: string;
+  selfie_verified: boolean;
+  selfie_verified_at?: string;
+  selfie_rejection_reason?: string;
+  overall_status: VerificationStatus;
+  overall_approved_at?: string;
+  overall_approved_by?: string;
+  overall_rejection_reason?: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface BusinessVerification {
+  id: string;
+  user_id: string;
+  business_phone?: string;
+  business_phone_verified: boolean;
+  business_address?: string;
+  business_address_verified: boolean;
+  tin?: string;
+  tin_verified: boolean;
+  business_document_type?: BusinessDocumentType;
+  business_document_url?: string;
+  business_document_submitted_at?: string;
+  business_document_verified: boolean;
+  business_document_verified_at?: string;
+  business_document_rejection_reason?: string;
+  rep_gov_id_type?: GovernmentIDType;
+  rep_gov_id_front_url?: string;
+  rep_gov_id_back_url?: string;
+  rep_gov_id_submitted_at?: string;
+  rep_gov_id_verified: boolean;
+  rep_gov_id_verified_at?: string;
+  rep_gov_id_rejection_reason?: string;
+  rep_selfie_url?: string;
+  rep_selfie_submitted_at?: string;
+  rep_selfie_verified: boolean;
+  rep_selfie_verified_at?: string;
+  rep_selfie_rejection_reason?: string;
+  overall_status: VerificationStatus;
+  overall_approved_at?: string;
+  overall_approved_by?: string;
+  overall_rejection_reason?: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ListingEligibility {
+  allowed: boolean;
+  reason?: string;
+  message?: string;
+}
+
+export interface VerificationStep {
+  key: string;
+  label: string;
+  description: string;
+  completed: boolean;
+  status: "complete" | "pending" | "rejected" | "not_started";
+  actionLabel?: string;
+  actionUrl?: string;
 }
 
 export interface Category {
@@ -264,6 +369,11 @@ export interface Booking {
   total_price: number;
   lister_payout: number;
   status: BookingStatus;
+  lister_confirmation_deadline?: string;
+  lister_confirmed_at?: string;
+  lister_confirmed_by?: string;
+  auto_cancelled_reason?: string;
+  listing_paused_due_to_cancellation?: boolean;
   fulfillment_type?: string;
   /** @deprecated Legacy delivery field retained for compatibility. */
   delivery_address?: string;
@@ -964,78 +1074,85 @@ export const BOOKING_STATUS_CONFIG: Record<
     color: string;
     icon: string;
     description: string;
-    next: BookingStatus[];
+    next_statuses: BookingStatus[];
   }
 > = {
   pending: {
     label: "Pending Review",
     color: "bg-yellow-100 text-yellow-800",
     icon: "Clock",
-    description: "Waiting for lister to review",
-    next: ["awaiting_payment", "cancelled_by_lister", "cancelled_by_renter"],
+    description: "Legacy status awaiting booking flow migration",
+    next_statuses: ["awaiting_payment", "cancelled_by_lister", "cancelled_by_renter"],
   },
   awaiting_payment: {
     label: "Awaiting Payment",
     color: "bg-orange-100 text-orange-800",
     icon: "CreditCard",
-    description: "Accepted - waiting for renter to pay",
-    next: ["confirmed", "cancelled_by_renter", "cancelled_by_lister"],
+    description: "Legacy status awaiting booking flow migration",
+    next_statuses: ["confirmed", "cancelled_by_renter", "cancelled_by_lister"],
+  },
+  lister_confirmation: {
+    label: "Awaiting Lister Confirmation",
+    color: "bg-orange-100 text-orange-800",
+    icon: "Clock",
+    description: "Paid - lister must confirm within 24 hours",
+    next_statuses: ["confirmed", "cancelled_by_lister", "cancelled_by_renter"],
+  },
+  out_for_delivery: {
+    label: "In Transit",
+    color: "bg-blue-100 text-blue-800",
+    icon: "Truck",
+    description: "Legacy status from the previous fulfillment flow",
+    next_statuses: ["active"],
   },
   confirmed: {
     label: "Confirmed",
     color: "bg-blue-100 text-blue-800",
     icon: "CheckCircle",
     description: "Paid - waiting for lister to hand over item",
-    next: ["active", "cancelled_by_lister", "disputed"],
-  },
-  out_for_delivery: {
-    label: "In Transit",
-    color: "bg-blue-100 text-blue-800",
-    icon: "Truck",
-    description: "Deprecated status from previous fulfillment flow",
-    next: ["active"],
+    next_statuses: ["active", "cancelled_by_lister", "disputed"],
   },
   active: {
     label: "Active Rental",
     color: "bg-green-100 text-green-800",
     icon: "Play",
     description: "Item with renter - rental period running",
-    next: ["returned", "disputed"],
+    next_statuses: ["returned", "disputed"],
   },
   returned: {
     label: "Returned",
     color: "bg-indigo-100 text-indigo-800",
     icon: "RotateCcw",
     description: "Item returned - awaiting lister inspection",
-    next: ["completed", "disputed"],
+    next_statuses: ["completed", "disputed"],
   },
   completed: {
     label: "Completed",
     color: "bg-emerald-100 text-emerald-800",
     icon: "CheckCircle2",
     description: "Rental completed",
-    next: [],
+    next_statuses: [],
   },
   cancelled_by_renter: {
     label: "Cancelled",
     color: "bg-red-100 text-red-800",
     icon: "XCircle",
     description: "Cancelled by renter",
-    next: [],
+    next_statuses: [],
   },
   cancelled_by_lister: {
     label: "Declined",
     color: "bg-red-100 text-red-800",
     icon: "XCircle",
     description: "Declined by lister",
-    next: [],
+    next_statuses: [],
   },
   disputed: {
     label: "Disputed",
     color: "bg-red-100 text-red-800",
     icon: "AlertTriangle",
     description: "Under dispute - admin reviewing",
-    next: ["completed", "cancelled_by_lister"],
+    next_statuses: ["completed", "cancelled_by_lister"],
   },
 };
 

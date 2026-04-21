@@ -51,28 +51,51 @@ export const resetPasswordSchema = z
     path: ["confirmPassword"],
   });
 
-export const registerSchema = z
+export const individualRegisterSchema = z
   .object({
+    first_name: z.string().min(2).max(50),
+    last_name: z.string().min(2).max(50),
+    display_name: z.string().min(2).max(50),
     email: z.string().email(),
-    password: z.string().min(6).max(72),
-    confirmPassword: z.string(),
-    full_name: z.string().min(2, "Name must be at least 2 characters").max(100),
-    display_name: z.string().min(2).max(50).optional(),
-    account_type: z.enum(["individual", "business"]).default("individual"),
-    business_name: z.string().min(2).max(200).optional(),
-    business_registration: z.string().optional(),
+    password: z
+      .string()
+      .min(8)
+      .max(72)
+      .regex(/(?=.*[A-Z])/, "Must contain uppercase letter")
+      .regex(/(?=.*[0-9])/, "Must contain a number"),
+    confirm_password: z.string(),
+    terms_agreed: z.literal(true, {
+      message: "You must agree to the Terms of Service",
+    }),
   })
-  .refine((data) => data.password === data.confirmPassword, {
+  .refine((data) => data.password === data.confirm_password, {
     message: "Passwords do not match",
-    path: ["confirmPassword"],
+    path: ["confirm_password"],
+  });
+
+export const businessRegisterSchema = z
+  .object({
+    representative_first_name: z.string().min(2).max(50),
+    representative_last_name: z.string().min(2).max(50),
+    display_name: z.string().min(2).max(50),
+    business_name: z.string().min(2).max(200),
+    business_registration: z.string().min(2).max(100),
+    email: z.string().email(),
+    password: z
+      .string()
+      .min(8)
+      .max(72)
+      .regex(/(?=.*[A-Z])/, "Must contain uppercase")
+      .regex(/(?=.*[0-9])/, "Must contain a number"),
+    confirm_password: z.string(),
+    terms_agreed: z.literal(true, {
+      message: "You must agree to the Terms of Service",
+    }),
   })
-  .refine(
-    (data) => data.account_type !== "business" || Boolean(data.business_name),
-    {
-      message: "Business name is required",
-      path: ["business_name"],
-    },
-  );
+  .refine((data) => data.password === data.confirm_password, {
+    message: "Passwords do not match",
+    path: ["confirm_password"],
+  });
 
 export const listingSchema = z
   .object({
@@ -119,7 +142,7 @@ export const listingSchema = z
     },
   );
 
-export const bookingRequestSchema = z.object({
+export const bookingSchema = z.object({
   listing_id: z.string().uuid(),
   rental_units: z.coerce
     .number()
@@ -128,6 +151,47 @@ export const bookingRequestSchema = z.object({
   quantity: z.coerce.number().int().min(1).default(1),
   pricing_period: pricingPeriodSchema,
   message: z.string().max(500).optional(),
+});
+
+export const individualVerificationSchema = z.object({
+  phone_number: z
+    .string()
+    .regex(/^(\+63|0)?9\d{9}$/, "Invalid Philippine mobile number"),
+  gov_id_document_type: z.enum([
+    "national_id",
+    "drivers_license",
+    "passport",
+    "voter_id",
+  ]),
+});
+
+export const businessVerificationSchema = z.object({
+  business_phone: z
+    .string()
+    .regex(/^(\+63|0)?[0-9]{7,11}$/, "Invalid phone number"),
+  business_address: z.string().min(10).max(500),
+  tin: z
+    .string()
+    .regex(/^\d{3}-\d{3}-\d{3}-\d{3}$/, "TIN format: XXX-XXX-XXX-XXX"),
+  business_document_type: z.enum([
+    "dti_certificate",
+    "sec_registration",
+    "mayors_permit",
+    "bir_certificate",
+    "business_permit",
+    "other",
+  ]),
+  rep_gov_id_type: z.enum([
+    "national_id",
+    "drivers_license",
+    "passport",
+    "voter_id",
+  ]),
+});
+
+export const listerCancelSchema = z.object({
+  booking_id: z.string().uuid(),
+  reason: z.string().min(5).max(500),
 });
 
 export const handoverProofSchema = z.object({
@@ -334,12 +398,45 @@ export const feeConfigUpdateSchema = z.object({
   value: z.coerce.number().min(0),
 });
 
+// Deprecated compatibility exports for existing actions/components during migration.
+export const registerSchema = z
+  .object({
+    email: z.string().email(),
+    password: z.string().min(6).max(72),
+    confirmPassword: z.string(),
+    full_name: z.string().min(2, "Name must be at least 2 characters").max(100),
+    display_name: z.string().min(2).max(50).optional(),
+    account_type: z.enum(["individual", "business"]).default("individual"),
+    business_name: z.string().min(2).max(200).optional(),
+    business_registration: z.string().optional(),
+  })
+  .refine((data) => data.password === data.confirmPassword, {
+    message: "Passwords do not match",
+    path: ["confirmPassword"],
+  })
+  .refine(
+    (data) => data.account_type !== "business" || Boolean(data.business_name),
+    {
+      message: "Business name is required",
+      path: ["business_name"],
+    },
+  );
+export const bookingRequestSchema = bookingSchema;
+
 export type LoginInput = z.infer<typeof loginSchema>;
 export type ForgotPasswordInput = z.infer<typeof forgotPasswordSchema>;
-export type RegisterInput = z.infer<typeof registerSchema>;
 export type ResetPasswordInput = z.infer<typeof resetPasswordSchema>;
 export type ListingInput = z.infer<typeof listingSchema>;
-export type BookingRequestInput = z.infer<typeof bookingRequestSchema>;
+export type IndividualRegisterInput = z.infer<typeof individualRegisterSchema>;
+export type BusinessRegisterInput = z.infer<typeof businessRegisterSchema>;
+export type BookingInput = z.infer<typeof bookingSchema>;
+export type IndividualVerificationInput = z.infer<
+  typeof individualVerificationSchema
+>;
+export type BusinessVerificationInput = z.infer<
+  typeof businessVerificationSchema
+>;
+export type ListerCancelInput = z.infer<typeof listerCancelSchema>;
 export type HandoverProofFormInput = z.infer<typeof handoverProofSchema>;
 export type ReturnProofFormInput = z.infer<typeof returnProofSchema>;
 export type ReturnItemInput = z.infer<typeof returnItemSchema>;
@@ -354,3 +451,5 @@ export type KYCUploadInput = z.infer<typeof kycUploadSchema>;
 export type DisputeResolutionInput = z.infer<typeof disputeResolutionSchema>;
 export type PayoutRetryInput = z.infer<typeof payoutRetrySchema>;
 export type FeeConfigUpdateInput = z.infer<typeof feeConfigUpdateSchema>;
+export type RegisterInput = IndividualRegisterInput;
+export type BookingRequestInput = BookingInput;

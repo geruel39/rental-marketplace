@@ -810,7 +810,7 @@ async function createAutomaticPayoutRecord(
 
   await linkPayoutToBookingIfSupported(client, booking.id, payoutId);
 
-  await addTimeline({
+  await addBookingTimeline({
     bookingId: booking.id,
     status: "completed",
     previousStatus: "completed",
@@ -833,7 +833,6 @@ async function createAutomaticPayoutRecord(
     title: "Payout is being processed",
     body: `Your payout of ${formatMoney(payoutAmount, "SGD")} is being processed.`,
     bookingId: booking.id,
-    fromUserId: null,
     actionUrl: "/dashboard/earnings",
   });
 
