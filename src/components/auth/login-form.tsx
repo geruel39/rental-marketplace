@@ -230,9 +230,9 @@ export function LoginForm() {
         </div>
 
         <p className="text-center text-sm text-muted-foreground">
-          Don&apos;t have an account?{" "}
+          New to RentHub?{" "}
           <Link className="text-brand-sky hover:text-brand-navy font-medium underline" href="/register">
-            Sign up
+            Create an account
           </Link>
         </p>
       </CardContent>

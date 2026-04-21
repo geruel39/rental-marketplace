@@ -4,10 +4,22 @@ import { redirect } from "next/navigation";
 
 import { getAppUrl } from "@/lib/env";
 import { createClient } from "@/lib/supabase/server";
-import { forgotPasswordSchema, registerSchema } from "@/lib/validations";
+import {
+  businessRegisterSchema,
+  forgotPasswordSchema,
+  individualRegisterSchema,
+} from "@/lib/validations";
 import type { ActionResponse } from "@/types";
 
-export async function registerWithEmail(
+function getTermsAgreementValue(value: FormDataEntryValue | null) {
+  return value === "true" || value === "on";
+}
+
+function getErrorMessage(error: unknown, fallback: string) {
+  return error instanceof Error ? error.message : fallback;
+}
+
+export async function registerIndividual(
   prevState: ActionResponse | null,
   formData: FormData,
 ): Promise<ActionResponse> {
@@ -15,57 +27,111 @@ export async function registerWithEmail(
 
   try {
     const supabase = await createClient();
-
     const raw = {
+      first_name: formData.get("first_name"),
+      last_name: formData.get("last_name"),
+      display_name: formData.get("display_name"),
       email: formData.get("email"),
       password: formData.get("password"),
-      confirmPassword: formData.get("confirmPassword"),
-      full_name: formData.get("full_name"),
-      display_name: formData.get("display_name") || undefined,
-      account_type: formData.get("account_type") || "individual",
-      business_name: formData.get("business_name") || undefined,
-      business_registration: formData.get("business_registration") || undefined,
+      confirm_password: formData.get("confirm_password"),
+      terms_agreed: getTermsAgreementValue(formData.get("terms_agreed")),
     };
 
-    const validated = registerSchema.safeParse(raw);
-
+    const validated = individualRegisterSchema.safeParse(raw);
     if (!validated.success) {
       return { error: validated.error.issues[0]?.message ?? "Invalid input" };
     }
 
+    const fullName = `${validated.data.first_name} ${validated.data.last_name}`;
     const { data, error } = await supabase.auth.signUp({
       email: validated.data.email,
       password: validated.data.password,
       options: {
         data: {
-          full_name: validated.data.full_name || "",
-          display_name:
-            validated.data.display_name || validated.data.full_name || "",
-          account_type:
-            validated.data.account_type === "business"
-              ? "business"
-              : "individual",
+          account_type: "individual",
+          first_name: validated.data.first_name,
+          last_name: validated.data.last_name,
+          full_name: fullName,
+          display_name: validated.data.display_name,
+          terms_agreed: true,
+          terms_version: "1.0",
         },
       },
     });
 
     if (error) {
-      console.error("registerWithEmail failed:", error);
-      return { error: "Could not create your account. Please try again." };
+      return { error: error.message };
     }
 
-    if (data.user && data.session) {
-      redirect("/dashboard");
+    if (data.session) {
+      redirect("/listings");
     }
 
-    if (data.user && !data.session) {
-      return { success: "Check your email" };
-    }
-
-    return { error: "Something went wrong. Please try again." };
+    return { success: "Account created! Check your email to continue." };
   } catch (error) {
-    console.error("registerWithEmail failed:", error);
-    return { error: "Something went wrong. Please try again." };
+    console.error("registerIndividual failed:", error);
+    return { error: getErrorMessage(error, "Something went wrong. Please try again.") };
+  }
+}
+
+export async function registerBusiness(
+  prevState: ActionResponse | null,
+  formData: FormData,
+): Promise<ActionResponse> {
+  void prevState;
+
+  try {
+    const supabase = await createClient();
+    const raw = {
+      representative_first_name: formData.get("representative_first_name"),
+      representative_last_name: formData.get("representative_last_name"),
+      display_name: formData.get("display_name"),
+      business_name: formData.get("business_name"),
+      business_registration: formData.get("business_registration"),
+      email: formData.get("email"),
+      password: formData.get("password"),
+      confirm_password: formData.get("confirm_password"),
+      terms_agreed: getTermsAgreementValue(formData.get("terms_agreed")),
+    };
+
+    const validated = businessRegisterSchema.safeParse(raw);
+    if (!validated.success) {
+      return { error: validated.error.issues[0]?.message ?? "Invalid input" };
+    }
+
+    const fullName = `${validated.data.representative_first_name} ${validated.data.representative_last_name}`;
+    const { data, error } = await supabase.auth.signUp({
+      email: validated.data.email,
+      password: validated.data.password,
+      options: {
+        data: {
+          account_type: "business",
+          first_name: validated.data.representative_first_name,
+          last_name: validated.data.representative_last_name,
+          representative_first_name: validated.data.representative_first_name,
+          representative_last_name: validated.data.representative_last_name,
+          full_name: fullName,
+          display_name: validated.data.display_name,
+          business_name: validated.data.business_name,
+          business_registration: validated.data.business_registration,
+          terms_agreed: true,
+          terms_version: "1.0",
+        },
+      },
+    });
+
+    if (error) {
+      return { error: error.message };
+    }
+
+    if (data.session) {
+      redirect("/listings");
+    }
+
+    return { success: "Account created! Check your email to continue." };
+  } catch (error) {
+    console.error("registerBusiness failed:", error);
+    return { error: getErrorMessage(error, "Something went wrong. Please try again.") };
   }
 }
 
@@ -95,31 +161,28 @@ export async function loginWithEmail(
     });
 
     if (error) {
-      console.error("loginWithEmail failed:", error);
-      return { error: "Invalid email or password." };
+      return { error: error.message };
     }
 
-    redirect("/dashboard");
+    redirect("/listings");
   } catch (error) {
     console.error("loginWithEmail failed:", error);
-    return { error: "Something went wrong. Please try again." };
+    return { error: getErrorMessage(error, "Something went wrong. Please try again.") };
   }
 }
 
 export async function loginWithGoogle(): Promise<ActionResponse | void> {
   try {
     const supabase = await createClient();
-
     const { data, error } = await supabase.auth.signInWithOAuth({
       provider: "google",
       options: {
-        redirectTo: `${getAppUrl()}/auth/callback`,
+        redirectTo: `${getAppUrl()}/callback`,
       },
     });
 
     if (error) {
-      console.error("loginWithGoogle failed:", error);
-      return { error: "Could not start Google sign-in. Please try again." };
+      return { error: error.message };
     }
 
     if (data.url) {
@@ -129,7 +192,7 @@ export async function loginWithGoogle(): Promise<ActionResponse | void> {
     return { error: "Something went wrong. Please try again." };
   } catch (error) {
     console.error("loginWithGoogle failed:", error);
-    return { error: "Something went wrong. Please try again." };
+    return { error: getErrorMessage(error, "Something went wrong. Please try again.") };
   }
 }
 
@@ -154,14 +217,13 @@ export async function sendPasswordResetEmail(
     });
 
     if (error) {
-      console.error("sendPasswordResetEmail failed:", error);
-      return { error: "Could not send the reset email. Please try again." };
+      return { error: error.message };
     }
 
     return { success: "Password reset link sent. Check your email." };
   } catch (error) {
     console.error("sendPasswordResetEmail failed:", error);
-    return { error: "Something went wrong. Please try again." };
+    return { error: getErrorMessage(error, "Something went wrong. Please try again.") };
   }
 }
 
@@ -179,3 +241,6 @@ export async function logout() {
 
   redirect("/");
 }
+
+// Deprecated compatibility export retained while old register UI is phased out.
+export const registerWithEmail = registerIndividual;

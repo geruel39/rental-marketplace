@@ -13,7 +13,7 @@ export async function GET(request: Request) {
   try {
     const supabase = await createClient();
     await supabase.auth.exchangeCodeForSession(code);
-    return NextResponse.redirect(new URL("/dashboard", requestUrl.origin));
+    return NextResponse.redirect(new URL("/listings", requestUrl.origin));
   } catch {
     return NextResponse.redirect(new URL("/", requestUrl.origin));
   }
