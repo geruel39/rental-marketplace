@@ -502,6 +502,8 @@ async function setProfilePhoneVerification(userId: string, verified: boolean) {
 function getIndividualRejectionUpdate(field: string, notes?: string) {
   switch (field) {
     case "gov_id":
+    case "gov_id_front":
+    case "gov_id_back":
       return { gov_id_rejection_reason: notes ?? "Document requires resubmission" };
     case "selfie":
       return { selfie_rejection_reason: notes ?? "Selfie requires resubmission" };
@@ -512,12 +514,18 @@ function getIndividualRejectionUpdate(field: string, notes?: string) {
 
 function getBusinessRejectionUpdate(field: string, notes?: string) {
   switch (field) {
+    case "business_address":
+      return {};
+    case "tin":
+      return {};
     case "business_document":
       return {
         business_document_rejection_reason:
           notes ?? "Business document requires resubmission",
       };
     case "rep_gov_id":
+    case "rep_gov_id_front":
+    case "rep_gov_id_back":
       return {
         rep_gov_id_rejection_reason: notes ?? "Representative ID requires resubmission",
       };

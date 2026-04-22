@@ -1,4 +1,3 @@
-import type { ReactNode } from "react";
 import { format } from "date-fns";
 import Link from "next/link";
 import { FileCheck2, ShieldCheck, ShieldX } from "lucide-react";
@@ -71,20 +70,6 @@ function getDocumentHref(
 
 function getCloseHref(currentTab: TabKey) {
   return `/admin/verifications?tab=${currentTab}`;
-}
-
-function VerificationValue({
-  children,
-  status,
-}: {
-  children: ReactNode;
-  status: boolean;
-}) {
-  return (
-    <span className={status ? "font-medium text-emerald-700" : "font-medium text-red-700"}>
-      {children}
-    </span>
-  );
 }
 
 function AccountTypeBadge({ accountType }: { accountType: AccountType }) {
@@ -184,17 +169,23 @@ function IndividualVerificationCard({
           </Avatar>
           <div>
             <CardTitle className="text-lg">{name}</CardTitle>
-            <p className="text-sm text-muted-foreground">{row.email}</p>
+            <p className="text-sm text-muted-foreground">Email: {row.email}</p>
           </div>
         </div>
         <div className="space-y-2 text-right">
           <AccountTypeBadge accountType={row.account_type} />
           <p className="text-xs text-muted-foreground">
-            Submitted {formatDate(v.selfie_submitted_at ?? v.gov_id_submitted_at ?? v.created_at)}
+            Submitted: {formatDate(v.selfie_submitted_at ?? v.gov_id_submitted_at ?? v.created_at)}
           </p>
         </div>
       </CardHeader>
       <CardContent className="space-y-5">
+        <div className="space-y-1">
+          <p className="text-xs font-semibold uppercase tracking-[0.18em] text-muted-foreground">
+            Documents to Review
+          </p>
+        </div>
+
         <div className="grid gap-3">
           {documentRows.map((item) => (
             <div
@@ -224,6 +215,7 @@ function IndividualVerificationCard({
         </div>
 
         <div className="flex flex-wrap gap-3 border-t border-border/70 pt-4">
+          <p className="w-full text-sm font-medium">Overall Decision</p>
           <form
             action={
               approveVerification.bind(
@@ -233,9 +225,13 @@ function IndividualVerificationCard({
               ) as unknown as (formData: FormData) => Promise<void>
             }
           >
-            <Button type="submit">Approve All & Activate</Button>
+            <Button type="submit">Approve All</Button>
           </form>
-          <VerificationDecisionDialog accountType="individual" userId={row.id} userName={name ?? "User"} />
+          <VerificationDecisionDialog
+            accountType="individual"
+            userId={row.id}
+            userName={name ?? "User"}
+          />
         </div>
       </CardContent>
     </Card>
@@ -252,46 +248,7 @@ function BusinessVerificationCard({
   const name = row.display_name || row.full_name || row.email;
   const v = row.verification;
 
-  const rows = [
-    {
-      key: "business-phone",
-      label: "Business Phone",
-      value: (
-        <div className="space-y-1">
-          <p className="text-sm text-muted-foreground">{v.business_phone ?? "Not provided"}</p>
-          <VerificationValue status={v.business_phone_verified}>
-            {v.business_phone_verified ? "Verified" : "Not verified"}
-          </VerificationValue>
-        </div>
-      ),
-      field: "business_phone" as const,
-    },
-    {
-      key: "business-address",
-      label: "Business Address",
-      value: (
-        <div className="space-y-1">
-          <p className="text-sm text-muted-foreground">{v.business_address ?? "Not provided"}</p>
-          <VerificationValue status={v.business_address_verified}>
-            {v.business_address_verified ? "Verified" : "Not verified"}
-          </VerificationValue>
-        </div>
-      ),
-      field: "business_address" as const,
-    },
-    {
-      key: "tin",
-      label: "TIN",
-      value: (
-        <div className="space-y-1">
-          <p className="text-sm text-muted-foreground">{v.tin ?? "Not provided"}</p>
-          <VerificationValue status={v.tin_verified}>
-            {v.tin_verified ? "Verified" : "Not verified"}
-          </VerificationValue>
-        </div>
-      ),
-      field: "tin" as const,
-    },
+  const documentRows = [
     {
       key: "business-document",
       label: "Business Document",
@@ -392,19 +349,51 @@ function BusinessVerificationCard({
           </Avatar>
           <div>
             <CardTitle className="text-lg">{name}</CardTitle>
-            <p className="text-sm text-muted-foreground">{row.email}</p>
+            <p className="text-sm text-muted-foreground">
+              Rep: {row.full_name || row.display_name || row.email} | Email: {row.email}
+            </p>
           </div>
         </div>
         <div className="space-y-2 text-right">
           <AccountTypeBadge accountType={row.account_type} />
           <p className="text-xs text-muted-foreground">
-            Submitted {formatDate(v.business_document_submitted_at ?? v.rep_selfie_submitted_at ?? v.created_at)}
+            Submitted: {formatDate(
+              v.business_document_submitted_at ?? v.rep_selfie_submitted_at ?? v.created_at,
+            )}
           </p>
         </div>
       </CardHeader>
       <CardContent className="space-y-5">
+        <div className="space-y-3 rounded-xl border border-border/70 p-4">
+          <p className="text-xs font-semibold uppercase tracking-[0.18em] text-muted-foreground">
+            Business Info
+          </p>
+          <div className="space-y-2">
+            <p className="text-sm">
+              <span className="font-medium">Address:</span>{" "}
+              <span className="text-muted-foreground">{v.business_address ?? "Not provided"}</span>
+            </p>
+            <p className="text-sm">
+              <span className="font-medium">TIN:</span>{" "}
+              <span className="text-muted-foreground">{v.tin ?? "Not provided"}</span>
+            </p>
+            {v.business_phone ? (
+              <p className="text-sm">
+                <span className="font-medium">Phone:</span>{" "}
+                <span className="text-muted-foreground">{v.business_phone} (optional)</span>
+              </p>
+            ) : null}
+          </div>
+        </div>
+
+        <div className="space-y-1">
+          <p className="text-xs font-semibold uppercase tracking-[0.18em] text-muted-foreground">
+            Documents to Review
+          </p>
+        </div>
+
         <div className="grid gap-3">
-          {rows.map((item) => (
+          {documentRows.map((item) => (
             <div
               className="flex flex-col gap-3 rounded-xl border border-border/70 p-3 md:flex-row md:items-center md:justify-between"
               key={item.key}
@@ -432,6 +421,7 @@ function BusinessVerificationCard({
         </div>
 
         <div className="flex flex-wrap gap-3 border-t border-border/70 pt-4">
+          <p className="w-full text-sm font-medium">Overall Decision</p>
           <form
             action={
               approveVerification.bind(
@@ -441,9 +431,13 @@ function BusinessVerificationCard({
               ) as unknown as (formData: FormData) => Promise<void>
             }
           >
-            <Button type="submit">Approve All & Activate</Button>
+            <Button type="submit">Approve All</Button>
           </form>
-          <VerificationDecisionDialog accountType="business" userId={row.id} userName={name ?? "Business"} />
+          <VerificationDecisionDialog
+            accountType="business"
+            userId={row.id}
+            userName={name ?? "Business"}
+          />
         </div>
       </CardContent>
     </Card>

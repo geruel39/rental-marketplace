@@ -11,12 +11,11 @@ import {
 import { Button } from "@/components/ui/button";
 import type { AccountType } from "@/types";
 
-type IndividualField = "gov_id" | "selfie" | "phone" | "email";
+type IndividualField = "gov_id" | "selfie";
 type BusinessField =
   | "business_document"
   | "rep_gov_id"
   | "rep_selfie"
-  | "business_phone"
   | "business_address"
   | "tin";
 

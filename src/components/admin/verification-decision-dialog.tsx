@@ -21,17 +21,20 @@ import { Textarea } from "@/components/ui/textarea";
 import type { AccountType } from "@/types";
 
 const individualFields = [
-  { key: "gov_id", label: "Government ID" },
+  { key: "gov_id_front", label: "Government ID (Front)" },
+  { key: "gov_id_back", label: "Government ID (Back)" },
   { key: "selfie", label: "Selfie" },
+  { key: "other", label: "Other" },
 ] as const;
 
 const businessFields = [
-  { key: "business_phone", label: "Business phone" },
-  { key: "business_address", label: "Business address" },
+  { key: "business_address", label: "Business Address" },
   { key: "tin", label: "TIN" },
-  { key: "business_document", label: "Business document" },
-  { key: "rep_gov_id", label: "Representative government ID" },
-  { key: "rep_selfie", label: "Representative selfie" },
+  { key: "business_document", label: "Business Document" },
+  { key: "rep_gov_id_front", label: "Rep Gov ID (Front)" },
+  { key: "rep_gov_id_back", label: "Rep Gov ID (Back)" },
+  { key: "rep_selfie", label: "Rep Selfie" },
+  { key: "other", label: "Other" },
 ] as const;
 
 interface VerificationDecisionDialogProps {
@@ -112,7 +115,7 @@ export function VerificationDecisionDialog({
     <Dialog onOpenChange={setOpen} open={open}>
       <DialogTrigger asChild>
         <Button type="button" variant="destructive">
-          Reject & Notify
+          Reject with Reason
         </Button>
       </DialogTrigger>
       <DialogContent className="sm:max-w-2xl">
