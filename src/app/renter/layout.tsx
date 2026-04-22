@@ -1,11 +1,3 @@
-import {
-  Compass,
-  Heart,
-  LayoutDashboard,
-  Receipt,
-  Settings,
-  Star,
-} from "lucide-react";
 import { redirect } from "next/navigation";
 
 import { RoleShell, type RoleShellItem } from "@/components/layout/role-shell";
@@ -45,33 +37,33 @@ export default async function RenterLayout({
 
   const activeCount = activeCountResult.count ?? 0;
   const primaryItems: RoleShellItem[] = [
-    { href: "/renter/dashboard", label: "Overview", icon: LayoutDashboard },
+    { href: "/renter/dashboard", label: "Overview", icon: "layout-dashboard" },
     {
       href: "/renter/rentals",
       label: "My Rentals",
-      icon: Receipt,
+      icon: "receipt",
       badge: activeCount,
     },
-    { href: "/renter/favorites", label: "Favorites", icon: Heart },
-    { href: "/renter/reviews", label: "Reviews", icon: Star },
+    { href: "/renter/favorites", label: "Favorites", icon: "heart" },
+    { href: "/renter/reviews", label: "Reviews", icon: "star" },
   ];
   const secondaryItems: RoleShellItem[] = [
-    { href: "/renter/settings", label: "Settings", icon: Settings },
+    { href: "/renter/settings", label: "Settings", icon: "settings" },
   ];
 
   return (
     <RoleShell
       avatarUrl={profileResult.data.avatar_url}
       bottomItems={[
-        { href: "/renter/dashboard", label: "Overview", icon: LayoutDashboard },
+        { href: "/renter/dashboard", label: "Overview", icon: "layout-dashboard" },
         {
           href: "/renter/rentals",
           label: "Rentals",
-          icon: Receipt,
+          icon: "receipt",
           badge: activeCount,
         },
-        { href: "/renter/favorites", label: "Favorites", icon: Heart },
-        { href: "/listings", label: "Browse", icon: Compass },
+        { href: "/renter/favorites", label: "Favorites", icon: "heart" },
+        { href: "/listings", label: "Browse", icon: "compass" },
       ]}
       browseHref="/listings"
       browseLabel="Browse Items"

@@ -2,7 +2,18 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import type { LucideIcon } from "lucide-react";
+import {
+  BadgeDollarSign,
+  Boxes,
+  Compass,
+  Heart,
+  LayoutDashboard,
+  Package,
+  Receipt,
+  Settings,
+  Star,
+  type LucideIcon,
+} from "lucide-react";
 
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
@@ -12,9 +23,32 @@ import { cn, getInitials } from "@/lib/utils";
 export interface RoleShellItem {
   href: string;
   label: string;
-  icon: LucideIcon;
+  icon: RoleShellIcon;
   badge?: number;
 }
+
+export type RoleShellIcon =
+  | "badge-dollar-sign"
+  | "boxes"
+  | "compass"
+  | "heart"
+  | "layout-dashboard"
+  | "package"
+  | "receipt"
+  | "settings"
+  | "star";
+
+const roleShellIcons: Record<RoleShellIcon, LucideIcon> = {
+  "badge-dollar-sign": BadgeDollarSign,
+  boxes: Boxes,
+  compass: Compass,
+  heart: Heart,
+  "layout-dashboard": LayoutDashboard,
+  package: Package,
+  receipt: Receipt,
+  settings: Settings,
+  star: Star,
+};
 
 interface RoleShellProps {
   avatarUrl?: string | null;
@@ -38,7 +72,7 @@ function NavItem({
   item: RoleShellItem;
   pathname: string;
 }) {
-  const Icon = item.icon;
+  const Icon = roleShellIcons[item.icon];
   const isActive =
     pathname === item.href || pathname.startsWith(`${item.href}/`);
 
@@ -174,7 +208,7 @@ export function RoleShell({
           style={{ gridTemplateColumns: `repeat(${bottomItems.length}, minmax(0, 1fr))` }}
         >
           {bottomItems.map((item) => {
-            const Icon = item.icon;
+            const Icon = roleShellIcons[item.icon];
             const isActive =
               pathname === item.href || pathname.startsWith(`${item.href}/`);
 

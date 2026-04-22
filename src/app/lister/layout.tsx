@@ -1,12 +1,3 @@
-import {
-  BadgeDollarSign,
-  Boxes,
-  LayoutDashboard,
-  Package,
-  Receipt,
-  Settings,
-  Star,
-} from "lucide-react";
 import { redirect } from "next/navigation";
 
 import { RoleShell, type RoleShellItem } from "@/components/layout/role-shell";
@@ -46,35 +37,35 @@ export default async function ListerLayout({
 
   const pendingCount = pendingCountResult.count ?? 0;
   const primaryItems: RoleShellItem[] = [
-    { href: "/lister/dashboard", label: "Overview", icon: LayoutDashboard },
-    { href: "/lister/listings", label: "My Listings", icon: Package },
+    { href: "/lister/dashboard", label: "Overview", icon: "layout-dashboard" },
+    { href: "/lister/listings", label: "My Listings", icon: "package" },
     {
       href: "/lister/bookings",
       label: "Bookings",
-      icon: Receipt,
+      icon: "receipt",
       badge: pendingCount,
     },
-    { href: "/lister/inventory", label: "Inventory", icon: Boxes },
-    { href: "/lister/earnings", label: "Earnings", icon: BadgeDollarSign },
-    { href: "/lister/reviews", label: "Reviews", icon: Star },
+    { href: "/lister/inventory", label: "Inventory", icon: "boxes" },
+    { href: "/lister/earnings", label: "Earnings", icon: "badge-dollar-sign" },
+    { href: "/lister/reviews", label: "Reviews", icon: "star" },
   ];
   const secondaryItems: RoleShellItem[] = [
-    { href: "/lister/settings", label: "Settings", icon: Settings },
+    { href: "/lister/settings", label: "Settings", icon: "settings" },
   ];
 
   return (
     <RoleShell
       avatarUrl={profileResult.data.avatar_url}
       bottomItems={[
-        { href: "/lister/dashboard", label: "Overview", icon: LayoutDashboard },
-        { href: "/lister/listings", label: "Listings", icon: Package },
+        { href: "/lister/dashboard", label: "Overview", icon: "layout-dashboard" },
+        { href: "/lister/listings", label: "Listings", icon: "package" },
         {
           href: "/lister/bookings",
           label: "Bookings",
-          icon: Receipt,
+          icon: "receipt",
           badge: pendingCount,
         },
-        { href: "/lister/earnings", label: "Earnings", icon: BadgeDollarSign },
+        { href: "/lister/earnings", label: "Earnings", icon: "badge-dollar-sign" },
       ]}
       browseHref="/listings"
       browseLabel="Browse Items"
