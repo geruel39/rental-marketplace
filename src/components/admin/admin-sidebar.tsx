@@ -24,9 +24,11 @@ import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
 
 export function AdminSidebar({
+  pendingVerificationCount = 0,
   pendingKycCount = 0,
   failedPayoutCount = 0,
 }: {
+  pendingVerificationCount?: number;
   pendingKycCount?: number;
   failedPayoutCount?: number;
 }) {
@@ -53,6 +55,12 @@ export function AdminSidebar({
       title: "Operations",
       items: [
         {
+          href: "/admin/verifications",
+          label: "Verifications",
+          icon: ShieldCheck,
+          count: pendingVerificationCount,
+        },
+        {
           href: "/admin/payouts",
           label: "Payouts",
           icon: CircleDollarSign,
@@ -61,8 +69,8 @@ export function AdminSidebar({
         { href: "/admin/transactions", label: "Transactions", icon: WalletCards },
         {
           href: "/admin/kyc-verification",
-          label: "KYC Verification",
-          icon: ShieldCheck,
+          label: "Payout KYC",
+          icon: FileSearch,
           count: pendingKycCount,
         },
         { href: "/admin/reports", label: "Reports", icon: ShieldAlert },

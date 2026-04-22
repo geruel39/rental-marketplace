@@ -347,7 +347,7 @@ async function notifyAdminsOfVerification(params: {
         type: "new_kyc_submission",
         title: params.title,
         body: params.body,
-        actionUrl: "/admin/kyc-verification",
+        actionUrl: "/admin/verifications",
         fromUserId: params.userId,
         previewItem: {
           text: params.title,
@@ -418,6 +418,8 @@ async function getSignedUrl(bucket: string, path: string): Promise<string | null
     return null;
   }
 }
+
+void getSignedUrl;
 
 async function uploadPrivateFile(params: {
   bucket: string;

@@ -31,6 +31,9 @@ const footerColumns = [
     links: [
       { label: "Terms", href: "/" },
       { label: "Privacy", href: "/" },
+      { label: "Policies", href: "/policies" },
+      { label: "Cancellation Policy", href: "/policies#cancellation-policy" },
+      { label: "Verification Requirements", href: "/policies#listing-requirements" },
     ],
   },
 ];

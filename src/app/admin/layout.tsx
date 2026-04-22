@@ -2,6 +2,7 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 
 import { getPendingKYCVerifications } from "@/actions/admin";
+import { getVerificationQueue } from "@/actions/verification";
 import { AdminSidebar } from "@/components/admin/admin-sidebar";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
@@ -38,7 +39,8 @@ export default async function AdminLayout({
 
   const displayName =
     profile.display_name || profile.full_name || profile.email || user.email || "Admin";
-  const [{ count: pendingKycCount }, failedPayoutsResult] = await Promise.all([
+  const [{ count: pendingVerificationCount }, { count: pendingKycCount }, failedPayoutsResult] = await Promise.all([
+    getVerificationQueue(),
     getPendingKYCVerifications(),
     supabase
       .from("payouts")
@@ -50,6 +52,7 @@ export default async function AdminLayout({
     <div className="min-h-[calc(100vh-4rem)] bg-brand-light">
       <AdminSidebar
         failedPayoutCount={failedPayoutsResult.count ?? 0}
+        pendingVerificationCount={pendingVerificationCount}
         pendingKycCount={pendingKycCount}
       />
       <div className="lg:pl-72">
