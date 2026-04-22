@@ -15,10 +15,9 @@ import {
   type LucideIcon,
 } from "lucide-react";
 
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
-import { cn, getInitials } from "@/lib/utils";
+import { cn } from "@/lib/utils";
 
 export interface RoleShellItem {
   href: string;
@@ -124,27 +123,7 @@ export function RoleShell({
     <div className="min-h-[calc(100vh-4rem)] bg-brand-light">
       <aside className="hidden w-60 shrink-0 border-r border-border/70 bg-white lg:fixed lg:top-16 lg:bottom-0 lg:left-0 lg:block">
         <div className="flex h-full flex-col overflow-y-auto p-4">
-          <Link
-            className="mb-6 rounded-xl border border-brand-navy/10 bg-brand-light px-4 py-3 text-lg font-semibold text-brand-navy"
-            href="/listings"
-          >
-            RentHub
-          </Link>
-
-          <div className="mb-6 rounded-2xl border border-border/70 bg-background p-4">
-            <div className="flex items-center gap-3">
-              <Avatar className="size-11">
-                <AvatarImage alt={displayName} src={avatarUrl ?? undefined} />
-                <AvatarFallback>{getInitials(displayName)}</AvatarFallback>
-              </Avatar>
-              <div className="min-w-0">
-                <p className="truncate font-medium text-foreground">{displayName}</p>
-                <span className={cn("mt-1 inline-flex rounded-full px-2 py-1 text-[11px] font-semibold", modeTone)}>
-                  {modeLabel}
-                </span>
-              </div>
-            </div>
-          </div>
+          
 
           <nav className="space-y-5">
             <div className="space-y-1.5">
