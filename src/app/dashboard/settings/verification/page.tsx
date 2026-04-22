@@ -204,6 +204,11 @@ export default async function VerificationPage() {
       getBusinessVerificationSteps(user.id),
     ]);
 
+    const submitBusinessDetailsAction = submitBusinessDetails.bind(null, null);
+    const submitBusinessDocumentAction = submitBusinessDocument.bind(null, null);
+    const submitRepresentativeIDAction = submitRepresentativeID.bind(null, null);
+    const submitRepresentativeSelfieAction = submitRepresentativeSelfie.bind(null, null);
+
     if (!verification) {
       redirect("/dashboard/settings");
     }
@@ -266,7 +271,7 @@ export default async function VerificationPage() {
             {renderSectionBadge(businessInfoComplete)}
           </div>
 
-          <form action={submitBusinessDetails} className="space-y-4">
+          <form action={submitBusinessDetailsAction} className="space-y-4">
             <div className="space-y-2">
               <label htmlFor="business_phone" className="text-sm font-medium">
                 Business Phone (Optional)
@@ -334,7 +339,7 @@ export default async function VerificationPage() {
             {renderSectionBadge(businessDocumentComplete)}
           </div>
 
-          <form action={submitBusinessDocument} className="space-y-4">
+          <form action={submitBusinessDocumentAction} className="space-y-4">
             <div className="space-y-2">
               <label htmlFor="business_document_type" className="text-sm font-medium">
                 Document Type
@@ -393,7 +398,7 @@ export default async function VerificationPage() {
             {renderSectionBadge(representativeIdComplete)}
           </div>
 
-          <form action={submitRepresentativeID} className="space-y-4">
+          <form action={submitRepresentativeIDAction} className="space-y-4">
             <div className="space-y-2">
               <label htmlFor="rep_gov_id_type" className="text-sm font-medium">
                 ID Type
@@ -468,7 +473,7 @@ export default async function VerificationPage() {
             {renderSectionBadge(representativeSelfieComplete)}
           </div>
 
-          <form action={submitRepresentativeSelfie} className="space-y-4">
+          <form action={submitRepresentativeSelfieAction} className="space-y-4">
             <div className="space-y-2">
               <label htmlFor="selfie" className="text-sm font-medium">
                 Selfie Upload
