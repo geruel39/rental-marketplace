@@ -1074,6 +1074,221 @@ END;
 $$;
 
 -- ============================================================
+-- SECTION 6B: VERIFICATION TABLES & RPC
+-- Creates individual and business verification records
+-- Provides RPC for checking if user can create listings
+-- ============================================================
+
+-- INDIVIDUAL_VERIFICATIONS TABLE
+CREATE TABLE IF NOT EXISTS public.individual_verifications (
+  id UUID DEFAULT uuid_generate_v4() PRIMARY KEY,
+  user_id UUID REFERENCES profiles(id) ON DELETE CASCADE NOT NULL UNIQUE,
+  
+  -- Email verification
+  email_verified BOOLEAN DEFAULT FALSE,
+  email_verified_at TIMESTAMPTZ,
+  
+  -- Phone verification
+  phone_number TEXT,
+  phone_verified BOOLEAN DEFAULT FALSE,
+  phone_verified_at TIMESTAMPTZ,
+  
+  -- Government ID
+  gov_id_document_type TEXT CHECK (gov_id_document_type IN (
+    'national_id', 'drivers_license', 'passport', 'voter_id'
+  )),
+  gov_id_front_url TEXT,
+  gov_id_back_url TEXT,
+  gov_id_submitted_at TIMESTAMPTZ,
+  gov_id_verified BOOLEAN DEFAULT FALSE,
+  gov_id_verified_at TIMESTAMPTZ,
+  gov_id_rejection_reason TEXT,
+  
+  -- Selfie
+  selfie_url TEXT,
+  selfie_submitted_at TIMESTAMPTZ,
+  selfie_verified BOOLEAN DEFAULT FALSE,
+  selfie_verified_at TIMESTAMPTZ,
+  selfie_rejection_reason TEXT,
+  
+  -- Overall verification status
+  overall_status TEXT DEFAULT 'incomplete' CHECK (overall_status IN (
+    'incomplete', 'pending', 'approved', 'rejected', 'suspended'
+  )),
+  overall_approved_at TIMESTAMPTZ,
+  overall_approved_by UUID REFERENCES profiles(id),
+  overall_rejection_reason TEXT,
+  
+  -- Timestamps
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- BUSINESS_VERIFICATIONS TABLE
+CREATE TABLE IF NOT EXISTS public.business_verifications (
+  id UUID DEFAULT uuid_generate_v4() PRIMARY KEY,
+  user_id UUID REFERENCES profiles(id) ON DELETE CASCADE NOT NULL UNIQUE,
+  
+  -- Business phone
+  business_phone TEXT,
+  business_phone_verified BOOLEAN DEFAULT FALSE,
+  
+  -- Business address
+  business_address TEXT,
+  business_address_verified BOOLEAN DEFAULT FALSE,
+  
+  -- TIN
+  tin TEXT,
+  tin_verified BOOLEAN DEFAULT FALSE,
+  
+  -- Business document
+  business_document_type TEXT CHECK (business_document_type IN (
+    'dti_certificate', 'sec_registration', 'mayors_permit', 
+    'bir_certificate', 'business_permit', 'other'
+  )),
+  business_document_url TEXT,
+  business_document_submitted_at TIMESTAMPTZ,
+  business_document_verified BOOLEAN DEFAULT FALSE,
+  business_document_verified_at TIMESTAMPTZ,
+  business_document_rejection_reason TEXT,
+  
+  -- Representative Government ID
+  rep_gov_id_type TEXT CHECK (rep_gov_id_type IN (
+    'national_id', 'drivers_license', 'passport', 'voter_id'
+  )),
+  rep_gov_id_front_url TEXT,
+  rep_gov_id_back_url TEXT,
+  rep_gov_id_submitted_at TIMESTAMPTZ,
+  rep_gov_id_verified BOOLEAN DEFAULT FALSE,
+  rep_gov_id_verified_at TIMESTAMPTZ,
+  rep_gov_id_rejection_reason TEXT,
+  
+  -- Representative selfie
+  rep_selfie_url TEXT,
+  rep_selfie_submitted_at TIMESTAMPTZ,
+  rep_selfie_verified BOOLEAN DEFAULT FALSE,
+  rep_selfie_verified_at TIMESTAMPTZ,
+  rep_selfie_rejection_reason TEXT,
+  
+  -- Overall verification status
+  overall_status TEXT DEFAULT 'incomplete' CHECK (overall_status IN (
+    'incomplete', 'pending', 'approved', 'rejected', 'suspended'
+  )),
+  overall_approved_at TIMESTAMPTZ,
+  overall_approved_by UUID REFERENCES profiles(id),
+  overall_rejection_reason TEXT,
+  
+  -- Timestamps
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- RLS for verification tables
+ALTER TABLE public.individual_verifications ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.business_verifications ENABLE ROW LEVEL SECURITY;
+
+-- Policies for individual verifications (users can see their own, admins can see all)
+CREATE POLICY "individual_verifications_select" ON public.individual_verifications
+  FOR SELECT USING (
+    auth.uid() = user_id 
+    OR EXISTS (SELECT 1 FROM profiles WHERE id = auth.uid() AND is_admin = true)
+  );
+
+CREATE POLICY "individual_verifications_insert" ON public.individual_verifications
+  FOR INSERT WITH CHECK (auth.uid() = user_id);
+
+CREATE POLICY "individual_verifications_update_user" ON public.individual_verifications
+  FOR UPDATE USING (auth.uid() = user_id)
+  WITH CHECK (auth.uid() = user_id AND overall_status != 'approved');
+
+CREATE POLICY "individual_verifications_update_admin" ON public.individual_verifications
+  FOR UPDATE USING (
+    EXISTS (SELECT 1 FROM profiles WHERE id = auth.uid() AND is_admin = true)
+  );
+
+-- Policies for business verifications (users can see their own, admins can see all)
+CREATE POLICY "business_verifications_select" ON public.business_verifications
+  FOR SELECT USING (
+    auth.uid() = user_id 
+    OR EXISTS (SELECT 1 FROM profiles WHERE id = auth.uid() AND is_admin = true)
+  );
+
+CREATE POLICY "business_verifications_insert" ON public.business_verifications
+  FOR INSERT WITH CHECK (auth.uid() = user_id);
+
+CREATE POLICY "business_verifications_update_user" ON public.business_verifications
+  FOR UPDATE USING (auth.uid() = user_id)
+  WITH CHECK (auth.uid() = user_id AND overall_status != 'approved');
+
+CREATE POLICY "business_verifications_update_admin" ON public.business_verifications
+  FOR UPDATE USING (
+    EXISTS (SELECT 1 FROM profiles WHERE id = auth.uid() AND is_admin = true)
+  );
+
+-- ------------------------------------------------
+-- FUNCTION: can_user_create_listing (variants)
+-- Returns TRUE if user is verified and can create listings
+-- Accepts both p_user_id and user_id parameter names
+-- Checks both individual and business verification status
+-- ------------------------------------------------
+CREATE OR REPLACE FUNCTION public.can_user_create_listing(p_user_id UUID DEFAULT NULL, user_id UUID DEFAULT NULL)
+RETURNS BOOLEAN AS $$
+DECLARE
+  v_check_user_id UUID;
+  v_account_type account_type;
+  v_verification_status TEXT;
+BEGIN
+  -- Determine which parameter was passed
+  v_check_user_id := COALESCE(p_user_id, user_id);
+
+  IF v_check_user_id IS NULL THEN
+    RETURN FALSE;
+  END IF;
+
+  -- Get account type from profiles
+  SELECT account_type INTO v_account_type
+  FROM public.profiles
+  WHERE id = v_check_user_id;
+
+  IF v_account_type IS NULL THEN
+    RETURN FALSE;
+  END IF;
+
+  -- Check individual verification if account is individual
+  IF v_account_type = 'individual' THEN
+    SELECT overall_status INTO v_verification_status
+    FROM public.individual_verifications
+    WHERE user_id = v_check_user_id;
+
+    IF v_verification_status = 'approved' THEN
+      RETURN TRUE;
+    ELSE
+      RETURN FALSE;
+    END IF;
+  END IF;
+
+  -- Check business verification if account is business
+  IF v_account_type = 'business' THEN
+    SELECT overall_status INTO v_verification_status
+    FROM public.business_verifications
+    WHERE user_id = v_check_user_id;
+
+    IF v_verification_status = 'approved' THEN
+      RETURN TRUE;
+    ELSE
+      RETURN FALSE;
+    END IF;
+  END IF;
+
+  -- Fallback
+  RETURN FALSE;
+EXCEPTION WHEN OTHERS THEN
+  RAISE LOG 'can_user_create_listing failed for user %: %', v_check_user_id, SQLERRM;
+  RETURN FALSE;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public;
+
+-- ============================================================
 -- SECTION 7: TRIGGERS
 -- ⚠️ MUST come AFTER both tables AND functions exist
 -- Using DROP IF EXISTS for idempotency

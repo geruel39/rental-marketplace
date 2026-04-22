@@ -856,25 +856,35 @@ export async function canCreateListing(
   userId: string,
 ): Promise<{ allowed: boolean; reason?: string }> {
   try {
+    console.log("[VERIFICATION] Checking listing eligibility for user:", userId);
+    
     const { requester, client } = await getAccessibleProfile(userId);
 
     if (requester.id !== userId && !requester.is_admin) {
+      console.log("[VERIFICATION] Unauthorized access attempt for user:", userId);
       return { allowed: false, reason: "Unauthorized" };
     }
 
+    console.log("[VERIFICATION] Checking account verification status via RPC...");
     const allowed = await callBooleanRpc(client, "can_user_create_listing", [
       { p_user_id: userId },
       { user_id: userId },
     ]);
 
     if (allowed) {
+      console.log("[VERIFICATION] ✓ User", userId, "is verified and can create listings");
       return { allowed: true };
     }
+
+    console.log("[VERIFICATION] ✗ User", userId, "verification check returned false");
 
     const payoutStatus = await getPayoutSetupStatus(userId);
     const { target } = await getAccessibleProfile(userId);
 
+    console.log("[VERIFICATION] Checking payout setup - Method:", target.payout_method, "KYC Status:", payoutStatus.kyc_status);
+
     if (target.payout_method === "bank" && payoutStatus.kyc_status === "pending") {
+      console.log("[VERIFICATION] KYC verification is pending for user:", userId);
       return {
         allowed: false,
         reason:
@@ -883,6 +893,7 @@ export async function canCreateListing(
     }
 
     if (target.payout_method === "bank" && payoutStatus.kyc_status === "rejected") {
+      console.log("[VERIFICATION] KYC verification was rejected for user:", userId);
       return {
         allowed: false,
         reason:
@@ -890,12 +901,13 @@ export async function canCreateListing(
       };
     }
 
+    console.log("[VERIFICATION] Payout setup incomplete for user:", userId);
     return {
       allowed: false,
       reason: "Please set up your payout method in Settings before creating a listing.",
     };
   } catch (error) {
-    console.error("canCreateListing failed:", error);
+    console.error("[VERIFICATION] canCreateListing failed for user", userId, ":", error);
     return {
       allowed: false,
       reason: "Please set up your payout method in Settings before creating a listing.",

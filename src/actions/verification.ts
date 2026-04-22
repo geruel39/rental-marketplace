@@ -1664,8 +1664,11 @@ export async function getListingEligibility(
   userId: string,
 ): Promise<ListingEligibility> {
   try {
+    console.log("[LISTING_ELIGIBILITY] Checking eligibility for user:", userId);
+    
     const auth = await requireAuthenticatedProfile();
     if (auth.user.id !== userId && !auth.profile.is_admin) {
+      console.log("[LISTING_ELIGIBILITY] Unauthorized access attempt for user:", userId);
       return {
         allowed: false,
         reason: "unauthorized",
@@ -1678,22 +1681,27 @@ export async function getListingEligibility(
     let result: unknown = null;
     let lastError: Error | null = null;
 
+    console.log("[LISTING_ELIGIBILITY] Calling can_user_create_listing RPC for user:", userId);
     for (const args of rpcAttempts) {
       const { data, error } = await admin.rpc("can_user_create_listing", args);
       if (!error) {
         result = data;
         lastError = null;
+        console.log("[LISTING_ELIGIBILITY] RPC returned:", result);
         break;
       }
 
+      console.log("[LISTING_ELIGIBILITY] RPC attempt failed with args", args, "error:", error.message);
       lastError = new Error(error.message);
     }
 
     if (lastError) {
+      console.log("[LISTING_ELIGIBILITY] All RPC attempts failed, throwing error");
       throw lastError;
     }
 
     if (typeof result === "boolean") {
+      console.log("[LISTING_ELIGIBILITY] Result is boolean:", result);
       return result
         ? { allowed: true }
         : {
@@ -1705,6 +1713,7 @@ export async function getListingEligibility(
 
     if (Array.isArray(result) && result.length > 0) {
       const row = result[0] as Record<string, unknown>;
+      console.log("[LISTING_ELIGIBILITY] Result is array, first row:", row);
       return {
         allowed: Boolean(row.allowed ?? row.can_create_listing ?? false),
         reason:
@@ -1716,6 +1725,7 @@ export async function getListingEligibility(
 
     if (result && typeof result === "object") {
       const row = result as Record<string, unknown>;
+      console.log("[LISTING_ELIGIBILITY] Result is object:", row);
       return {
         allowed: Boolean(row.allowed ?? row.can_create_listing ?? false),
         reason: typeof row.reason === "string" ? row.reason : undefined,
@@ -1723,9 +1733,10 @@ export async function getListingEligibility(
       };
     }
 
+    console.log("[LISTING_ELIGIBILITY] Unexpected result type, defaulting to not allowed");
     return { allowed: false, reason: "unknown" };
   } catch (error) {
-    console.error("getListingEligibility failed:", error);
+    console.error("[LISTING_ELIGIBILITY] getListingEligibility failed:", error);
     return {
       allowed: false,
       reason: "error",
