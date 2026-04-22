@@ -543,28 +543,6 @@ function buildIndividualSteps(
 ): VerificationStep[] {
   return [
     {
-      key: "email",
-      label: "Verify Email Address",
-      description: "Confirm your email to secure your account",
-      completed: verification.email_verified,
-      status: verification.email_verified ? "complete" : "not_started",
-      actionLabel: "Verify Email",
-      actionUrl: "/account/verify-email",
-    },
-    {
-      key: "phone",
-      label: "Verify Phone Number",
-      description: "Add and verify your mobile number",
-      completed: verification.phone_verified,
-      status: verification.phone_verified
-        ? "complete"
-        : verification.phone_number
-          ? "pending"
-          : "not_started",
-      actionLabel: "Verify Phone",
-      actionUrl: "/account/verify-phone",
-    },
-    {
       key: "gov_id",
       label: "Government-Issued ID",
       description: "Upload front and back of your ID",
@@ -1005,9 +983,7 @@ export async function checkAndUpdateOverallStatus(userId: string): Promise<void>
   const verification = await ensureIndividualVerificationRecord(userId, profile.email_verified);
 
   const allSubmitted = Boolean(
-    (profile.email_verified || verification.email_verified) &&
-      verification.phone_verified &&
-      verification.gov_id_front_url &&
+    verification.gov_id_front_url &&
       verification.gov_id_back_url &&
       verification.selfie_url,
   );

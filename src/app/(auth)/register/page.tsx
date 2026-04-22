@@ -642,7 +642,7 @@ export default function RegisterPage() {
                       <li>• Quick account setup</li>
                     </ul>
                     <p className="text-sm text-muted-foreground">
-                      ID verification required before listing
+                      ID and selfie verification required before listing
                     </p>
                     <Button
                       className="w-full bg-brand-navy text-white hover:bg-brand-steel"

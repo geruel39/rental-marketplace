@@ -21,8 +21,6 @@ import { Textarea } from "@/components/ui/textarea";
 import type { AccountType } from "@/types";
 
 const individualFields = [
-  { key: "email", label: "Email verification" },
-  { key: "phone", label: "Phone verification" },
   { key: "gov_id", label: "Government ID" },
   { key: "selfie", label: "Selfie" },
 ] as const;

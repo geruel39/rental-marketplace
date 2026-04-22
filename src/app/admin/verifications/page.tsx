@@ -107,18 +107,6 @@ function IndividualVerificationCard({
 
   const documentRows = [
     {
-      key: "email",
-      label: "Email Verified",
-      value: <VerificationValue status={v.email_verified}>{v.email_verified ? "Yes" : "No"}</VerificationValue>,
-      field: "email" as const,
-    },
-    {
-      key: "phone",
-      label: "Phone Verified",
-      value: <VerificationValue status={v.phone_verified}>{v.phone_verified ? "Yes" : "No"}</VerificationValue>,
-      field: "phone" as const,
-    },
-    {
       key: "gov-front",
       label: "Government ID Front",
       value: v.gov_id_front_url ? (
@@ -202,7 +190,7 @@ function IndividualVerificationCard({
         <div className="space-y-2 text-right">
           <AccountTypeBadge accountType={row.account_type} />
           <p className="text-xs text-muted-foreground">
-            Submitted {formatDate(v.gov_id_submitted_at ?? v.selfie_submitted_at ?? v.created_at)}
+            Submitted {formatDate(v.selfie_submitted_at ?? v.gov_id_submitted_at ?? v.created_at)}
           </p>
         </div>
       </CardHeader>

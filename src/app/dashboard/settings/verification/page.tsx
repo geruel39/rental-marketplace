@@ -1,9 +1,7 @@
-import { Phone, ShieldCheck } from "lucide-react";
+import { Camera, ShieldCheck } from "lucide-react";
 import { redirect } from "next/navigation";
 
-import { EmailVerificationCard } from "@/components/profile/email-verification-card";
 import { createClient } from "@/lib/supabase/server";
-import type { Profile } from "@/types";
 
 export default async function VerificationPage() {
   const supabase = await createClient();
@@ -15,45 +13,46 @@ export default async function VerificationPage() {
     redirect("/login");
   }
 
-  const { data: profile } = await supabase
-    .from("profiles")
-    .select("*")
-    .eq("id", user.id)
-    .maybeSingle<Profile>();
-
-  if (!profile) {
-    redirect("/dashboard/settings");
-  }
-
   return (
     <div className="space-y-6">
       <div className="space-y-2">
         <h1 className="text-2xl font-semibold tracking-tight">Verification</h1>
         <p className="text-sm text-muted-foreground">
-          Review your current verification status and complete any available steps.
+          Complete your document review requirements before creating listings.
         </p>
       </div>
 
       <div className="space-y-4">
-        <EmailVerificationCard emailVerified={profile.email_verified} />
-
         <div className="rounded-3xl border border-border bg-background p-6 shadow-sm">
           <div className="space-y-1">
             <p className="flex items-center gap-2 font-medium">
-              <Phone className="size-4" />
-              Phone
+              <ShieldCheck className="size-4" />
+              Government ID
             </p>
-            <p className="text-sm text-muted-foreground">Coming Soon</p>
+            <p className="text-sm text-muted-foreground">
+              Upload the front and back of your government-issued ID for admin review.
+            </p>
           </div>
         </div>
 
         <div className="rounded-3xl border border-border bg-background p-6 shadow-sm">
           <div className="space-y-1">
             <p className="flex items-center gap-2 font-medium">
-              <ShieldCheck className="size-4" />
-              ID
+              <Camera className="size-4" />
+              Selfie
             </p>
-            <p className="text-sm text-muted-foreground">Coming Soon</p>
+            <p className="text-sm text-muted-foreground">
+              Upload a current selfie so the admin team can match it with your ID.
+            </p>
+          </div>
+        </div>
+
+        <div className="rounded-3xl border border-border bg-background p-6 shadow-sm">
+          <div className="space-y-1">
+            <p className="font-medium">Manual admin confirmation</p>
+            <p className="text-sm text-muted-foreground">
+              Once both documents are submitted, an admin reviews and approves your account for listing.
+            </p>
           </div>
         </div>
       </div>
