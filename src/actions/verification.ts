@@ -381,48 +381,6 @@ async function notifyVerificationRejected(params: {
   });
 }
 
-async function checkSubmissionComplete(
-  rpcName:
-    | "check_individual_submission_complete"
-    | "check_business_submission_complete",
-  userId: string,
-): Promise<boolean> {
-  const admin = createAdminClient();
-  const rpcAttempts = [{ p_user_id: userId }, { user_id: userId }];
-  let lastError: Error | null = null;
-
-  for (const args of rpcAttempts) {
-    const { data, error } = await admin.rpc(rpcName, args);
-
-    if (error) {
-      lastError = new Error(error.message);
-      continue;
-    }
-
-    if (typeof data === "boolean") {
-      return data;
-    }
-
-    if (Array.isArray(data) && data.length > 0) {
-      const row = data[0] as Record<string, unknown>;
-      return Boolean(
-        row.complete ?? row.is_complete ?? row.submission_complete ?? row.result ?? false,
-      );
-    }
-
-    if (data && typeof data === "object") {
-      const row = data as Record<string, unknown>;
-      return Boolean(
-        row.complete ?? row.is_complete ?? row.submission_complete ?? row.result ?? false,
-      );
-    }
-
-    return Boolean(data);
-  }
-
-  throw lastError ?? new Error(`Could not verify submission status via ${rpcName}.`);
-}
-
 async function getProfileById(userId: string) {
   const admin = createAdminClient();
   const { data, error } = await admin
@@ -573,47 +531,61 @@ function getBusinessRejectionUpdate(field: string, notes?: string) {
   }
 }
 
+function hasIndividualSubmission(verification: IndividualVerification) {
+  return Boolean(verification.gov_id_front_url && verification.gov_id_back_url && verification.selfie_url);
+}
+
+function hasBusinessSubmission(verification: BusinessVerification) {
+  return Boolean(
+    verification.business_address &&
+      verification.tin &&
+      verification.business_document_url &&
+      verification.rep_gov_id_front_url &&
+      verification.rep_gov_id_back_url &&
+      verification.rep_selfie_url,
+  );
+}
+
 function buildIndividualSteps(
   verification: IndividualVerification,
 ): VerificationStep[] {
+  const govIdSubmitted = Boolean(verification.gov_id_front_url && verification.gov_id_back_url);
+  const selfieSubmitted = Boolean(verification.selfie_url);
+
   return [
     {
       key: "gov_id",
-      label: "Government-Issued ID",
-      description: "Upload clear front and back photos of your ID",
-      completed: verification.gov_id_verified,
-      status: verification.gov_id_verified
-        ? "complete"
-        : verification.gov_id_rejection_reason
-          ? "rejected"
-          : verification.gov_id_front_url && verification.gov_id_back_url
-            ? "pending"
-            : "not_started",
+      label: "Government ID",
+      description: "Upload clear front and back photos of your government-issued ID",
+      completed: govIdSubmitted && !verification.gov_id_rejection_reason,
+      status: verification.gov_id_rejection_reason
+        ? "rejected"
+        : govIdSubmitted
+          ? "complete"
+          : "not_started",
       actionLabel: verification.gov_id_rejection_reason
         ? "Resubmit ID"
-        : verification.gov_id_front_url
-          ? "View Submitted"
+        : govIdSubmitted
+          ? "Update ID"
           : "Upload ID",
-      actionUrl: "/account/verify/id",
+      actionUrl: "/account/verify#government-id",
     },
     {
       key: "selfie",
-      label: "Current Photo (Selfie)",
-      description: "Take or upload a recent clear photo of yourself",
-      completed: verification.selfie_verified,
-      status: verification.selfie_verified
-        ? "complete"
-        : verification.selfie_rejection_reason
-          ? "rejected"
-          : verification.selfie_url
-            ? "pending"
-            : "not_started",
+      label: "Selfie Photo",
+      description: "Take or upload a recent clear selfie photo",
+      completed: selfieSubmitted && !verification.selfie_rejection_reason,
+      status: verification.selfie_rejection_reason
+        ? "rejected"
+        : selfieSubmitted
+          ? "complete"
+          : "not_started",
       actionLabel: verification.selfie_rejection_reason
         ? "Resubmit Selfie"
-        : verification.selfie_url
-          ? "View Submitted"
+        : selfieSubmitted
+          ? "Update Selfie"
           : "Upload Selfie",
-      actionUrl: "/account/verify/selfie",
+      actionUrl: "/account/verify#selfie-photo",
     },
     {
       key: "admin_approval",
@@ -635,76 +607,77 @@ function buildIndividualSteps(
 function buildBusinessSteps(
   verification: BusinessVerification,
 ): VerificationStep[] {
+  const businessInfoComplete = Boolean(verification.business_address && verification.tin);
+  const businessDocumentSubmitted = Boolean(verification.business_document_url);
+  const representativeIdSubmitted = Boolean(
+    verification.rep_gov_id_front_url && verification.rep_gov_id_back_url,
+  );
+  const representativeSelfieSubmitted = Boolean(verification.rep_selfie_url);
+
   return [
     {
       key: "business_details",
       label: "Business Information",
       description: "Provide your business address and TIN",
-      completed: Boolean(verification.business_address && verification.tin),
-      status: verification.business_address && verification.tin
+      completed: businessInfoComplete,
+      status: businessInfoComplete
         ? "complete"
         : verification.business_address || verification.tin
           ? "pending"
           : "not_started",
-      actionLabel: "Enter Business Details",
-      actionUrl: "/account/verify/business",
+      actionLabel: "Save Business Information",
+      actionUrl: "/account/verify#business-information",
     },
     {
       key: "business_document",
       label: "Business Registration Document",
       description: "Upload your DTI, SEC, or other registration document",
-      completed: verification.business_document_verified,
-      status: verification.business_document_verified
-        ? "complete"
-        : verification.business_document_rejection_reason
-          ? "rejected"
-          : verification.business_document_url
-            ? "pending"
-            : "not_started",
+      completed: businessDocumentSubmitted && !verification.business_document_rejection_reason,
+      status: verification.business_document_rejection_reason
+        ? "rejected"
+        : businessDocumentSubmitted
+          ? "complete"
+          : "not_started",
       actionLabel: verification.business_document_rejection_reason
         ? "Resubmit Document"
-        : verification.business_document_url
-          ? "View Submitted"
+        : businessDocumentSubmitted
+          ? "Update Document"
           : "Upload Document",
-      actionUrl: "/account/verify/business",
+      actionUrl: "/account/verify#business-document",
     },
     {
       key: "rep_gov_id",
       label: "Representative Government ID",
       description: "Upload front and back of your government-issued ID",
-      completed: verification.rep_gov_id_verified,
-      status: verification.rep_gov_id_verified
-        ? "complete"
-        : verification.rep_gov_id_rejection_reason
-          ? "rejected"
-          : verification.rep_gov_id_front_url && verification.rep_gov_id_back_url
-            ? "pending"
-            : "not_started",
+      completed: representativeIdSubmitted && !verification.rep_gov_id_rejection_reason,
+      status: verification.rep_gov_id_rejection_reason
+        ? "rejected"
+        : representativeIdSubmitted
+          ? "complete"
+          : "not_started",
       actionLabel: verification.rep_gov_id_rejection_reason
         ? "Resubmit ID"
-        : verification.rep_gov_id_front_url
-          ? "View Submitted"
+        : representativeIdSubmitted
+          ? "Update ID"
           : "Upload ID",
-      actionUrl: "/account/verify/business",
+      actionUrl: "/account/verify#representative-id",
     },
     {
       key: "rep_selfie",
       label: "Representative Selfie",
       description: "Upload a recent photo of the account representative",
-      completed: verification.rep_selfie_verified,
-      status: verification.rep_selfie_verified
-        ? "complete"
-        : verification.rep_selfie_rejection_reason
-          ? "rejected"
-          : verification.rep_selfie_url
-            ? "pending"
-            : "not_started",
+      completed: representativeSelfieSubmitted && !verification.rep_selfie_rejection_reason,
+      status: verification.rep_selfie_rejection_reason
+        ? "rejected"
+        : representativeSelfieSubmitted
+          ? "complete"
+          : "not_started",
       actionLabel: verification.rep_selfie_rejection_reason
         ? "Resubmit Selfie"
-        : verification.rep_selfie_url
-          ? "View Submitted"
+        : representativeSelfieSubmitted
+          ? "Update Selfie"
           : "Upload Selfie",
-      actionUrl: "/account/verify/business",
+      actionUrl: "/account/verify#representative-selfie",
     },
     {
       key: "admin_approval",
@@ -911,12 +884,13 @@ export async function checkAndUpdateOverallStatus(userId: string): Promise<void>
   const profile = await getProfileById(userId);
   const verification = await ensureIndividualVerificationRecord(userId, profile.email_verified);
 
-  const allSubmitted = await checkSubmissionComplete(
-    "check_individual_submission_complete",
-    userId,
-  );
+  const allSubmitted = hasIndividualSubmission(verification);
 
-  if (!allSubmitted || verification.overall_status !== "incomplete") {
+  if (
+    !allSubmitted ||
+    verification.overall_status === "pending" ||
+    verification.overall_status === "approved"
+  ) {
     return;
   }
 
@@ -1238,12 +1212,13 @@ export async function checkAndUpdateBusinessStatus(userId: string): Promise<void
   const profile = await getProfileById(userId);
   const verification = await ensureBusinessVerificationRecord(userId);
 
-  const allSubmitted = await checkSubmissionComplete(
-    "check_business_submission_complete",
-    userId,
-  );
+  const allSubmitted = hasBusinessSubmission(verification);
 
-  if (!allSubmitted || verification.overall_status !== "incomplete") {
+  if (
+    !allSubmitted ||
+    verification.overall_status === "pending" ||
+    verification.overall_status === "approved"
+  ) {
     return;
   }
 

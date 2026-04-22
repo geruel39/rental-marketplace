@@ -284,8 +284,6 @@ export type IndividualVerificationStepKey =
 
 export type BusinessVerificationStepKey =
   | "business_details"
-  | "business_address"
-  | "tin"
   | "business_document"
   | "rep_gov_id"
   | "rep_selfie"
