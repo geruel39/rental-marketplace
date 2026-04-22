@@ -168,7 +168,8 @@ export const individualVerificationSchema = z.object({
 export const businessVerificationSchema = z.object({
   business_phone: z
     .string()
-    .regex(/^(\+63|0)?[0-9]{7,11}$/, "Invalid phone number"),
+    .regex(/^(\+63|0)?[0-9]{7,11}$/, "Invalid phone number")
+    .optional(),
   business_address: z.string().min(10).max(500),
   tin: z
     .string()

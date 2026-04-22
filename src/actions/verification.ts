@@ -2,7 +2,6 @@
 
 import { revalidatePath } from "next/cache";
 import { headers } from "next/headers";
-import { z } from "zod";
 
 import { createNotification } from "@/actions/notifications";
 import { getAdminIds, sendNotification } from "@/lib/notifications";
@@ -42,12 +41,6 @@ const businessDetailsSchema = businessVerificationSchema.pick({
   business_phone: true,
   business_address: true,
   tin: true,
-});
-const phoneNumberSchema = individualVerificationSchema.pick({
-  phone_number: true,
-});
-const otpSchema = z.object({
-  otp: z.string().regex(/^\d{6}$/, "Enter a valid 6-digit OTP"),
 });
 const businessDocumentTypeSchema = businessVerificationSchema.pick({
   business_document_type: true,
@@ -388,6 +381,48 @@ async function notifyVerificationRejected(params: {
   });
 }
 
+async function checkSubmissionComplete(
+  rpcName:
+    | "check_individual_submission_complete"
+    | "check_business_submission_complete",
+  userId: string,
+): Promise<boolean> {
+  const admin = createAdminClient();
+  const rpcAttempts = [{ p_user_id: userId }, { user_id: userId }];
+  let lastError: Error | null = null;
+
+  for (const args of rpcAttempts) {
+    const { data, error } = await admin.rpc(rpcName, args);
+
+    if (error) {
+      lastError = new Error(error.message);
+      continue;
+    }
+
+    if (typeof data === "boolean") {
+      return data;
+    }
+
+    if (Array.isArray(data) && data.length > 0) {
+      const row = data[0] as Record<string, unknown>;
+      return Boolean(
+        row.complete ?? row.is_complete ?? row.submission_complete ?? row.result ?? false,
+      );
+    }
+
+    if (data && typeof data === "object") {
+      const row = data as Record<string, unknown>;
+      return Boolean(
+        row.complete ?? row.is_complete ?? row.submission_complete ?? row.result ?? false,
+      );
+    }
+
+    return Boolean(data);
+  }
+
+  throw lastError ?? new Error(`Could not verify submission status via ${rpcName}.`);
+}
+
 async function getProfileById(userId: string) {
   const admin = createAdminClient();
   const { data, error } = await admin
@@ -545,22 +580,26 @@ function buildIndividualSteps(
     {
       key: "gov_id",
       label: "Government-Issued ID",
-      description: "Upload front and back of your ID",
+      description: "Upload clear front and back photos of your ID",
       completed: verification.gov_id_verified,
       status: verification.gov_id_verified
         ? "complete"
         : verification.gov_id_rejection_reason
           ? "rejected"
-          : verification.gov_id_front_url
+          : verification.gov_id_front_url && verification.gov_id_back_url
             ? "pending"
             : "not_started",
-      actionLabel: "Upload ID",
-      actionUrl: "/account/verify-id",
+      actionLabel: verification.gov_id_rejection_reason
+        ? "Resubmit ID"
+        : verification.gov_id_front_url
+          ? "View Submitted"
+          : "Upload ID",
+      actionUrl: "/account/verify/id",
     },
     {
       key: "selfie",
       label: "Current Photo (Selfie)",
-      description: "Take or upload a current photo of yourself",
+      description: "Take or upload a recent clear photo of yourself",
       completed: verification.selfie_verified,
       status: verification.selfie_verified
         ? "complete"
@@ -569,13 +608,17 @@ function buildIndividualSteps(
           : verification.selfie_url
             ? "pending"
             : "not_started",
-      actionLabel: "Upload Selfie",
-      actionUrl: "/account/verify-selfie",
+      actionLabel: verification.selfie_rejection_reason
+        ? "Resubmit Selfie"
+        : verification.selfie_url
+          ? "View Submitted"
+          : "Upload Selfie",
+      actionUrl: "/account/verify/selfie",
     },
     {
       key: "admin_approval",
       label: "Admin Review",
-      description: "Our team reviews your submitted documents",
+      description: "Our team reviews your documents (1-3 business days)",
       completed: verification.overall_status === "approved",
       status:
         verification.overall_status === "approved"
@@ -594,48 +637,22 @@ function buildBusinessSteps(
 ): VerificationStep[] {
   return [
     {
-      key: "business_phone",
-      label: "Business Phone Number",
-      description: "Provide a phone number for your business",
-      completed: verification.business_phone_verified,
-      status: verification.business_phone_verified
+      key: "business_details",
+      label: "Business Information",
+      description: "Provide your business address and TIN",
+      completed: Boolean(verification.business_address && verification.tin),
+      status: verification.business_address && verification.tin
         ? "complete"
-        : verification.business_phone
+        : verification.business_address || verification.tin
           ? "pending"
           : "not_started",
-      actionLabel: "Add Phone",
-      actionUrl: "/account/verify-business",
-    },
-    {
-      key: "business_address",
-      label: "Business Address",
-      description: "Add your registered business address",
-      completed: verification.business_address_verified,
-      status: verification.business_address_verified
-        ? "complete"
-        : verification.business_address
-          ? "pending"
-          : "not_started",
-      actionLabel: "Add Address",
-      actionUrl: "/account/verify-business",
-    },
-    {
-      key: "tin",
-      label: "TIN Number",
-      description: "Provide your business tax identification number",
-      completed: verification.tin_verified,
-      status: verification.tin_verified
-        ? "complete"
-        : verification.tin
-          ? "pending"
-          : "not_started",
-      actionLabel: "Add TIN",
-      actionUrl: "/account/verify-business",
+      actionLabel: "Enter Business Details",
+      actionUrl: "/account/verify/business",
     },
     {
       key: "business_document",
-      label: "Business Document",
-      description: "Upload your DTI, SEC, permit, or equivalent document",
+      label: "Business Registration Document",
+      description: "Upload your DTI, SEC, or other registration document",
       completed: verification.business_document_verified,
       status: verification.business_document_verified
         ? "complete"
@@ -644,28 +661,36 @@ function buildBusinessSteps(
           : verification.business_document_url
             ? "pending"
             : "not_started",
-      actionLabel: "Upload Document",
-      actionUrl: "/account/verify-business-document",
+      actionLabel: verification.business_document_rejection_reason
+        ? "Resubmit Document"
+        : verification.business_document_url
+          ? "View Submitted"
+          : "Upload Document",
+      actionUrl: "/account/verify/business",
     },
     {
       key: "rep_gov_id",
       label: "Representative Government ID",
-      description: "Upload front and back of the representative's ID",
+      description: "Upload front and back of your government-issued ID",
       completed: verification.rep_gov_id_verified,
       status: verification.rep_gov_id_verified
         ? "complete"
         : verification.rep_gov_id_rejection_reason
           ? "rejected"
-          : verification.rep_gov_id_front_url
+          : verification.rep_gov_id_front_url && verification.rep_gov_id_back_url
             ? "pending"
             : "not_started",
-      actionLabel: "Upload ID",
-      actionUrl: "/account/verify-representative-id",
+      actionLabel: verification.rep_gov_id_rejection_reason
+        ? "Resubmit ID"
+        : verification.rep_gov_id_front_url
+          ? "View Submitted"
+          : "Upload ID",
+      actionUrl: "/account/verify/business",
     },
     {
       key: "rep_selfie",
       label: "Representative Selfie",
-      description: "Upload a current photo of the business representative",
+      description: "Upload a recent photo of the account representative",
       completed: verification.rep_selfie_verified,
       status: verification.rep_selfie_verified
         ? "complete"
@@ -674,13 +699,17 @@ function buildBusinessSteps(
           : verification.rep_selfie_url
             ? "pending"
             : "not_started",
-      actionLabel: "Upload Selfie",
-      actionUrl: "/account/verify-representative-selfie",
+      actionLabel: verification.rep_selfie_rejection_reason
+        ? "Resubmit Selfie"
+        : verification.rep_selfie_url
+          ? "View Submitted"
+          : "Upload Selfie",
+      actionUrl: "/account/verify/business",
     },
     {
       key: "admin_approval",
       label: "Admin Review",
-      description: "Our team reviews your submitted business verification",
+      description: "Our team reviews your submitted documents (1-3 business days)",
       completed: verification.overall_status === "approved",
       status:
         verification.overall_status === "approved"
@@ -742,92 +771,6 @@ export async function getIndividualVerificationSteps(
   } catch (error) {
     console.error("getIndividualVerificationSteps failed:", error);
     return [];
-  }
-}
-
-export async function submitPhoneNumber(
-  prevState: unknown,
-  formData: FormData,
-): Promise<ActionResponse> {
-  void prevState;
-
-  try {
-    const auth = await requireMatchingAccountType("individual");
-    await ensureIndividualVerificationRecord(auth.user.id, auth.profile.email_verified);
-
-    const parsed = phoneNumberSchema.safeParse({
-      phone_number: formData.get("phone_number"),
-    });
-
-    if (!parsed.success) {
-      return { error: parsed.error.issues[0]?.message ?? "Invalid phone number" };
-    }
-
-    const admin = createAdminClient();
-    const now = new Date().toISOString();
-    const { error } = await admin
-      .from("individual_verifications")
-      .update({
-        phone_number: parsed.data.phone_number,
-        phone_verified: false,
-        phone_verified_at: null,
-        phone_otp_sent_at: now,
-      })
-      .eq("user_id", auth.user.id);
-
-    if (error) {
-      return { error: error.message };
-    }
-
-    revalidateVerificationViews();
-    return { success: "Phone number saved. OTP sent." };
-  } catch (error) {
-    console.error("submitPhoneNumber failed:", error);
-    return {
-      error: error instanceof Error ? error.message : "Could not save phone number.",
-    };
-  }
-}
-
-export async function verifyPhoneOTP(
-  prevState: unknown,
-  formData: FormData,
-): Promise<ActionResponse> {
-  void prevState;
-
-  try {
-    const auth = await requireMatchingAccountType("individual");
-    const parsed = otpSchema.safeParse({
-      otp: formData.get("otp"),
-    });
-
-    if (!parsed.success) {
-      return { error: parsed.error.issues[0]?.message ?? "Invalid OTP" };
-    }
-
-    const admin = createAdminClient();
-    const now = new Date().toISOString();
-    const { error } = await admin
-      .from("individual_verifications")
-      .update({
-        phone_verified: true,
-        phone_verified_at: now,
-      })
-      .eq("user_id", auth.user.id);
-
-    if (error) {
-      return { error: error.message };
-    }
-
-    await setProfilePhoneVerification(auth.user.id, true);
-    await checkAndUpdateOverallStatus(auth.user.id);
-    revalidateVerificationViews();
-    return { success: "Phone verified!" };
-  } catch (error) {
-    console.error("verifyPhoneOTP failed:", error);
-    return {
-      error: error instanceof Error ? error.message : "Could not verify OTP.",
-    };
   }
 }
 
@@ -898,13 +841,6 @@ export async function submitGovernmentID(
     }
 
     await checkAndUpdateOverallStatus(auth.user.id);
-    await notifyAdminsOfVerification({
-      userId: auth.user.id,
-      accountType: "individual",
-      title: `New verification document submitted by ${getUserDisplayName(auth.profile)}`,
-      body: "Government ID submitted for review.",
-    });
-
     revalidateVerificationViews();
     return { success: "Government ID submitted for review." };
   } catch (error) {
@@ -960,13 +896,6 @@ export async function submitSelfie(
     }
 
     await checkAndUpdateOverallStatus(auth.user.id);
-    await notifyAdminsOfVerification({
-      userId: auth.user.id,
-      accountType: "individual",
-      title: `New verification selfie submitted by ${getUserDisplayName(auth.profile)}`,
-      body: "Selfie submitted for review.",
-    });
-
     revalidateVerificationViews();
     return { success: "Selfie submitted for review." };
   } catch (error) {
@@ -982,10 +911,9 @@ export async function checkAndUpdateOverallStatus(userId: string): Promise<void>
   const profile = await getProfileById(userId);
   const verification = await ensureIndividualVerificationRecord(userId, profile.email_verified);
 
-  const allSubmitted = Boolean(
-    verification.gov_id_front_url &&
-      verification.gov_id_back_url &&
-      verification.selfie_url,
+  const allSubmitted = await checkSubmissionComplete(
+    "check_individual_submission_complete",
+    userId,
   );
 
   if (!allSubmitted || verification.overall_status !== "incomplete") {
@@ -1054,11 +982,18 @@ export async function submitBusinessDetails(
   try {
     const auth = await requireMatchingAccountType("business");
     await ensureBusinessVerificationRecord(auth.user.id);
+    const businessPhone = formData.get("business_phone");
+    const businessAddress = formData.get("business_address");
+    const tin = formData.get("tin");
 
     const parsed = businessDetailsSchema.safeParse({
-      business_phone: formData.get("business_phone"),
-      business_address: formData.get("business_address"),
-      tin: formData.get("tin"),
+      business_phone:
+        typeof businessPhone === "string" && businessPhone.trim().length > 0
+          ? businessPhone.trim()
+          : undefined,
+      business_address:
+        typeof businessAddress === "string" ? businessAddress.trim() : businessAddress,
+      tin: typeof tin === "string" ? tin.trim() : tin,
     });
 
     if (!parsed.success) {
@@ -1303,14 +1238,9 @@ export async function checkAndUpdateBusinessStatus(userId: string): Promise<void
   const profile = await getProfileById(userId);
   const verification = await ensureBusinessVerificationRecord(userId);
 
-  const allSubmitted = Boolean(
-    verification.business_phone &&
-      verification.business_address &&
-      verification.tin &&
-      verification.business_document_url &&
-      verification.rep_gov_id_front_url &&
-      verification.rep_gov_id_back_url &&
-      verification.rep_selfie_url,
+  const allSubmitted = await checkSubmissionComplete(
+    "check_business_submission_complete",
+    userId,
   );
 
   if (!allSubmitted || verification.overall_status !== "incomplete") {

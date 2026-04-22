@@ -209,6 +209,7 @@ export interface Profile {
 export interface IndividualVerification {
   id: string;
   user_id: string;
+  // email_verified and phone_verified are collected but NOT required for listing eligibility
   email_verified: boolean;
   email_verified_at?: string;
   phone_number?: string;
@@ -237,6 +238,7 @@ export interface IndividualVerification {
 export interface BusinessVerification {
   id: string;
   user_id: string;
+  // business_phone is collected but NOT required for listing eligibility
   business_phone?: string;
   business_phone_verified: boolean;
   business_address?: string;
@@ -275,8 +277,26 @@ export interface ListingEligibility {
   message?: string;
 }
 
+export type IndividualVerificationStepKey =
+  | "gov_id"
+  | "selfie"
+  | "admin_approval";
+
+export type BusinessVerificationStepKey =
+  | "business_details"
+  | "business_address"
+  | "tin"
+  | "business_document"
+  | "rep_gov_id"
+  | "rep_selfie"
+  | "admin_approval";
+
+export type VerificationStepKey =
+  | IndividualVerificationStepKey
+  | BusinessVerificationStepKey;
+
 export interface VerificationStep {
-  key: string;
+  key: VerificationStepKey;
   label: string;
   description: string;
   completed: boolean;
