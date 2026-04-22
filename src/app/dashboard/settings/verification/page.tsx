@@ -204,10 +204,25 @@ export default async function VerificationPage() {
       getBusinessVerificationSteps(user.id),
     ]);
 
-    const submitBusinessDetailsAction = submitBusinessDetails.bind(null, null);
-    const submitBusinessDocumentAction = submitBusinessDocument.bind(null, null);
-    const submitRepresentativeIDAction = submitRepresentativeID.bind(null, null);
-    const submitRepresentativeSelfieAction = submitRepresentativeSelfie.bind(null, null);
+    async function submitBusinessDetailsAction(formData: FormData) {
+      "use server";
+      await submitBusinessDetails(null, formData);
+    }
+
+    async function submitBusinessDocumentAction(formData: FormData) {
+      "use server";
+      await submitBusinessDocument(null, formData);
+    }
+
+    async function submitRepresentativeIDAction(formData: FormData) {
+      "use server";
+      await submitRepresentativeID(null, formData);
+    }
+
+    async function submitRepresentativeSelfieAction(formData: FormData) {
+      "use server";
+      await submitRepresentativeSelfie(null, formData);
+    }
 
     if (!verification) {
       redirect("/dashboard/settings");
