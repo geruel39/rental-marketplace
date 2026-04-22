@@ -1,8 +1,7 @@
-import { Mail, Phone, ShieldCheck } from "lucide-react";
+import { Phone, ShieldCheck } from "lucide-react";
 import { redirect } from "next/navigation";
 
-import { sendVerificationEmail } from "@/actions/profile";
-import { Button } from "@/components/ui/button";
+import { EmailVerificationCard } from "@/components/profile/email-verification-card";
 import { createClient } from "@/lib/supabase/server";
 import type { Profile } from "@/types";
 
@@ -26,11 +25,6 @@ export default async function VerificationPage() {
     redirect("/dashboard/settings");
   }
 
-  async function handleSendVerificationEmail() {
-    "use server";
-    await sendVerificationEmail();
-  }
-
   return (
     <div className="space-y-6">
       <div className="space-y-2">
@@ -41,26 +35,7 @@ export default async function VerificationPage() {
       </div>
 
       <div className="space-y-4">
-        <div className="rounded-3xl border border-border bg-background p-6 shadow-sm">
-          <div className="flex items-center justify-between gap-4">
-            <div className="space-y-1">
-              <p className="flex items-center gap-2 font-medium">
-                <Mail className="size-4" />
-                Email
-              </p>
-              <p className="text-sm text-muted-foreground">
-                {profile.email_verified ? "Verified" : "Not verified"}
-              </p>
-            </div>
-            {!profile.email_verified ? (
-              <form action={handleSendVerificationEmail}>
-                <Button type="submit" variant="outline">
-                  Send Verification Email
-                </Button>
-              </form>
-            ) : null}
-          </div>
-        </div>
+        <EmailVerificationCard emailVerified={profile.email_verified} />
 
         <div className="rounded-3xl border border-border bg-background p-6 shadow-sm">
           <div className="space-y-1">

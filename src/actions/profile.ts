@@ -360,7 +360,13 @@ export async function updatePayoutSettings(
   }
 }
 
-export async function sendVerificationEmail(): Promise<ActionResponse> {
+export async function sendVerificationEmail(
+  prevState?: ActionResponse | null,
+  formData?: FormData,
+): Promise<ActionResponse> {
+  void prevState;
+  void formData;
+
   try {
     const supabase = await createClient();
     const {
@@ -371,9 +377,13 @@ export async function sendVerificationEmail(): Promise<ActionResponse> {
       return { error: "You must be signed in" };
     }
 
+    const appUrl = process.env.NEXT_PUBLIC_APP_URL?.replace(/\/+$/, "") || "http://localhost:3000";
     const { error } = await supabase.auth.resend({
       type: "signup",
       email: user.email,
+      options: {
+        emailRedirectTo: `${appUrl}/callback`,
+      },
     });
 
     if (error) {
