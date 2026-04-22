@@ -68,7 +68,7 @@ export default async function PaymentSuccessPage({
     fees,
   });
 
-  if (booking.status === "awaiting_payment") {
+  if (!booking.paid_at || booking.hitpay_payment_status !== "completed") {
     return (
       <main className="mx-auto flex min-h-[70vh] max-w-5xl items-center px-4 py-12 sm:px-6 lg:px-8">
         <PaymentStatusPoller
@@ -94,7 +94,7 @@ export default async function PaymentSuccessPage({
             />
             <div className="flex justify-center">
               <Button asChild variant="outline">
-                <Link href="/dashboard/my-rentals">Check My Rentals</Link>
+                <Link href="/renter/rentals">Check My Rentals</Link>
               </Button>
             </div>
           </CardContent>
@@ -109,7 +109,7 @@ export default async function PaymentSuccessPage({
         <CardHeader className="text-center">
           <CheckCircle2 className="mx-auto size-12 text-emerald-600" />
           <CardTitle className="text-2xl">
-            {booking.status === "confirmed" ? "Payment Confirmed!" : "Payment received"}
+            {booking.status === "confirmed" ? "Booking Confirmed!" : "Payment received"}
           </CardTitle>
         </CardHeader>
         <CardContent className="space-y-6">

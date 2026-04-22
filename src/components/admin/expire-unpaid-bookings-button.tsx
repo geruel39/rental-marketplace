@@ -5,7 +5,7 @@ import { Loader2 } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 
-import { expireUnpaidBookings } from "@/actions/bookings";
+import { expireUnconfirmedBookings } from "@/actions/bookings";
 import { Button } from "@/components/ui/button";
 
 export function ExpireUnpaidBookingsButton() {
@@ -17,7 +17,7 @@ export function ExpireUnpaidBookingsButton() {
       disabled={isPending}
       onClick={() => {
         startTransition(async () => {
-          const result = await expireUnpaidBookings();
+          const result = await expireUnconfirmedBookings();
 
           if (result.error) {
             toast.error(result.error);

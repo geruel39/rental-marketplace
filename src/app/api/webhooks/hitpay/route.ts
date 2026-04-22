@@ -452,7 +452,7 @@ export async function POST(request: NextRequest) {
         );
       }
 
-      if (!["awaiting_payment", "pending", "confirmed"].includes(booking.status)) {
+      if (!["lister_confirmation", "confirmed"].includes(booking.status)) {
         console.log("[HITPAY_WEBHOOK] Ignoring completed webhook for booking status:", {
           bookingId,
           bookingStatus: booking.status,

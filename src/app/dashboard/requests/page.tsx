@@ -1,43 +1,26 @@
-import { format } from "date-fns";
-import { Receipt, Star } from "lucide-react";
+import { differenceInHours, formatDistanceToNowStrict } from "date-fns";
+import { AlertTriangle, Receipt, Star } from "lucide-react";
 import Link from "next/link";
 import { redirect } from "next/navigation";
 
-import {
-  acceptBookingRequest,
-  cancelBooking,
-  declineBookingRequest,
-  getIncomingRequests,
-} from "@/actions/bookings";
+import { getIncomingBookings, listerConfirmBooking } from "@/actions/bookings";
 import { BookingStatusBadge } from "@/components/bookings/booking-status-badge";
 import { ConditionCheckForm } from "@/components/bookings/condition-check-form";
 import { HandoverDialog } from "@/components/bookings/handover-dialog";
-import { PaymentCountdown } from "@/components/bookings/payment-countdown";
+import { ListerCancelDialog } from "@/components/bookings/lister-cancel-dialog";
 import { RaiseDisputeDialog } from "@/components/bookings/raise-dispute-dialog";
 import { RentalCountdown } from "@/components/bookings/rental-countdown";
-import { ReviewActionButton } from "@/components/reviews/review-action-button";
 import { EmptyState } from "@/components/shared/empty-state";
-import {
-  AlertDialog,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-  AlertDialogTrigger,
-} from "@/components/ui/alert-dialog";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import { createClient } from "@/lib/supabase/server";
 import { cn, formatCurrency, getInitials } from "@/lib/utils";
-import type { BookingStatus, BookingWithDetails } from "@/types";
+import type { BookingWithDetails } from "@/types";
 
 type SearchParams = Record<string, string | string[] | undefined>;
 type FilterKey =
   | "all"
-  | "pending"
-  | "awaiting_payment"
+  | "lister_confirmation"
   | "confirmed"
   | "active"
   | "returned"
@@ -47,8 +30,7 @@ type FilterKey =
 
 const requestTabs: Array<{ key: FilterKey; label: string }> = [
   { key: "all", label: "All" },
-  { key: "pending", label: "Pending" },
-  { key: "awaiting_payment", label: "Awaiting Payment" },
+  { key: "lister_confirmation", label: "Needs Confirmation" },
   { key: "confirmed", label: "Confirmed" },
   { key: "active", label: "Active" },
   { key: "returned", label: "Returned" },
@@ -73,149 +55,61 @@ function matchesFilter(booking: BookingWithDetails, filter: FilterKey) {
   return booking.status === filter;
 }
 
-function getEmptyDescription(filter: FilterKey) {
-  switch (filter) {
-    case "pending":
-      return "No pending requests. New booking requests will appear here.";
-    case "awaiting_payment":
-      return "No requests are waiting for renter payment.";
-    case "confirmed":
-      return "No confirmed bookings waiting for handover.";
-    case "active":
-      return "No active rentals right now.";
-    case "returned":
-      return "No returned rentals waiting for inspection.";
-    case "completed":
-      return "No completed bookings in this view.";
-    case "cancelled":
-      return "No cancelled bookings in this view.";
-    case "disputed":
-      return "No disputed bookings right now.";
-    default:
-      return "No incoming bookings yet.";
-  }
-}
-
 function formatDuration(booking: BookingWithDetails) {
   const units = booking.rental_units || booking.num_units || 1;
-  const period = booking.pricing_period;
-  return `${units} ${period}${units === 1 ? "" : "s"}`;
+  return `${units} ${booking.pricing_period}${units === 1 ? "" : "s"}`;
 }
 
-function getConditionTone(condition?: string | null) {
-  switch (condition) {
-    case "excellent":
-      return "bg-emerald-100 text-emerald-800";
-    case "good":
-      return "bg-blue-100 text-blue-800";
-    case "fair":
-      return "bg-yellow-100 text-yellow-800";
-    case "damaged":
-    case "missing_parts":
-      return "bg-red-100 text-red-800";
-    default:
-      return "bg-muted text-muted-foreground";
+function getConfirmationCountdown(deadline?: string | null) {
+  if (!deadline) return "Confirm within 24 hours or it auto-cancels";
+  const deadlineDate = new Date(deadline);
+  const hours = Math.max(0, differenceInHours(deadlineDate, new Date()));
+  if (deadlineDate.getTime() <= Date.now()) {
+    return "Confirmation window expired";
   }
-}
-
-function statusTitle(status: BookingStatus) {
-  return status.replaceAll("_", " ");
+  return `Confirm in ${hours} hr${hours === 1 ? "" : "s"} or auto-cancels`;
 }
 
 function RequestActions({ booking }: { booking: BookingWithDetails }) {
-  if (booking.status === "pending") {
+  if (booking.status === "lister_confirmation") {
     return (
-      <div className="flex flex-wrap items-center justify-end gap-2">
-        <form
-          action={
-            acceptBookingRequest.bind(null, booking.id) as unknown as (formData: FormData) => Promise<void>
-          }
-        >
-          <Button className="bg-brand-navy text-white hover:bg-brand-steel" size="sm" type="submit">
-            Accept
-          </Button>
-        </form>
-
-        <AlertDialog>
-          <AlertDialogTrigger asChild>
-            <Button size="sm" variant="outline">
-              Decline
-            </Button>
-          </AlertDialogTrigger>
-          <AlertDialogContent>
-            <AlertDialogHeader>
-              <AlertDialogTitle>Decline this booking request?</AlertDialogTitle>
-              <AlertDialogDescription>
-                This will cancel the request and notify the renter.
-              </AlertDialogDescription>
-            </AlertDialogHeader>
-            <AlertDialogFooter>
-              <AlertDialogCancel>Back</AlertDialogCancel>
-              <form
-                action={
-                  declineBookingRequest.bind(
-                    null,
-                    booking.id,
-                    "Declined by lister",
-                  ) as unknown as (formData: FormData) => Promise<void>
-                }
-              >
-                <Button type="submit" variant="destructive">
-                  Confirm Decline
-                </Button>
-              </form>
-            </AlertDialogFooter>
-          </AlertDialogContent>
-        </AlertDialog>
-      </div>
-    );
-  }
-
-  if (booking.status === "awaiting_payment") {
-    const isExpired =
-      booking.payment_expires_at && new Date(booking.payment_expires_at).getTime() <= Date.now();
-
-    return (
-      <div className="space-y-2 text-right">
-        <p className="text-sm text-muted-foreground">Waiting for payment</p>
-        {booking.payment_expires_at ? (
-          <div className="inline-flex">
-            <PaymentCountdown expiresAt={booking.payment_expires_at} />
-          </div>
-        ) : null}
-        {isExpired ? (
+      <div className="space-y-3">
+        <p className="text-sm font-medium text-red-700">
+          {getConfirmationCountdown(booking.lister_confirmation_deadline)}
+        </p>
+        <div className="flex flex-wrap justify-end gap-2">
           <form
             action={
-              cancelBooking.bind(
-                null,
-                booking.id,
-                "Payment window expired.",
-              ) as unknown as (formData: FormData) => Promise<void>
+              listerConfirmBooking.bind(null, booking.id) as unknown as (formData: FormData) => Promise<void>
             }
           >
-            <Button size="sm" variant="outline">
-              Cancel
+            <Button className="bg-emerald-600 text-white hover:bg-emerald-700" size="sm" type="submit">
+              Confirm
             </Button>
           </form>
-        ) : null}
+          <ListerCancelDialog booking={booking} />
+        </div>
       </div>
     );
   }
 
   if (booking.status === "confirmed") {
     return (
-      <div className="flex justify-end">
-        <HandoverDialog booking={booking} />
+      <div className="space-y-3">
+        <div className="flex justify-end">
+          <HandoverDialog booking={booking} />
+        </div>
+        <Button asChild size="sm" variant="outline">
+          <Link href="/dashboard/messages">Message renter</Link>
+        </Button>
       </div>
     );
   }
 
   if (booking.status === "active") {
     return (
-      <div className="space-y-2 text-right">
-        <p className="text-sm text-muted-foreground">
-          {booking.returned_at ? "Return was submitted" : "Waiting for renter to return"}
-        </p>
+      <div className="space-y-3 text-right">
+        <p className="text-sm text-muted-foreground">Waiting for renter to mark return.</p>
         <div className="flex justify-end">
           <RaiseDisputeDialog bookingId={booking.id} buttonSize="sm" />
         </div>
@@ -224,58 +118,21 @@ function RequestActions({ booking }: { booking: BookingWithDetails }) {
   }
 
   if (booking.status === "returned") {
-    return (
-      <div className="space-y-3">
-        <div className="flex justify-end">
-          <ConditionCheckForm booking={booking} />
-        </div>
-        {booking.return_proof_urls.length > 0 ? (
-          <div className="grid grid-cols-4 gap-2">
-            {booking.return_proof_urls.slice(0, 4).map((url) => (
-              <a href={url} key={url} rel="noreferrer" target="_blank">
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img alt="Return proof" className="h-12 w-full rounded-md border object-cover" src={url} />
-              </a>
-            ))}
-          </div>
-        ) : null}
-      </div>
-    );
-  }
-
-  if (booking.status === "completed") {
-    return (
-      <div className="space-y-2 text-right">
-        {booking.return_condition ? (
-          <span
-            className={cn(
-              "inline-flex rounded-full px-2 py-1 text-xs font-medium capitalize",
-              getConditionTone(booking.return_condition),
-            )}
-          >
-            {booking.return_condition.replaceAll("_", " ")}
-          </span>
-        ) : null}
-        <ReviewActionButton booking={booking} currentUserId={booking.lister_id} size="sm" />
-        <p className="text-xs text-muted-foreground">
-          Payout: {booking.payout_at ? `Processed ${format(new Date(booking.payout_at), "PPP")}` : "Pending"}
-        </p>
-      </div>
-    );
+    return <ConditionCheckForm booking={booking} />;
   }
 
   return (
     <p className="text-right text-sm text-muted-foreground capitalize">
-      {statusTitle(booking.status)}
+      {booking.status.replaceAll("_", " ")}
     </p>
   );
 }
 
-interface RequestsPageProps {
+export default async function RequestsPage({
+  searchParams,
+}: {
   searchParams: Promise<SearchParams>;
-}
-
-export default async function RequestsPage({ searchParams }: RequestsPageProps) {
+}) {
   const supabase = await createClient();
   const {
     data: { user },
@@ -287,15 +144,15 @@ export default async function RequestsPage({ searchParams }: RequestsPageProps) 
 
   const resolvedSearchParams = await searchParams;
   const activeFilter = getFilter(getSingleValue(resolvedSearchParams.status));
-  const bookings = await getIncomingRequests(user.id);
+  const bookings = await getIncomingBookings(user.id);
   const filteredBookings = bookings.filter((booking) => matchesFilter(booking, activeFilter));
 
   return (
     <div className="space-y-6">
       <div className="space-y-2">
-        <h1 className="text-2xl font-semibold tracking-tight">Incoming Requests</h1>
+        <h1 className="text-2xl font-semibold tracking-tight">Incoming Bookings</h1>
         <p className="text-sm text-muted-foreground">
-          Review requests, confirm handover with photo proof, and complete inspections after return.
+          Confirm paid bookings, handle handover proof, and complete inspections after return.
         </p>
       </div>
 
@@ -317,7 +174,7 @@ export default async function RequestsPage({ searchParams }: RequestsPageProps) 
         <EmptyState
           actionHref="/dashboard/my-listings"
           actionLabel="View My Listings"
-          description={getEmptyDescription(activeFilter)}
+          description="New incoming bookings will appear here."
           icon={Receipt}
           title="No incoming bookings"
         />
@@ -325,11 +182,15 @@ export default async function RequestsPage({ searchParams }: RequestsPageProps) 
         <div className="space-y-4">
           {filteredBookings.map((booking) => {
             const renterName = booking.renter.display_name || booking.renter.full_name;
+            const urgent = booking.status === "lister_confirmation";
 
             return (
               <article
                 key={booking.id}
-                className="rounded-2xl border border-border/70 bg-background p-4 shadow-sm"
+                className={cn(
+                  "rounded-2xl border border-border/70 bg-background p-4 shadow-sm",
+                  urgent && "border-l-4 border-l-red-600",
+                )}
               >
                 <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
                   <div className="flex min-w-0 flex-1 items-start gap-3">
@@ -345,8 +206,6 @@ export default async function RequestsPage({ searchParams }: RequestsPageProps) 
 
                     <div className="min-w-0 flex-1 space-y-2">
                       <p className="line-clamp-1 font-semibold">{booking.listing.title}</p>
-                      <p className="text-xs text-muted-foreground">Booking #{booking.id.slice(0, 8)}</p>
-
                       <div className="flex flex-wrap items-center gap-2 text-sm">
                         <Avatar size="sm">
                           <AvatarImage alt={renterName} src={booking.renter.avatar_url ?? undefined} />
@@ -362,8 +221,15 @@ export default async function RequestsPage({ searchParams }: RequestsPageProps) 
                       <p className="text-sm text-muted-foreground">
                         {formatDuration(booking)} x {booking.quantity} item{booking.quantity === 1 ? "" : "s"}
                       </p>
-                      <p className="font-semibold text-brand-navy">{formatCurrency(booking.total_price)}</p>
+                      <p className="font-semibold text-brand-navy">Paid: {formatCurrency(booking.total_price)}</p>
                       <BookingStatusBadge size="sm" status={booking.status} />
+
+                      {urgent ? (
+                        <p className="inline-flex items-center gap-2 text-sm font-medium text-red-700">
+                          <AlertTriangle className="size-4" />
+                          {getConfirmationCountdown(booking.lister_confirmation_deadline)}
+                        </p>
+                      ) : null}
 
                       {booking.status === "active" &&
                       booking.rental_ends_at &&
@@ -375,11 +241,17 @@ export default async function RequestsPage({ searchParams }: RequestsPageProps) 
                         />
                       ) : null}
 
+                      {booking.status === "confirmed" && booking.lister_confirmation_deadline ? (
+                        <p className="text-xs text-muted-foreground">
+                          Confirmed {formatDistanceToNowStrict(new Date(booking.lister_confirmation_deadline), { addSuffix: true })}
+                        </p>
+                      ) : null}
+
                       <Link
                         className="inline-flex text-sm font-medium text-brand-navy hover:underline"
                         href={`/lister/bookings/${booking.id}`}
                       >
-                        View Details →
+                        View Details {"->"}
                       </Link>
                     </div>
                   </div>

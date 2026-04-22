@@ -7,7 +7,7 @@ import { Loader2, Minus, Plus } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 
-import { createBookingRequest } from "@/actions/bookings";
+import { createAndPayBooking } from "@/actions/bookings";
 import { StockLevelBadge } from "@/components/inventory/stock-level-badge";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
@@ -16,7 +16,7 @@ import { Label } from "@/components/ui/label";
 import { Separator } from "@/components/ui/separator";
 import { Textarea } from "@/components/ui/textarea";
 import { cn, formatCurrency } from "@/lib/utils";
-import type { ActionResponse, Listing, PricingPeriod } from "@/types";
+import type { Listing, PricingPeriod } from "@/types";
 
 interface BookingWidgetProps {
   listing: Listing;
@@ -32,7 +32,13 @@ type BookingFormValues = {
   message: string;
 };
 
-const initialState: ActionResponse | null = null;
+type BookingActionState = {
+  bookingId?: string;
+  paymentUrl?: string;
+  error?: string;
+} | null;
+
+const initialState: BookingActionState = null;
 const RENTER_SERVICE_FEE_RATE = 0.05;
 
 function getPricingOptions(listing: Listing) {
@@ -67,8 +73,8 @@ function formatDurationMeaning(units: number, period: PricingPeriod) {
 
 export function BookingWidget({ listing, isOwner, isLoggedIn }: BookingWidgetProps) {
   const router = useRouter();
-  const [state, formAction, isPending] = useActionState<ActionResponse | null, FormData>(
-    createBookingRequest,
+  const [state, formAction, isPending] = useActionState<BookingActionState, FormData>(
+    createAndPayBooking,
     initialState,
   );
   const pricingOptions = useMemo(() => getPricingOptions(listing), [listing]);
@@ -99,13 +105,20 @@ export function BookingWidget({ listing, isOwner, isLoggedIn }: BookingWidgetPro
   const total = subtotal + serviceFee + deposit;
 
   useEffect(() => {
-    if (!state?.success) {
+    if (!state?.bookingId) {
       return;
     }
-    toast.success(state.success);
-    router.push("/dashboard/my-rentals");
+
+    if (state.paymentUrl) {
+      toast.success("Booking created. Redirecting to payment...");
+      router.push(state.paymentUrl);
+      return;
+    }
+
+    toast.success("Booking created.");
+    router.push("/renter/rentals");
     router.refresh();
-  }, [router, state?.success]);
+  }, [router, state?.bookingId, state?.paymentUrl]);
 
   useEffect(() => {
     if (!state?.error) {
@@ -135,7 +148,7 @@ export function BookingWidget({ listing, isOwner, isLoggedIn }: BookingWidgetPro
     if (isOutOfStock) {
       return "Currently Unavailable";
     }
-    return listing.instant_book ? "Book Now" : "Request to Book";
+    return "Book Now";
   }
 
   function onSubmit(values: BookingFormValues) {

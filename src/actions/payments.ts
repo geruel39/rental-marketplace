@@ -1013,7 +1013,7 @@ export async function createPaymentForBooking(
   try {
     const booking = await getBookingWithRelations(admin, bookingId);
 
-    if (booking.status !== "awaiting_payment") {
+    if (booking.status !== "lister_confirmation") {
       return { error: "Booking is not awaiting payment." };
     }
 
@@ -1138,7 +1138,7 @@ export async function createPaymentForBooking(
       listingId: booking.listing_id,
       bookingId: booking.id,
       fromUserId: booking.lister_id,
-      actionUrl: `/dashboard/bookings/${booking.id}`,
+      actionUrl: `/renter/rentals/${booking.id}`,
     });
 
     revalidatePaymentViews();
@@ -1181,7 +1181,11 @@ export async function handlePaymentConfirmed(params: {
       return;
     }
 
-    if (booking.status !== "awaiting_payment") {
+    if (
+      booking.status !== "lister_confirmation" &&
+      booking.status !== "cancelled_by_renter" &&
+      booking.status !== "cancelled_by_lister"
+    ) {
       console.log("[PAYMENTS] Ignoring payment confirmation for status:", booking.status);
       return;
     }
@@ -1210,7 +1214,7 @@ export async function handlePaymentConfirmed(params: {
     const { error: bookingError } = await admin
       .from("bookings")
       .update({
-        status: "confirmed",
+        status: booking.status === "lister_confirmation" ? "lister_confirmation" : booking.status,
         paid_at: now,
         hitpay_payment_id: params.hitpayPaymentId,
         hitpay_payment_request_id: params.hitpayPaymentRequestId,
@@ -1219,7 +1223,7 @@ export async function handlePaymentConfirmed(params: {
         last_webhook_at: now,
       })
       .eq("id", booking.id)
-      .eq("status", "awaiting_payment");
+      .in("status", ["lister_confirmation", "cancelled_by_renter", "cancelled_by_lister"]);
 
     if (bookingError) {
       await updateTransaction(transactionId, {
@@ -1236,11 +1240,11 @@ export async function handlePaymentConfirmed(params: {
 
     await addBookingTimeline({
       bookingId: booking.id,
-      status: "confirmed",
-      previousStatus: "awaiting_payment",
+      status: "lister_confirmation",
+      previousStatus: "lister_confirmation",
       actorRole: "system",
       title: "Payment confirmed",
-      description: `Payment of ${formatMoney(params.amount, params.currency)} confirmed via HitPay. The item is now secured for you.`,
+      description: `Payment of ${formatMoney(params.amount, params.currency)} confirmed via HitPay. Waiting for the lister to confirm availability within 24 hours.`,
       metadata: {
         amount: params.amount,
         currency: params.currency,
@@ -1268,6 +1272,9 @@ export async function processCancellationRefund(
   options?: {
     refundReason?: RefundReason;
     cancelledBy?: "renter" | "lister";
+    refundAmountOverride?: number;
+    policyAppliedOverride?: string;
+    reasonOverride?: string;
   },
 ): Promise<{ refundAmount: number; message: string } | { error: string }> {
   const admin = createAdminClient();
@@ -1287,27 +1294,46 @@ export async function processCancellationRefund(
       options?.cancelledBy ??
       (booking.cancelled_by === booking.lister_id ? "lister" : "renter");
 
-    const { data: calculation, error: calculationError } = await admin.rpc(
-      "calculate_cancellation_refund",
-      {
-        p_booking_id: booking.id,
-        p_cancelled_by: cancelledBy,
-      },
-    );
+    let refundAmount = 0;
+    let cancellationFee = 0;
+    let platformFeeRetained = 0;
+    let depositRefund = 0;
+    let reason = options?.reasonOverride ?? "Refund processed";
+    let policyApplied = options?.policyAppliedOverride ?? "manual_override";
 
-    if (calculationError) {
-      throw new Error(calculationError.message);
+    if (typeof options?.refundAmountOverride === "number") {
+      refundAmount = roundMoney(options.refundAmountOverride);
+      depositRefund = roundMoney(Math.min(booking.deposit_amount, refundAmount));
+      cancellationFee = roundMoney(
+        Math.max(0, booking.total_price - refundAmount),
+      );
+      platformFeeRetained = roundMoney(
+        Math.max(0, booking.total_price - refundAmount - booking.deposit_amount),
+      );
+    } else {
+      const { data: calculation, error: calculationError } = await admin.rpc(
+        "calculate_cancellation_refund",
+        {
+          p_booking_id: booking.id,
+          p_cancelled_by: cancelledBy,
+        },
+      );
+
+      if (calculationError) {
+        throw new Error(calculationError.message);
+      }
+
+      const result = (calculation ?? {}) as CancellationRefundCalculation;
+      refundAmount = roundMoney(Number(result.refund_amount ?? 0));
+      cancellationFee = roundMoney(Number(result.cancellation_fee ?? 0));
+      platformFeeRetained = roundMoney(
+        Number(result.platform_fee_retained ?? 0),
+      );
+      depositRefund = roundMoney(Number(result.deposit_refund ?? 0));
+      reason = options?.reasonOverride ?? String(result.reason ?? "Refund processed");
+      policyApplied =
+        options?.policyAppliedOverride ?? String(result.policy_applied ?? "unknown");
     }
-
-    const result = (calculation ?? {}) as CancellationRefundCalculation;
-    const refundAmount = roundMoney(Number(result.refund_amount ?? 0));
-    const cancellationFee = roundMoney(Number(result.cancellation_fee ?? 0));
-    const platformFeeRetained = roundMoney(
-      Number(result.platform_fee_retained ?? 0),
-    );
-    const depositRefund = roundMoney(Number(result.deposit_refund ?? 0));
-    const reason = String(result.reason ?? "Refund processed");
-    const policyApplied = String(result.policy_applied ?? "unknown");
 
     if (refundAmount <= 0) {
       await createTransactionRecord({

@@ -739,7 +739,15 @@ export const NOTIFICATION_CONFIG = {
     shouldBundle: true,
     bundleKey: "booking_requests_{userId}",
     bundleTitleTemplate: "You have {count} new booking request(s)",
-    defaultActionUrl: "/dashboard/requests",
+    defaultActionUrl: "/lister/bookings",
+    priority: "medium",
+  },
+  booking_confirmation_required: {
+    label: "Booking Confirmation Required",
+    icon: "Clock",
+    color: "text-red-500",
+    shouldBundle: false,
+    defaultActionUrl: "/lister/bookings",
     priority: "medium",
   },
   booking_accepted: {
@@ -747,7 +755,7 @@ export const NOTIFICATION_CONFIG = {
     icon: "CheckCircle",
     color: "text-green-500",
     shouldBundle: false,
-    defaultActionUrl: "/dashboard/my-rentals",
+    defaultActionUrl: "/renter/rentals",
     priority: "urgent",
   },
   booking_declined: {
@@ -763,7 +771,7 @@ export const NOTIFICATION_CONFIG = {
     icon: "XCircle",
     color: "text-red-500",
     shouldBundle: false,
-    defaultActionUrl: "/dashboard/my-rentals",
+    defaultActionUrl: "/renter/rentals",
     priority: "high",
   },
   booking_completed: {
@@ -771,7 +779,7 @@ export const NOTIFICATION_CONFIG = {
     icon: "CheckCircle2",
     color: "text-green-500",
     shouldBundle: false,
-    defaultActionUrl: "/dashboard/my-rentals",
+    defaultActionUrl: "/renter/rentals",
     priority: "medium",
   },
   payment_confirmed: {
@@ -779,7 +787,7 @@ export const NOTIFICATION_CONFIG = {
     icon: "CreditCard",
     color: "text-green-500",
     shouldBundle: false,
-    defaultActionUrl: "/dashboard/my-rentals",
+    defaultActionUrl: "/renter/rentals",
     priority: "urgent",
   },
   payment_received: {
@@ -827,7 +835,7 @@ export const NOTIFICATION_CONFIG = {
     icon: "RefreshCcw",
     color: "text-blue-500",
     shouldBundle: false,
-    defaultActionUrl: "/dashboard/my-rentals",
+    defaultActionUrl: "/renter/rentals",
     priority: "high",
   },
   refund_completed: {
@@ -835,7 +843,7 @@ export const NOTIFICATION_CONFIG = {
     icon: "RefreshCcw",
     color: "text-green-500",
     shouldBundle: false,
-    defaultActionUrl: "/dashboard/my-rentals",
+    defaultActionUrl: "/renter/rentals",
     priority: "high",
   },
   dispute_raised: {
@@ -843,7 +851,7 @@ export const NOTIFICATION_CONFIG = {
     icon: "AlertTriangle",
     color: "text-red-500",
     shouldBundle: false,
-    defaultActionUrl: "/dashboard/bookings",
+    defaultActionUrl: "/renter/rentals",
     priority: "urgent",
   },
   dispute_resolved: {
@@ -851,7 +859,7 @@ export const NOTIFICATION_CONFIG = {
     icon: "Shield",
     color: "text-blue-500",
     shouldBundle: false,
-    defaultActionUrl: "/dashboard/bookings",
+    defaultActionUrl: "/renter/rentals",
     priority: "high",
   },
   rental_started: {
@@ -859,7 +867,7 @@ export const NOTIFICATION_CONFIG = {
     icon: "Play",
     color: "text-green-500",
     shouldBundle: false,
-    defaultActionUrl: "/dashboard/my-rentals",
+    defaultActionUrl: "/renter/rentals",
     priority: "high",
   },
   item_returned: {
@@ -867,7 +875,7 @@ export const NOTIFICATION_CONFIG = {
     icon: "RotateCcw",
     color: "text-blue-500",
     shouldBundle: false,
-    defaultActionUrl: "/dashboard/requests",
+    defaultActionUrl: "/lister/bookings",
     priority: "high",
   },
   booking_expired: {
@@ -875,7 +883,7 @@ export const NOTIFICATION_CONFIG = {
     icon: "Clock",
     color: "text-red-500",
     shouldBundle: false,
-    defaultActionUrl: "/dashboard/my-rentals",
+    defaultActionUrl: "/renter/rentals",
     priority: "high",
   },
   kyc_verified: {

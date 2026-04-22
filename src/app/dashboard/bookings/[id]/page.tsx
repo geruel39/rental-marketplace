@@ -4,7 +4,6 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 
 import {
-  cancelBooking,
   getBookingDetails,
   getBookingTimeline,
 } from "@/actions/bookings";
@@ -17,9 +16,11 @@ import { BookingStatusBadge } from "@/components/bookings/booking-status-badge";
 import { BookingTimeline } from "@/components/bookings/booking-timeline";
 import { ConditionCheckForm } from "@/components/bookings/condition-check-form";
 import { HandoverDialog } from "@/components/bookings/handover-dialog";
+import { ListerCancelDialog } from "@/components/bookings/lister-cancel-dialog";
 import { PaymentButton } from "@/components/bookings/payment-button";
 import { PaymentCountdown } from "@/components/bookings/payment-countdown";
 import { RaiseDisputeDialog } from "@/components/bookings/raise-dispute-dialog";
+import { RenterCancelDialog } from "@/components/bookings/renter-cancel-dialog";
 import { RentalCountdown } from "@/components/bookings/rental-countdown";
 import { ReturnDialog } from "@/components/bookings/return-dialog";
 import { DisputeResolutionForm } from "@/components/payments/dispute-resolution-form";
@@ -148,9 +149,10 @@ export default async function BookingDetailPage({ params }: BookingDetailPagePro
   const otherPartyName = otherParty.display_name || otherParty.full_name;
   const rentalUnits = booking.rental_units || booking.num_units || 1;
   const canCancel =
-    booking.status === "pending" ||
-    booking.status === "awaiting_payment" ||
-    booking.status === "confirmed";
+    (isLister &&
+      (booking.status === "lister_confirmation" || booking.status === "confirmed")) ||
+    (isRenter &&
+      (booking.status === "lister_confirmation" || booking.status === "confirmed"));
   const canDispute = booking.status === "active" || booking.status === "returned";
   const canLeaveReview = booking.status === "completed" && (isRenter || isLister);
   const isLateReturn =
@@ -450,7 +452,7 @@ export default async function BookingDetailPage({ params }: BookingDetailPagePro
             <div className="mt-4 space-y-3">
               {isLister && booking.status === "confirmed" ? <HandoverDialog booking={booking} /> : null}
               {isLister && booking.status === "returned" ? <ConditionCheckForm booking={booking} /> : null}
-              {isRenter && booking.status === "awaiting_payment" ? (
+              {isRenter && booking.hitpay_payment_url && booking.hitpay_payment_status !== "completed" ? (
                 <PaymentButton
                   bookingId={booking.id}
                   className="w-full bg-brand-navy text-white hover:bg-brand-steel"
@@ -459,19 +461,14 @@ export default async function BookingDetailPage({ params }: BookingDetailPagePro
               ) : null}
               {isRenter && booking.status === "active" ? <ReturnDialog booking={booking} /> : null}
               {canCancel ? (
-                <form
-                  action={
-                    cancelBooking.bind(
-                      null,
-                      booking.id,
-                      "Cancelled from booking details page.",
-                    ) as unknown as (formData: FormData) => Promise<void>
-                  }
-                >
-                  <Button className="w-full" variant="outline">
-                    Cancel Booking
-                  </Button>
-                </form>
+                isLister ? (
+                  <ListerCancelDialog booking={booking} />
+                ) : (
+                  <RenterCancelDialog
+                    booking={booking}
+                    refundPreview="Cancel within 12 hours for a full refund, within 24 hours for 50% of rental charges plus deposit, and after 24 hours for deposit only."
+                  />
+                )
               ) : null}
               {canDispute ? (
                 <RaiseDisputeDialog bookingId={booking.id} fullWidth />

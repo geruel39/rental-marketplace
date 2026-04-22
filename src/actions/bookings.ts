@@ -1,7 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { addHours, format } from "date-fns";
+import { addHours, differenceInHours, format } from "date-fns";
 
 import { createNotification } from "@/actions/notifications";
 import {
@@ -13,19 +13,18 @@ import {
 } from "@/actions/payments";
 import {
   getAdminIds,
-  notifyBookingAccepted,
-  notifyBookingCancelled,
   notifyBookingCompleted,
-  notifyBookingDeclined,
-  notifyDisputeRaised,
   notifyItemReturned,
-  notifyNewBookingRequest,
-  notifyPaymentConfirmed,
   notifyRentalStarted,
+  sendNotification,
 } from "@/lib/notifications";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
-import { bookingRequestSchema, confirmReturnSchema } from "@/lib/validations";
+import {
+  bookingSchema,
+  confirmReturnSchema,
+  listerCancelSchema,
+} from "@/lib/validations";
 import type {
   ActionResponse,
   Booking,
@@ -49,10 +48,6 @@ const MAX_PROOF_FILE_BYTES = 10 * 1024 * 1024;
 type SupabaseClient = Awaited<ReturnType<typeof createClient>>;
 type AdminSupabaseClient = ReturnType<typeof createAdminClient>;
 type AnySupabaseClient = SupabaseClient | AdminSupabaseClient;
-type BookingActionResponse = ActionResponse & {
-  bookingId?: string;
-  paymentUrl?: string | null;
-};
 type MaybeArray<T> = T | T[] | null;
 type BookingRecord = Booking & {
   listing: MaybeArray<Listing>;
@@ -121,6 +116,8 @@ function revalidateBookingViews() {
   revalidatePath("/dashboard/requests");
   revalidatePath("/dashboard/my-rentals");
   revalidatePath("/dashboard/bookings");
+  revalidatePath("/lister/bookings");
+  revalidatePath("/renter/rentals");
   revalidatePath("/payment/success");
 }
 
@@ -548,82 +545,87 @@ async function returnStock(
   ]);
 }
 
-async function acceptBookingRequestInternal(params: {
+async function checkBookingConflict(params: {
   supabase: AnySupabaseClient;
-  bookingId: string;
-  actorId: string;
-  skipListerCheck?: boolean;
-}): Promise<BookingActionResponse> {
-  const booking = await getBookingRecord(params.supabase, params.bookingId);
+  listingId: string;
+  renterId: string;
+  quantity: number;
+  rentalUnits: number;
+  pricingPeriod: PricingPeriod;
+}) {
+  const result = await callRpcWithFallbacks<unknown>(
+    params.supabase,
+    "check_booking_conflict",
+    [
+      {
+        p_listing_id: params.listingId,
+        p_renter_id: params.renterId,
+        p_quantity: params.quantity,
+        p_rental_units: params.rentalUnits,
+        p_pricing_period: params.pricingPeriod,
+      },
+      {
+        listing_id: params.listingId,
+        renter_id: params.renterId,
+        quantity: params.quantity,
+        rental_units: params.rentalUnits,
+        pricing_period: params.pricingPeriod,
+      },
+    ],
+  );
 
-  if (!params.skipListerCheck && booking.lister_id !== params.actorId) {
-    return { error: "Only the lister can accept this booking request." };
+  if (typeof result === "boolean") {
+    return {
+      hasConflict: result,
+      reason: result ? "This item is no longer available for those dates." : null,
+    };
   }
 
-  if (booking.status !== "pending") {
-    return { error: "Only pending bookings can be accepted." };
-  }
-
-  if (booking.listing.track_inventory) {
-    const available = booking.listing.quantity_available ?? 0;
-    if (available < booking.quantity) {
-      return {
-        error: `Not enough stock available (${available} available, you requested ${booking.quantity})`,
-      };
-    }
-  }
-
-  await reserveStock(params.supabase, booking, params.actorId);
-
-  const paymentExpiresAt = addHours(new Date(), PAYMENT_EXPIRY_HOURS).toISOString();
-  const { error: updateError } = await params.supabase
-    .from("bookings")
-    .update({
-      status: "awaiting_payment",
-      stock_reserved: true,
-      stock_reserved_at: new Date().toISOString(),
-      payment_expires_at: paymentExpiresAt,
-    })
-    .eq("id", booking.id);
-
-  if (updateError) {
-    return { error: updateError.message };
-  }
-
-  await addTimeline({
-    bookingId: booking.id,
-    status: "awaiting_payment",
-    previousStatus: "pending",
-    actorId: params.actorId,
-    actorRole: "lister",
-    title: "Booking accepted",
-    description: `Lister accepted the request. Stock reserved. Renter must complete payment by ${formatDateTime(paymentExpiresAt)}.`,
-    metadata: { payment_expires_at: paymentExpiresAt },
-  });
-
-  const paymentResult = await createPaymentForBooking(booking.id);
-  if ("error" in paymentResult) {
-    return { error: paymentResult.error };
-  }
-
-  void notifyBookingAccepted({
-    renterId: booking.renter_id,
-    listingTitle: booking.listing.title,
-    bookingId: booking.id,
-    paymentUrl: paymentResult.paymentUrl,
-    paymentExpiresAt,
-    totalPrice: booking.total_price,
-  }).catch((error) => {
-    console.error("acceptBookingRequest notification failed:", error);
-  });
-
-  revalidateBookingViews();
+  const record = Array.isArray(result)
+    ? ((result[0] as Record<string, unknown> | undefined) ?? null)
+    : result && typeof result === "object"
+      ? (result as Record<string, unknown>)
+      : null;
 
   return {
-    success: "Booking accepted. Payment link created.",
-    paymentUrl: paymentResult.paymentUrl,
-    bookingId: booking.id,
+    hasConflict: Boolean(record?.has_conflict ?? record?.conflict),
+    reason:
+      typeof record?.reason === "string"
+        ? record.reason
+        : typeof record?.message === "string"
+          ? record.message
+          : null,
   };
+}
+
+async function updateBookingAsCancelled(params: {
+  supabase: AnySupabaseClient;
+  bookingId: string;
+  status: "cancelled_by_renter" | "cancelled_by_lister";
+  actorId?: string | null;
+  reason: string;
+  autoCancelledReason?: string | null;
+  stockRestored?: boolean;
+  listingPausedDueToCancellation?: boolean;
+}) {
+  const { error } = await params.supabase
+    .from("bookings")
+    .update({
+      status: params.status,
+      cancelled_at: new Date().toISOString(),
+      cancelled_by: params.actorId ?? null,
+      cancellation_reason: params.reason,
+      auto_cancelled_reason: params.autoCancelledReason ?? null,
+      listing_paused_due_to_cancellation:
+        params.listingPausedDueToCancellation ?? false,
+      stock_restored: params.stockRestored ?? true,
+      stock_reserved: false,
+    })
+    .eq("id", params.bookingId);
+
+  if (error) {
+    throw new Error(error.message);
+  }
 }
 
 async function confirmPaymentInternal(params: {
@@ -633,63 +635,45 @@ async function confirmPaymentInternal(params: {
 }): Promise<ActionResponse> {
   const booking = await getBookingRecord(params.supabase, params.bookingId);
 
-  if (booking.status !== "awaiting_payment") {
-    if (booking.status === "confirmed" || booking.hitpay_payment_status === "completed") {
-      return { success: "Payment already confirmed." };
-    }
-    return { error: "Only bookings awaiting payment can be confirmed." };
+  if (
+    booking.hitpay_payment_status === "completed" &&
+    booking.paid_at &&
+    booking.status === "lister_confirmation"
+  ) {
+    return { success: "Payment already confirmed." };
   }
 
-  const paidAt = new Date().toISOString();
-  const { error: updateError } = await params.supabase
-    .from("bookings")
-    .update({
-      status: "confirmed",
-      paid_at: paidAt,
-      hitpay_payment_id: params.paymentId ?? booking.hitpay_payment_id,
-      hitpay_payment_status: "completed",
-      stock_deducted: true,
-    })
-    .eq("id", booking.id);
-
-  if (updateError) {
-    return { error: updateError.message };
+  if (
+    booking.status !== "lister_confirmation" &&
+    booking.status !== "confirmed" &&
+    booking.status !== "cancelled_by_lister" &&
+    booking.status !== "cancelled_by_renter"
+  ) {
+    return { error: "This booking is not in a payable state." };
   }
 
-  await addTimeline({
+  await handlePaymentConfirmed({
+    hitpayPaymentId: params.paymentId ?? booking.hitpay_payment_id ?? "",
+    hitpayPaymentRequestId: booking.hitpay_payment_request_id ?? "",
     bookingId: booking.id,
-    status: "confirmed",
-    previousStatus: "awaiting_payment",
-    actorId: null,
-    actorRole: "system",
-    title: "Payment confirmed",
-    description: `Payment of ${formatMoney(booking.total_price)} received. The lister will arrange to hand over the item. Use messages to coordinate.`,
-    metadata: {
-      payment_id: params.paymentId ?? null,
-      amount: booking.total_price,
-    },
-  });
-
-  await notifyPaymentConfirmed({
-    renterId: booking.renter_id,
-    listerId: booking.lister_id,
-    listingTitle: booking.listing.title,
-    bookingId: booking.id,
-    amount: booking.total_price,
+    amount: booking.net_collected ?? booking.total_price,
+    currency: "SGD",
   });
 
   revalidateBookingViews();
   return { success: "Payment confirmed." };
 }
 
-export async function createBookingRequest(
+export async function createAndPayBooking(
   prevState: ActionResponse | FormData | null,
   formDataArg?: FormData,
-): Promise<BookingActionResponse> {
+): Promise<{ paymentUrl?: string; bookingId?: string; error?: string }> {
+  void prevState;
+
   try {
     const auth = await requireAuthenticatedUser();
     if (!auth) {
-      return { error: "You must be signed in to create a booking." };
+      return { error: "You must be signed in to book this item." };
     }
 
     const formData = getFormData(prevState, formDataArg);
@@ -697,7 +681,7 @@ export async function createBookingRequest(
       return { error: "Missing booking form data." };
     }
 
-    const parsed = bookingRequestSchema.safeParse({
+    const parsed = bookingSchema.safeParse({
       listing_id: formData.get("listing_id"),
       rental_units: formData.get("rental_units"),
       quantity: formData.get("quantity"),
@@ -706,25 +690,30 @@ export async function createBookingRequest(
     });
 
     if (!parsed.success) {
-      return { error: parsed.error.issues[0]?.message ?? "Invalid booking request." };
+      return { error: parsed.error.issues[0]?.message ?? "Invalid booking details." };
     }
 
     const listing = await getListingRecord(auth.supabase, parsed.data.listing_id);
     if (listing.owner_id === auth.user.id) {
       return { error: "You cannot book your own listing." };
     }
-
     if (listing.status !== "active") {
-      return { error: "This listing is not available for booking." };
+      return { error: "This listing is not available right now." };
     }
 
-    if (listing.track_inventory) {
-      const available = listing.quantity_available ?? 0;
-      if (available < parsed.data.quantity) {
-        return {
-          error: `Not enough stock available (${available} available, you requested ${parsed.data.quantity})`,
-        };
-      }
+    const conflict = await checkBookingConflict({
+      supabase: auth.supabase,
+      listingId: listing.id,
+      renterId: auth.user.id,
+      quantity: parsed.data.quantity,
+      rentalUnits: parsed.data.rental_units,
+      pricingPeriod: parsed.data.pricing_period,
+    });
+    if (conflict.hasConflict) {
+      return {
+        error:
+          conflict.reason ?? "This item is no longer available for those dates.",
+      };
     }
 
     const unitPrice = getUnitPrice(listing, parsed.data.pricing_period);
@@ -739,9 +728,12 @@ export async function createBookingRequest(
     );
     const serviceFeeRenter = roundMoney(subtotal * RENTER_SERVICE_FEE_RATE);
     const serviceFeeLister = roundMoney(subtotal * LISTER_SERVICE_FEE_RATE);
-    const depositAmount = roundMoney((listing.deposit_amount ?? 0) * parsed.data.quantity);
+    const depositAmount = roundMoney(
+      (listing.deposit_amount ?? 0) * parsed.data.quantity,
+    );
     const totalPrice = roundMoney(subtotal + serviceFeeRenter + depositAmount);
     const listerPayout = roundMoney(subtotal - serviceFeeLister);
+    const deadline = addHours(new Date(), PAYMENT_EXPIRY_HOURS).toISOString();
 
     const { data: createdBooking, error: insertError } = await auth.supabase
       .from("bookings")
@@ -761,12 +753,11 @@ export async function createBookingRequest(
         delivery_fee: 0,
         total_price: totalPrice,
         lister_payout: listerPayout,
-        status: "pending",
-        start_date: null,
-        end_date: null,
-        fulfillment_type: null,
-        stock_deducted: false,
-        stock_reserved: false,
+        status: "lister_confirmation",
+        lister_confirmation_deadline: deadline,
+        stock_deducted: true,
+        stock_reserved: true,
+        stock_reserved_at: new Date().toISOString(),
         stock_restored: false,
         handover_proof_urls: [],
         return_proof_urls: [],
@@ -776,166 +767,275 @@ export async function createBookingRequest(
       .maybeSingle<{ id: string }>();
 
     if (insertError || !createdBooking) {
-      return { error: insertError?.message ?? "Failed to create booking request." };
+      return { error: insertError?.message ?? "Could not create booking." };
     }
 
-    const renterName = getActorDisplayName(auth.profile, auth.user.email);
+    try {
+      await reserveStock(
+        auth.supabase,
+        {
+          id: createdBooking.id,
+          listing_id: listing.id,
+          quantity: parsed.data.quantity,
+        },
+        auth.user.id,
+      );
+    } catch (error) {
+      await updateBookingAsCancelled({
+        supabase: auth.supabase,
+        bookingId: createdBooking.id,
+        status: "cancelled_by_renter",
+        actorId: auth.user.id,
+        reason: "Could not reserve stock for this booking.",
+        stockRestored: true,
+      });
+
+      return {
+        error:
+          error instanceof Error
+            ? error.message
+            : "Could not reserve stock for this booking.",
+      };
+    }
+
     await addTimeline({
       bookingId: createdBooking.id,
-      status: "pending",
+      status: "lister_confirmation",
       actorId: auth.user.id,
       actorRole: "renter",
-      title: "Booking request submitted",
-      description: `${renterName} requested to rent ${listing.title} for ${parsed.data.rental_units} ${parsed.data.pricing_period}(s), quantity: ${parsed.data.quantity}. Total: ${formatMoney(totalPrice)}.`,
+      title: "Booking created - payment required",
+      description: `You booked ${listing.title} for ${parsed.data.rental_units} ${parsed.data.pricing_period}(s). Complete payment to confirm. Lister has 24 hours to confirm availability.`,
       metadata: {
         rental_units: parsed.data.rental_units,
         pricing_period: parsed.data.pricing_period,
         quantity: parsed.data.quantity,
+        subtotal,
         total_price: totalPrice,
+        lister_confirmation_deadline: deadline,
       },
     });
 
-    void notifyNewBookingRequest({
-      listerId: listing.owner_id,
-      renterName: auth.profile?.display_name || renterName,
-      listingTitle: listing.title,
-      bookingId: createdBooking.id,
-      rentalUnits: parsed.data.rental_units,
-      pricingPeriod: parsed.data.pricing_period,
-      totalPrice,
-    }).catch((error) => {
-      console.error("createBookingRequest notification failed:", error);
-    });
-
-    if (listing.instant_book) {
-      const acceptResult = await acceptBookingRequestInternal({
-        supabase: auth.supabase,
-        bookingId: createdBooking.id,
-        actorId: listing.owner_id,
-        skipListerCheck: true,
+    const paymentResult = await createPaymentForBooking(createdBooking.id);
+    if ("error" in paymentResult) {
+      await releaseStock(
+        auth.supabase,
+        {
+          id: createdBooking.id,
+          listing_id: listing.id,
+          quantity: parsed.data.quantity,
+        },
+        auth.user.id,
+      ).catch((releaseError) => {
+        console.error("createAndPayBooking releaseStock failed:", releaseError);
       });
 
-      if (acceptResult.error) {
-        return {
-          success: "Booking request sent, but auto-accept failed. Lister can accept manually.",
-          bookingId: createdBooking.id,
-        };
-      }
-
-      return {
-        success: "Booking request sent and auto-accepted!",
+      await updateBookingAsCancelled({
+        supabase: auth.supabase,
         bookingId: createdBooking.id,
-        paymentUrl: acceptResult.paymentUrl ?? null,
-      };
+        status: "cancelled_by_renter",
+        actorId: auth.user.id,
+        reason: paymentResult.error,
+        stockRestored: true,
+      });
+
+      return { error: paymentResult.error };
     }
+
+    const renterName = getActorDisplayName(auth.profile, auth.user.email);
+    void sendNotification({
+      userId: listing.owner_id,
+      type: "booking_confirmation_required",
+      title: `New booking - confirm by ${formatDateTime(deadline)}`,
+      body: `${renterName} booked ${listing.title} for ${parsed.data.rental_units} ${parsed.data.pricing_period}. Confirm by ${formatDateTime(deadline)} or it auto-cancels.`,
+      bookingId: createdBooking.id,
+      listingId: listing.id,
+      fromUserId: auth.user.id,
+      actionUrl: `/lister/bookings/${createdBooking.id}`,
+      metadata: {
+        quantity: parsed.data.quantity,
+        total_price: totalPrice,
+        deadline,
+      },
+    }).catch((error) => {
+      console.error("createAndPayBooking notification failed:", error);
+    });
 
     revalidateBookingViews();
-    return { success: "Booking request sent!", bookingId: createdBooking.id };
+    return {
+      paymentUrl: paymentResult.paymentUrl,
+      bookingId: createdBooking.id,
+    };
   } catch (error) {
-    console.error("createBookingRequest failed:", error);
+    console.error("createAndPayBooking failed:", error);
     return { error: "Something went wrong. Please try again." };
   }
 }
 
-export async function acceptBookingRequest(
+export async function listerConfirmBooking(
   bookingId: string,
-): Promise<BookingActionResponse> {
-  try {
-    const auth = await requireAuthenticatedUser();
-    if (!auth) {
-      return { error: "You must be signed in to accept a booking." };
-    }
-
-    return await acceptBookingRequestInternal({
-      supabase: auth.supabase,
-      bookingId,
-      actorId: auth.user.id,
-    });
-  } catch (error) {
-    console.error("acceptBookingRequest failed:", error);
-    return { error: "Something went wrong. Please try again." };
-  }
-}
-
-export async function declineBookingRequest(
-  bookingId: string,
-  reason?: string,
 ): Promise<ActionResponse> {
   try {
     const auth = await requireAuthenticatedUser();
     if (!auth) {
-      return { error: "You must be signed in to decline a booking." };
+      return { error: "You must be signed in to confirm this booking." };
     }
 
     const booking = await getBookingRecord(auth.supabase, bookingId);
     if (booking.lister_id !== auth.user.id) {
-      return { error: "Only the lister can decline this booking." };
+      return { error: "Only the lister can confirm this booking." };
     }
-    if (booking.status !== "pending" && booking.status !== "awaiting_payment") {
-      return { error: "Only pending or awaiting payment bookings can be declined." };
+    if (booking.status !== "lister_confirmation") {
+      return { error: "Only bookings awaiting lister confirmation can be confirmed." };
     }
-
-    const now = new Date().toISOString();
-    const declineReason = normalizeText(reason) ?? "Declined by lister.";
-    let stockRestored = booking.stock_restored;
-    if ((booking.stock_reserved || booking.stock_deducted) && !booking.stock_restored) {
-      await releaseStock(auth.supabase, booking, auth.user.id);
-      stockRestored = true;
+    if (
+      booking.lister_confirmation_deadline &&
+      new Date(booking.lister_confirmation_deadline).getTime() <= Date.now()
+    ) {
+      return { error: "The confirmation window has already expired." };
     }
 
-    const { error: updateError } = await auth.supabase
+    const confirmedAt = new Date().toISOString();
+    const { error } = await auth.supabase
       .from("bookings")
       .update({
-        status: "cancelled_by_lister",
-        cancelled_at: now,
-        cancelled_by: auth.user.id,
-        cancellation_reason: declineReason,
-        stock_restored: stockRestored,
+        status: "confirmed",
+        lister_confirmed_at: confirmedAt,
+        lister_confirmed_by: auth.user.id,
       })
-      .eq("id", booking.id);
+      .eq("id", booking.id)
+      .eq("status", "lister_confirmation");
 
-    if (updateError) {
-      return { error: updateError.message };
+    if (error) {
+      return { error: error.message };
+    }
+
+    await addTimeline({
+      bookingId: booking.id,
+      status: "confirmed",
+      previousStatus: "lister_confirmation",
+      actorId: auth.user.id,
+      actorRole: "lister",
+      title: "Availability confirmed",
+      description:
+        "Lister confirmed they can fulfill this booking. Contact the renter to arrange handover.",
+    });
+
+    const listerName = getActorDisplayName(auth.profile, auth.user.email);
+    void sendNotification({
+      userId: booking.renter_id,
+      type: "payment_confirmed",
+      title: "Booking confirmed!",
+      body: `${listerName} confirmed your booking. Contact them to arrange handover.`,
+      bookingId: booking.id,
+      listingId: booking.listing_id,
+      fromUserId: auth.user.id,
+      actionUrl: `/renter/rentals/${booking.id}`,
+    }).catch((notificationError) => {
+      console.error("listerConfirmBooking notification failed:", notificationError);
+    });
+
+    revalidateBookingViews();
+    return { success: "Booking confirmed." };
+  } catch (error) {
+    console.error("listerConfirmBooking failed:", error);
+    return { error: "Something went wrong. Please try again." };
+  }
+}
+
+export async function listerCancelBooking(
+  prevState: ActionResponse | FormData | null,
+  formDataArg?: FormData,
+): Promise<ActionResponse> {
+  void prevState;
+
+  try {
+    const auth = await requireAuthenticatedUser();
+    if (!auth) {
+      return { error: "You must be signed in to cancel this booking." };
+    }
+
+    const formData = getFormData(prevState, formDataArg);
+    if (!formData) {
+      return { error: "Missing cancellation data." };
+    }
+
+    const parsed = listerCancelSchema.safeParse({
+      booking_id: formData.get("booking_id"),
+      reason: normalizeText(formData.get("reason")?.toString()),
+    });
+
+    if (!parsed.success) {
+      return { error: parsed.error.issues[0]?.message ?? "Invalid cancellation reason." };
+    }
+
+    const booking = await getBookingRecord(auth.supabase, parsed.data.booking_id);
+    if (booking.lister_id !== auth.user.id) {
+      return { error: "Only the lister can cancel this booking." };
+    }
+    if (!["lister_confirmation", "confirmed"].includes(booking.status)) {
+      return { error: "This booking can no longer be cancelled by the lister." };
+    }
+
+    if (booking.stock_reserved && !booking.stock_restored) {
+      await releaseStock(auth.supabase, booking, auth.user.id);
+    }
+
+    await updateBookingAsCancelled({
+      supabase: auth.supabase,
+      bookingId: booking.id,
+      status: "cancelled_by_lister",
+      actorId: auth.user.id,
+      reason: parsed.data.reason,
+      stockRestored: true,
+      listingPausedDueToCancellation: true,
+    });
+
+    const { error: pauseError } = await auth.supabase
+      .from("listings")
+      .update({ status: "paused" })
+      .eq("id", booking.listing_id);
+
+    if (pauseError) {
+      return { error: pauseError.message };
     }
 
     await addTimeline({
       bookingId: booking.id,
       status: "cancelled_by_lister",
-      previousStatus: "pending",
+      previousStatus: booking.status,
       actorId: auth.user.id,
       actorRole: "lister",
-        title: "Booking declined",
-        description: `Lister declined the request. Reason: ${declineReason}`,
-        metadata: { reason: declineReason, stock_released: stockRestored },
+      title: "Lister cancelled booking",
+      description: `${parsed.data.reason}. Full refund being processed. Listing paused.`,
+      metadata: { listing_paused: true },
     });
 
-    void notifyBookingDeclined({
-      renterId: booking.renter_id,
-      listingTitle: booking.listing.title,
-      bookingId: booking.id,
-      reason: declineReason,
-    }).catch((error) => {
-      console.error("declineBookingRequest notification failed:", error);
+    const refundResult = await processCancellationRefund(booking.id, {
+      cancelledBy: "lister",
+      refundReason: "booking_cancelled_by_lister",
     });
-
-    let successMessage = "Booking request declined.";
-    if (booking.paid_at) {
-      const refundResult = await processCancellationRefund(booking.id, {
-        refundReason: "booking_declined",
-        cancelledBy: "lister",
-      });
-
-      if ("error" in refundResult) {
-        successMessage = `Booking request declined. Refund needs attention: ${refundResult.error}`;
-      } else {
-        successMessage = `${successMessage} ${refundResult.message}`;
-      }
+    if ("error" in refundResult) {
+      console.error("listerCancelBooking refund failed:", refundResult.error);
     }
 
+    void sendNotification({
+      userId: booking.renter_id,
+      type: "booking_cancelled",
+      title: "Booking cancelled - full refund coming",
+      body: `Lister cancelled. Reason: ${parsed.data.reason}. Full refund within 5-10 days.`,
+      bookingId: booking.id,
+      listingId: booking.listing_id,
+      fromUserId: auth.user.id,
+      actionUrl: `/renter/rentals/${booking.id}`,
+      metadata: { refund_policy: "full_refund_lister_cancelled" },
+    }).catch((notificationError) => {
+      console.error("listerCancelBooking notification failed:", notificationError);
+    });
+
     revalidateBookingViews();
-    return { success: successMessage };
+    return { success: "Booking cancelled and listing paused." };
   } catch (error) {
-    console.error("declineBookingRequest failed:", error);
+    console.error("listerCancelBooking failed:", error);
     return { error: "Something went wrong. Please try again." };
   }
 }
@@ -947,23 +1047,24 @@ export async function confirmPayment(
   try {
     const auth = await requireAuthenticatedUser();
     if (!auth) {
-      return { error: "You must be signed in to confirm payment." };
+      const admin = createAdminClient();
+      return await confirmPaymentInternal({
+        supabase: admin,
+        bookingId,
+        paymentId,
+      });
     }
 
     const booking = await getBookingRecord(auth.supabase, bookingId);
-    const role = getRoleForBooking(booking, auth.user.id);
-    if (!role) {
-      return { error: "You are not allowed to confirm this booking payment." };
+    if (booking.renter_id !== auth.user.id && booking.lister_id !== auth.user.id) {
+      return { error: "You are not allowed to confirm this payment." };
     }
 
-    await handlePaymentConfirmed({
-      hitpayPaymentId: paymentId ?? booking.hitpay_payment_id ?? "",
-      hitpayPaymentRequestId: booking.hitpay_payment_request_id ?? "",
+    return await confirmPaymentInternal({
+      supabase: auth.supabase,
       bookingId,
-      amount: booking.net_collected ?? booking.total_price,
-      currency: "SGD",
+      paymentId,
     });
-    return { success: "Payment confirmed." };
   } catch (error) {
     console.error("confirmPayment failed:", error);
     return { error: "Something went wrong. Please try again." };
@@ -976,15 +1077,11 @@ export async function confirmPaymentFromWebhook(
 ): Promise<ActionResponse> {
   try {
     const admin = createAdminClient();
-    const booking = await getBookingRecord(admin, bookingId);
-    await handlePaymentConfirmed({
-      hitpayPaymentId: paymentId ?? booking.hitpay_payment_id ?? "",
-      hitpayPaymentRequestId: booking.hitpay_payment_request_id ?? "",
+    return await confirmPaymentInternal({
+      supabase: admin,
       bookingId,
-      amount: booking.net_collected ?? booking.total_price,
-      currency: "SGD",
+      paymentId,
     });
-    return { success: "Payment confirmed." };
   } catch (error) {
     console.error("confirmPaymentFromWebhook failed:", error);
     return { error: "Could not confirm payment from webhook." };
@@ -1351,105 +1448,127 @@ export async function confirmReturnAndComplete(
   }
 }
 
-export async function cancelBooking(
-  bookingId: string,
-  reason?: string,
+export async function cancelBookingAsRenter(
+  prevState: ActionResponse | FormData | null,
+  formDataArg?: FormData,
 ): Promise<ActionResponse> {
+  void prevState;
+
   try {
     const auth = await requireAuthenticatedUser();
     if (!auth) {
-      return { error: "You must be signed in to cancel a booking." };
+      return { error: "You must be signed in to cancel this booking." };
+    }
+
+    const formData = getFormData(prevState, formDataArg);
+    if (!formData) {
+      return { error: "Missing cancellation data." };
+    }
+
+    const bookingId = normalizeText(formData.get("booking_id")?.toString());
+    const reason =
+      normalizeText(formData.get("reason")?.toString()) ??
+      "Cancelled by renter.";
+
+    if (!bookingId) {
+      return { error: "booking_id is required." };
     }
 
     const booking = await getBookingRecord(auth.supabase, bookingId);
-    const actorRole = getRoleForBooking(booking, auth.user.id);
-    if (!actorRole) {
-      return { error: "You are not allowed to cancel this booking." };
+    if (booking.renter_id !== auth.user.id) {
+      return { error: "Only the renter can cancel this booking." };
     }
-
     if (booking.status === "active" || booking.status === "returned") {
-      return {
-        error: "Cannot cancel. Please raise a dispute if there's an issue.",
-      };
+      return { error: "Cannot cancel active rental. Raise a dispute." };
     }
-
-    if (
-      booking.status !== "pending" &&
-      booking.status !== "awaiting_payment" &&
-      booking.status !== "confirmed"
-    ) {
+    if (!["lister_confirmation", "confirmed"].includes(booking.status)) {
       return { error: "This booking can no longer be cancelled." };
     }
 
-    let stockRestored = booking.stock_restored;
-    if ((booking.stock_reserved || booking.stock_deducted) && !booking.stock_restored) {
+    const hoursSincePaid = booking.paid_at
+      ? differenceInHours(new Date(), new Date(booking.paid_at))
+      : 0;
+
+    let refundAmount = booking.total_price;
+    let refundPercent = 100;
+    let policyLabel = "100% refund";
+
+    if (hoursSincePaid <= 12) {
+      refundAmount = booking.total_price;
+    } else if (hoursSincePaid <= 24) {
+      refundAmount = roundMoney(booking.subtotal * 0.5 + booking.deposit_amount);
+      refundPercent = 50;
+      policyLabel = "50% rental refund + full deposit";
+    } else {
+      refundAmount = roundMoney(booking.deposit_amount);
+      refundPercent = 0;
+      policyLabel = "Deposit only";
+    }
+
+    if (booking.stock_reserved && !booking.stock_restored) {
       await releaseStock(auth.supabase, booking, auth.user.id);
-      stockRestored = true;
     }
 
-    const cancelStatus: BookingStatus =
-      actorRole === "renter" ? "cancelled_by_renter" : "cancelled_by_lister";
-    const cancellationReason = normalizeText(reason) ?? "No reason provided.";
-    const now = new Date().toISOString();
-
-    const { error: updateError } = await auth.supabase
-      .from("bookings")
-      .update({
-        status: cancelStatus,
-        cancelled_at: now,
-        cancelled_by: auth.user.id,
-        cancellation_reason: cancellationReason,
-        stock_restored: stockRestored,
-      })
-      .eq("id", booking.id);
-
-    if (updateError) {
-      return { error: updateError.message };
-    }
+    await updateBookingAsCancelled({
+      supabase: auth.supabase,
+      bookingId: booking.id,
+      status: "cancelled_by_renter",
+      actorId: auth.user.id,
+      reason,
+      stockRestored: true,
+    });
 
     await addTimeline({
       bookingId: booking.id,
-      status: cancelStatus,
+      status: "cancelled_by_renter",
       previousStatus: booking.status,
       actorId: auth.user.id,
-      actorRole,
-      title: "Booking cancelled",
-      description: `${getActorDisplayName(actorRole === "renter" ? booking.renter : booking.lister, auth.user.email)} cancelled the booking. Reason: ${cancellationReason}`,
+      actorRole: "renter",
+      title: "Renter cancelled booking",
+      description: `${reason}. Refund policy applied: ${policyLabel}. Refund amount: ${formatMoney(refundAmount)}.`,
       metadata: {
-        cancelled_from_status: booking.status,
-        stock_released: stockRestored,
+        refund_amount: refundAmount,
+        refund_percent: refundPercent,
+        hours_since_paid: hoursSincePaid,
       },
     });
 
-    const otherUserId = actorRole === "renter" ? booking.lister_id : booking.renter_id;
-    void notifyBookingCancelled({
-      recipientId: otherUserId,
-      listingTitle: booking.listing.title,
-      bookingId: booking.id,
-      cancelledByName:
-        auth.profile?.display_name || getActorDisplayName(auth.profile, auth.user.email),
-      reason: cancellationReason,
-    }).catch((error) => {
-      console.error("cancelBooking notification failed:", error);
+    const refundResult = await processCancellationRefund(booking.id, {
+      cancelledBy: "renter",
+      refundReason: "booking_cancelled_by_renter",
+      refundAmountOverride: refundAmount,
+      policyAppliedOverride:
+        refundPercent === 100
+          ? "renter_cancel_0_12_hours"
+          : refundPercent === 50
+            ? "renter_cancel_12_24_hours"
+            : "renter_cancel_over_24_hours",
+      reasonOverride: `Renter cancellation policy applied: ${policyLabel}.`,
     });
-
-    let successMessage = "Booking cancelled.";
-    if (booking.paid_at) {
-      const refundResult = await processCancellationRefund(booking.id, {
-        cancelledBy: actorRole,
-      });
-
-      if ("error" in refundResult) {
-        successMessage = `${successMessage} Refund requires attention: ${refundResult.error}`;
-      } else {
-        successMessage = `${successMessage} ${refundResult.message}`;
-      }
+    if ("error" in refundResult) {
+      console.error("cancelBookingAsRenter refund failed:", refundResult.error);
     }
 
+    const renterName = getActorDisplayName(auth.profile, auth.user.email);
+    void sendNotification({
+      userId: booking.lister_id,
+      type: "booking_cancelled",
+      title: "Renter cancelled booking",
+      body: `${renterName} cancelled. Stock released.`,
+      bookingId: booking.id,
+      listingId: booking.listing_id,
+      fromUserId: auth.user.id,
+      actionUrl: `/lister/bookings/${booking.id}`,
+    }).catch((notificationError) => {
+      console.error("cancelBookingAsRenter notification failed:", notificationError);
+    });
+
     revalidateBookingViews();
-    return { success: successMessage };
+    return {
+      success: `Booking cancelled. Refund of $${refundAmount.toFixed(2)} (${refundPercent}%) will be processed in 5-10 business days.`,
+    };
   } catch (error) {
-    console.error("cancelBooking failed:", error);
+    console.error("cancelBookingAsRenter failed:", error);
     return { error: "Something went wrong. Please try again." };
   }
 }
@@ -1501,15 +1620,39 @@ export async function raiseDispute(
     });
 
     const adminIds = await getAdminIds();
-    await notifyDisputeRaised({
-      otherPartyId: actorRole === "renter" ? booking.lister_id : booking.renter_id,
-      adminIds,
-      listingTitle: booking.listing.title,
-      bookingId: booking.id,
-      raisedByName:
-        auth.profile?.display_name || getActorDisplayName(auth.profile, auth.user.email),
-      amount: booking.total_price,
-    });
+    const raisedByName =
+      auth.profile?.display_name || getActorDisplayName(auth.profile, auth.user.email);
+    const otherPartyId =
+      actorRole === "renter" ? booking.lister_id : booking.renter_id;
+    const otherPartyActionUrl =
+      actorRole === "renter"
+        ? `/lister/bookings/${booking.id}`
+        : `/renter/rentals/${booking.id}`;
+
+    await Promise.all([
+      sendNotification({
+        userId: otherPartyId,
+        type: "dispute_raised",
+        title: "Dispute raised on your booking",
+        body: `${raisedByName} raised a dispute on the booking for "${booking.listing.title}". An admin will review it shortly.`,
+        bookingId: booking.id,
+        listingId: booking.listing_id,
+        fromUserId: auth.user.id,
+        actionUrl: otherPartyActionUrl,
+      }),
+      ...adminIds.map((adminId) =>
+        sendNotification({
+          userId: adminId,
+          type: "dispute_raised",
+          title: `Dispute requires review - $${booking.total_price} at stake`,
+          body: `${raisedByName} raised a dispute on booking for "${booking.listing.title}".`,
+          bookingId: booking.id,
+          listingId: booking.listing_id,
+          fromUserId: auth.user.id,
+          actionUrl: `/admin/bookings/${booking.id}`,
+        }),
+      ),
+    ]);
 
     await holdPaymentForDispute(booking.id);
 
@@ -1521,7 +1664,7 @@ export async function raiseDispute(
   }
 }
 
-export async function getIncomingRequests(
+export async function getIncomingBookings(
   userId: string,
   status?: BookingStatus,
 ): Promise<BookingWithDetails[]> {
@@ -1561,7 +1704,7 @@ export async function getIncomingRequests(
       return [{ ...(booking as Booking), listing, renter, lister }];
     });
   } catch (error) {
-    console.error("getIncomingRequests failed:", error);
+    console.error("getIncomingBookings failed:", error);
     return [];
   }
 }
@@ -1678,17 +1821,15 @@ export async function getBookingTimeline(
   }
 }
 
-export async function expireUnpaidBookings(): Promise<ActionResponse> {
+async function _expireUnconfirmedBookingsLegacy(): Promise<ActionResponse> {
   try {
     const admin = createAdminClient();
     const now = new Date().toISOString();
     const { data: expiringBookings } = await admin
       .from("bookings")
-      .select("id, renter_id, listing_id")
-      .eq("status", "awaiting_payment")
-      .lt("payment_expires_at", now);
-
-    await callRpcWithFallbacks(admin, "expire_unpaid_bookings", [{}]);
+      .select("id")
+      .eq("status", "lister_confirmation")
+      .lt("lister_confirmation_deadline", now);
 
     await Promise.all(
       ((expiringBookings ?? []) as Array<{
@@ -1713,6 +1854,82 @@ export async function expireUnpaidBookings(): Promise<ActionResponse> {
   } catch (error) {
     console.error("expireUnpaidBookings failed:", error);
     return { error: "Could not expire unpaid bookings." };
+  }
+}
+
+void _expireUnconfirmedBookingsLegacy;
+
+export async function expireUnconfirmedBookings(): Promise<ActionResponse> {
+  try {
+    const admin = createAdminClient();
+    const now = new Date().toISOString();
+    const { data: expiringBookings } = await admin
+      .from("bookings")
+      .select("id")
+      .eq("status", "lister_confirmation")
+      .lt("lister_confirmation_deadline", now);
+
+    for (const booking of (expiringBookings ?? []) as Array<{ id: string }>) {
+      const fullBooking = await getBookingRecord(admin, booking.id);
+
+      if (fullBooking.stock_reserved && !fullBooking.stock_restored) {
+        await releaseStock(admin, fullBooking, fullBooking.lister_id);
+      }
+
+      await updateBookingAsCancelled({
+        supabase: admin,
+        bookingId: booking.id,
+        status: "cancelled_by_lister",
+        reason: "Lister did not confirm within 24 hours.",
+        autoCancelledReason: "lister_confirmation_expired",
+        stockRestored: true,
+        listingPausedDueToCancellation: true,
+      });
+
+      await admin
+        .from("listings")
+        .update({ status: "paused" })
+        .eq("id", fullBooking.listing_id);
+
+      await addTimeline({
+        bookingId: booking.id,
+        status: "cancelled_by_lister",
+        previousStatus: "lister_confirmation",
+        actorRole: "system",
+        title: "Booking auto-cancelled",
+        description:
+          "Lister did not confirm within 24 hours. Full refund being processed and listing paused.",
+        metadata: {
+          listing_paused: true,
+          auto_cancelled_reason: "lister_confirmation_expired",
+        },
+      });
+
+      const refundResult = await processCancellationRefund(booking.id, {
+        cancelledBy: "lister",
+        refundReason: "booking_cancelled_by_lister",
+      });
+      if ("error" in refundResult) {
+        console.error("expireUnconfirmedBookings refund failed:", refundResult.error);
+      }
+
+      await sendNotification({
+        userId: fullBooking.renter_id,
+        type: "booking_cancelled",
+        title: "Booking cancelled - full refund coming",
+        body: "Lister did not confirm within 24 hours. Full refund within 5-10 days.",
+        listingId: fullBooking.listing_id,
+        bookingId: booking.id,
+        actionUrl: `/renter/rentals/${booking.id}`,
+        metadata: { auto_cancelled_reason: "lister_confirmation_expired" },
+      });
+    }
+
+    revalidateBookingViews();
+    return { success: "Expired unconfirmed bookings." };
+  } catch (error) {
+    console.error("expireUnconfirmedBookings failed:", error);
+    return { error: "Could not expire unconfirmed bookings." };
   }
 }
 

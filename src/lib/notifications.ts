@@ -183,7 +183,7 @@ export async function notifyBookingAccepted(params: {
       `Your booking for "${params.listingTitle}" has been accepted! ` +
       `Complete payment of $${params.totalPrice} to confirm. ` +
       `Payment expires: ${new Date(params.paymentExpiresAt).toLocaleString()}.`,
-    actionUrl: `/dashboard/bookings/${params.bookingId}`,
+    actionUrl: `/renter/rentals/${params.bookingId}`,
     bookingId: params.bookingId,
     metadata: {
       paymentUrl: params.paymentUrl,
@@ -225,7 +225,7 @@ export async function notifyBookingCancelled(params: {
       `The booking for "${params.listingTitle}" was cancelled ` +
       `by ${params.cancelledByName}.` +
       (params.reason ? ` Reason: ${params.reason}` : ""),
-    actionUrl: `/dashboard/bookings/${params.bookingId}`,
+    actionUrl: `/renter/rentals/${params.bookingId}`,
     bookingId: params.bookingId,
   });
 }
@@ -244,7 +244,7 @@ export async function notifyBookingCompleted(params: {
       body:
         `Your rental of "${params.listingTitle}" is complete. ` +
         "Please leave a review!",
-      actionUrl: `/dashboard/bookings/${params.bookingId}`,
+      actionUrl: `/renter/rentals/${params.bookingId}`,
       bookingId: params.bookingId,
     }),
     sendNotification({
@@ -254,7 +254,7 @@ export async function notifyBookingCompleted(params: {
       body:
         `Rental of "${params.listingTitle}" has been completed. ` +
         "Please leave a review for the renter!",
-      actionUrl: `/dashboard/bookings/${params.bookingId}`,
+      actionUrl: `/lister/bookings/${params.bookingId}`,
       bookingId: params.bookingId,
     }),
   ]);
@@ -275,7 +275,7 @@ export async function notifyPaymentConfirmed(params: {
       body:
         `Your $${params.amount} payment for "${params.listingTitle}" ` +
         "is confirmed. Contact the lister to arrange handover.",
-      actionUrl: `/dashboard/bookings/${params.bookingId}`,
+      actionUrl: `/renter/rentals/${params.bookingId}`,
       bookingId: params.bookingId,
     }),
     sendNotification({
@@ -285,7 +285,7 @@ export async function notifyPaymentConfirmed(params: {
       body:
         `$${params.amount} received for "${params.listingTitle}". ` +
         "Please arrange handover with the renter.",
-      actionUrl: `/dashboard/bookings/${params.bookingId}`,
+      actionUrl: `/lister/bookings/${params.bookingId}`,
       bookingId: params.bookingId,
     }),
   ]);
@@ -347,7 +347,7 @@ export async function notifyRefundInitiated(params: {
         : "") +
       `is being processed. ${params.reason}. ` +
       "Please allow 5-10 business days.",
-    actionUrl: `/dashboard/bookings/${params.bookingId}`,
+    actionUrl: `/renter/rentals/${params.bookingId}`,
     bookingId: params.bookingId,
   });
 }
@@ -365,7 +365,7 @@ export async function notifyRentalStarted(params: {
     body:
       `Your rental of "${params.listingTitle}" has officially started. ` +
       `Return deadline: ${new Date(params.rentalEndsAt).toLocaleString()}.`,
-    actionUrl: `/dashboard/bookings/${params.bookingId}`,
+    actionUrl: `/renter/rentals/${params.bookingId}`,
     bookingId: params.bookingId,
   });
 }
@@ -385,7 +385,7 @@ export async function notifyItemReturned(params: {
       `${params.renterName} has returned "${params.listingTitle}". ` +
       (params.isLate ? "The item was returned after the deadline. " : "") +
       "Please inspect the condition and complete the booking.",
-    actionUrl: `/dashboard/bookings/${params.bookingId}`,
+    actionUrl: `/lister/bookings/${params.bookingId}`,
     bookingId: params.bookingId,
   });
 }
@@ -406,7 +406,7 @@ export async function notifyDisputeRaised(params: {
       body:
         `${params.raisedByName} raised a dispute on the booking for ` +
         `"${params.listingTitle}". An admin will review it shortly.`,
-      actionUrl: `/dashboard/bookings/${params.bookingId}`,
+      actionUrl: `/renter/rentals/${params.bookingId}`,
       bookingId: params.bookingId,
     }),
     ...params.adminIds.map((adminId) =>

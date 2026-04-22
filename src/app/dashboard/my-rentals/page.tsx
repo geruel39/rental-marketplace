@@ -1,31 +1,25 @@
+import { differenceInHours } from "date-fns";
 import { PackageSearch, Star } from "lucide-react";
 import Link from "next/link";
 import { redirect } from "next/navigation";
 
-import { cancelBooking, getMyRentals } from "@/actions/bookings";
-import { getFeeConfig } from "@/actions/payments";
+import { getMyRentals } from "@/actions/bookings";
 import { BookingStatusBadge } from "@/components/bookings/booking-status-badge";
-import { PaymentButton } from "@/components/bookings/payment-button";
-import { PaymentCountdown } from "@/components/bookings/payment-countdown";
 import { RaiseDisputeDialog } from "@/components/bookings/raise-dispute-dialog";
 import { RentalCountdown } from "@/components/bookings/rental-countdown";
+import { RenterCancelDialog } from "@/components/bookings/renter-cancel-dialog";
 import { ReturnDialog } from "@/components/bookings/return-dialog";
-import { PaymentBreakdownCard } from "@/components/payments/payment-breakdown-card";
-import { RefundStatusCard } from "@/components/payments/refund-status-card";
-import { ReviewActionButton } from "@/components/reviews/review-action-button";
 import { EmptyState } from "@/components/shared/empty-state";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { createClient } from "@/lib/supabase/server";
-import { calculatePaymentBreakdown, cn, formatCurrency, getInitials } from "@/lib/utils";
-import type { BookingWithDetails, Refund } from "@/types";
+import { formatCurrency, getInitials } from "@/lib/utils";
+import type { BookingWithDetails } from "@/types";
 
 type SearchParams = Record<string, string | string[] | undefined>;
 type FilterKey =
   | "all"
-  | "pending"
-  | "awaiting_payment"
+  | "lister_confirmation"
   | "confirmed"
   | "active"
   | "returned"
@@ -35,8 +29,7 @@ type FilterKey =
 
 const rentalTabs: Array<{ key: FilterKey; label: string }> = [
   { key: "all", label: "All" },
-  { key: "pending", label: "Pending" },
-  { key: "awaiting_payment", label: "Awaiting Payment" },
+  { key: "lister_confirmation", label: "Awaiting Confirmation" },
   { key: "confirmed", label: "Confirmed" },
   { key: "active", label: "Active" },
   { key: "returned", label: "Returned" },
@@ -61,141 +54,64 @@ function matchesFilter(booking: BookingWithDetails, filter: FilterKey) {
   return booking.status === filter;
 }
 
-function getEmptyDescription(filter: FilterKey) {
-  switch (filter) {
-    case "pending":
-      return "No pending requests at the moment.";
-    case "awaiting_payment":
-      return "No bookings waiting for payment.";
-    case "confirmed":
-      return "No confirmed bookings right now.";
-    case "active":
-      return "No active rentals right now.";
-    case "returned":
-      return "No rentals waiting for lister inspection.";
-    case "completed":
-      return "No completed rentals in this view.";
-    case "cancelled":
-      return "No cancelled rentals in this view.";
-    case "disputed":
-      return "No disputed rentals currently.";
-    default:
-      return "You have no rentals yet.";
-  }
-}
-
 function formatDuration(booking: BookingWithDetails) {
   const units = booking.rental_units || booking.num_units || 1;
-  const period = booking.pricing_period;
-  return `${units} ${period}${units === 1 ? "" : "s"}`;
+  return `${units} ${booking.pricing_period}${units === 1 ? "" : "s"}`;
 }
 
-function maskPaymentReference(reference?: string | null) {
-  if (!reference) return "Pending";
-  if (reference.length <= 8) return reference;
-  return `${reference.slice(0, 4)}••••${reference.slice(-4)}`;
-}
-
-function getConditionTone(condition?: string | null) {
-  switch (condition) {
-    case "excellent":
-      return "bg-emerald-100 text-emerald-800";
-    case "good":
-      return "bg-blue-100 text-blue-800";
-    case "fair":
-      return "bg-yellow-100 text-yellow-800";
-    case "damaged":
-    case "missing_parts":
-      return "bg-red-100 text-red-800";
-    default:
-      return "bg-muted text-muted-foreground";
+function getRefundPreview(booking: BookingWithDetails) {
+  if (!booking.paid_at) {
+    return "No payment captured yet. If you cancel now, nothing will be charged.";
   }
+
+  const hoursSincePaid = differenceInHours(new Date(), new Date(booking.paid_at));
+  if (hoursSincePaid <= 12) {
+    return "Cancel within 12 hours of payment for a 100% refund.";
+  }
+  if (hoursSincePaid <= 24) {
+    return "Cancel between 12 and 24 hours after payment for 50% of rental charges plus full deposit.";
+  }
+  return "Cancel after 24 hours and only the deposit is refunded.";
 }
 
 function RentalActions({ booking }: { booking: BookingWithDetails }) {
-  if (booking.status === "pending") {
+  if (booking.status === "lister_confirmation") {
     return (
-      <div className="space-y-2 text-right">
-        <p className="text-sm text-muted-foreground">Waiting for lister review</p>
-        <form
-          action={
-            cancelBooking.bind(
-              null,
-              booking.id,
-              "Cancelled by renter before acceptance.",
-            ) as unknown as (formData: FormData) => Promise<void>
-          }
-        >
-          <Button size="sm" variant="outline">
-            Cancel Request
-          </Button>
-        </form>
-      </div>
-    );
-  }
-
-  if (booking.status === "awaiting_payment") {
-    return (
-      <div className="space-y-2 text-right">
+      <div className="space-y-3 text-right">
+        <p className="text-sm text-muted-foreground">Lister is confirming availability.</p>
+        <p className="text-xs text-muted-foreground">
+          Confirm by: {booking.lister_confirmation_deadline ? new Date(booking.lister_confirmation_deadline).toLocaleString() : "TBD"}
+        </p>
         <div className="flex justify-end">
-          <PaymentButton
-            bookingId={booking.id}
-            className="bg-brand-navy text-white hover:bg-brand-steel"
-            paymentUrl={booking.hitpay_payment_url}
+          <RenterCancelDialog
+            booking={booking}
+            refundPreview="Cancel within 12 hours of payment for a 100% refund."
           />
         </div>
-        {booking.payment_expires_at ? (
-          <div className="inline-flex">
-            <PaymentCountdown expiresAt={booking.payment_expires_at} />
-          </div>
-        ) : null}
       </div>
     );
   }
 
   if (booking.status === "confirmed") {
     return (
-      <div className="space-y-2 text-right">
-        <Badge className="bg-emerald-100 text-emerald-900">
-          Paid ✓ {formatCurrency(booking.total_price)}
-        </Badge>
-        <p className="text-sm text-muted-foreground">
-          HitPay ref: {maskPaymentReference(booking.hitpay_payment_id)}
-        </p>
-        <Button asChild size="sm" variant="outline">
-          <Link href="/dashboard/messages">Message Lister</Link>
-        </Button>
+      <div className="space-y-3 text-right">
+        <p className="text-sm text-muted-foreground">Arrange handover with the lister.</p>
+        <div className="flex justify-end">
+          <RenterCancelDialog booking={booking} refundPreview={getRefundPreview(booking)} />
+        </div>
       </div>
     );
   }
 
   if (booking.status === "active") {
     return (
-      <div className="space-y-2 text-right">
+      <div className="space-y-3 text-right">
         <div className="flex justify-end">
           <ReturnDialog booking={booking} />
         </div>
         <div className="flex justify-end">
           <RaiseDisputeDialog bookingId={booking.id} buttonSize="sm" />
         </div>
-      </div>
-    );
-  }
-
-  if (booking.status === "completed") {
-    return (
-      <div className="space-y-2 text-right">
-        {booking.return_condition ? (
-          <span
-            className={cn(
-              "inline-flex rounded-full px-2 py-1 text-xs font-medium capitalize",
-              getConditionTone(booking.return_condition),
-            )}
-          >
-            {booking.return_condition.replaceAll("_", " ")}
-          </span>
-        ) : null}
-        <ReviewActionButton booking={booking} currentUserId={booking.renter_id} size="sm" />
       </div>
     );
   }
@@ -223,31 +139,15 @@ export default async function MyRentalsPage({
 
   const resolvedSearchParams = await searchParams;
   const activeFilter = getFilter(getSingleValue(resolvedSearchParams.status));
-  const [bookings, fees] = await Promise.all([getMyRentals(user.id), getFeeConfig()]);
+  const bookings = await getMyRentals(user.id);
   const filteredBookings = bookings.filter((booking) => matchesFilter(booking, activeFilter));
-  const bookingIds = bookings.map((booking) => booking.id);
-
-  const refundMap = new Map<string, Refund>();
-  if (bookingIds.length > 0) {
-    const { data: refunds } = await supabase
-      .from("refunds")
-      .select("*")
-      .in("booking_id", bookingIds)
-      .order("created_at", { ascending: false });
-
-    for (const refund of (refunds ?? []) as Refund[]) {
-      if (!refundMap.has(refund.booking_id)) {
-        refundMap.set(refund.booking_id, refund);
-      }
-    }
-  }
 
   return (
     <div className="space-y-6">
       <div className="space-y-2">
         <h1 className="text-2xl font-semibold tracking-tight">My Rentals</h1>
         <p className="text-sm text-muted-foreground">
-          Track payment, handover, refunds, and completion for every booking.
+          Track confirmation, handover, return proof, and refund status for each booking.
         </p>
       </div>
 
@@ -269,7 +169,7 @@ export default async function MyRentalsPage({
         <EmptyState
           actionHref="/listings"
           actionLabel="Browse Listings"
-          description={getEmptyDescription(activeFilter)}
+          description="You have no rentals in this view."
           icon={PackageSearch}
           title="No rentals yet"
         />
@@ -277,13 +177,6 @@ export default async function MyRentalsPage({
         <div className="space-y-4">
           {filteredBookings.map((booking) => {
             const listerName = booking.lister.display_name || booking.lister.full_name;
-            const refund = refundMap.get(booking.id);
-            const breakdown = calculatePaymentBreakdown({
-              subtotal: booking.subtotal,
-              depositAmount: booking.deposit_amount,
-              pricingPeriod: booking.pricing_period,
-              fees,
-            });
 
             return (
               <article
@@ -322,6 +215,15 @@ export default async function MyRentalsPage({
                       <p className="font-semibold text-brand-navy">{formatCurrency(booking.total_price)}</p>
                       <BookingStatusBadge size="sm" status={booking.status} />
 
+                      {booking.status === "lister_confirmation" ? (
+                        <p className="text-sm text-muted-foreground">
+                          Lister is confirming availability until{" "}
+                          {booking.lister_confirmation_deadline
+                            ? new Date(booking.lister_confirmation_deadline).toLocaleString()
+                            : "TBD"}
+                        </p>
+                      ) : null}
+
                       {booking.status === "active" &&
                       booking.rental_ends_at &&
                       booking.rental_started_at ? (
@@ -332,18 +234,11 @@ export default async function MyRentalsPage({
                         />
                       ) : null}
 
-                      {booking.status === "completed" ? (
-                        <p className="text-sm text-muted-foreground">
-                          Payment summary: paid {formatCurrency(booking.total_price)}
-                          {refund ? `, received refund ${formatCurrency(refund.refund_amount, refund.currency)}` : ""}
-                        </p>
-                      ) : null}
-
                       <Link
                         className="inline-flex text-sm font-medium text-brand-navy hover:underline"
                         href={`/renter/rentals/${booking.id}`}
                       >
-                        View Details →
+                        View Details {"->"}
                       </Link>
                     </div>
                   </div>
@@ -352,24 +247,6 @@ export default async function MyRentalsPage({
                     <RentalActions booking={booking} />
                   </div>
                 </div>
-
-                {(booking.status === "awaiting_payment" ||
-                  booking.status === "confirmed" ||
-                  booking.status === "completed" ||
-                  refund) ? (
-                  <div className="mt-5 space-y-4 border-t border-border/70 pt-5">
-                    {(booking.status === "awaiting_payment" || booking.status === "confirmed") ? (
-                      <PaymentBreakdownCard
-                        breakdown={breakdown}
-                        pricingPeriod={booking.pricing_period}
-                        quantity={booking.quantity}
-                        rentalUnits={booking.rental_units || booking.num_units || 1}
-                        viewer="renter"
-                      />
-                    ) : null}
-                    {refund ? <RefundStatusCard refund={refund} /> : null}
-                  </div>
-                ) : null}
               </article>
             );
           })}

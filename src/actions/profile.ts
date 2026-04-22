@@ -2,7 +2,7 @@
 
 import { startOfMonth } from "date-fns";
 
-import { getIncomingRequests, getMyRentals } from "@/actions/bookings";
+import { getIncomingBookings, getMyRentals } from "@/actions/bookings";
 import { getInventoryOverview, getLowStockListings } from "@/actions/inventory";
 import { getNotifications } from "@/actions/notifications";
 import { getPendingReviews } from "@/actions/reviews";
@@ -466,7 +466,7 @@ export async function getDashboardStats(userId: string): Promise<DashboardStats>
       .select("id", { count: "exact", head: true })
       .eq("renter_id", userId)
       .eq("status", "completed"),
-    getIncomingRequests(userId),
+    getIncomingBookings(userId),
     getMyRentals(userId),
     getNotifications(userId, 1),
     getPendingReviews(userId),
