@@ -214,11 +214,14 @@ export default function PoliciesPage() {
                 <h3 className="text-lg font-semibold text-brand-dark">5.1 Individual Accounts</h3>
                 <ol className="list-decimal space-y-2 pl-5">
                   <li>Payout method setup (GCash, Maya, or Bank Transfer)</li>
-                  <li>Email address verification</li>
-                  <li>Phone number verification</li>
-                  <li>Government-issued ID (front and back photo)</li>
-                  <li>Current selfie photo</li>
-                  <li>Admin review and approval (1-3 business days)</li>
+                  <li>
+                    Government-issued ID - clear front and back photos
+                    <p className="mt-1 text-sm text-muted-foreground">
+                      Accepted: National ID, Driver&apos;s License, Passport, Voter&apos;s ID
+                    </p>
+                  </li>
+                  <li>Current selfie photo - a recent photo of yourself</li>
+                  <li>Admin review and approval (typically 1-3 business days)</li>
                 </ol>
               </div>
 
@@ -226,15 +229,22 @@ export default function PoliciesPage() {
                 <h3 className="text-lg font-semibold text-brand-dark">5.2 Business Accounts</h3>
                 <ol className="list-decimal space-y-2 pl-5">
                   <li>Payout method setup</li>
-                  <li>Business phone number</li>
                   <li>Business address</li>
                   <li>TIN (Tax Identification Number)</li>
-                  <li>Business registration document (DTI, SEC, etc.)</li>
-                  <li>Representative government-issued ID (front and back)</li>
+                  <li>
+                    Business registration document (DTI Certificate, SEC Registration,
+                    Mayor&apos;s Permit, etc.)
+                  </li>
+                  <li>Representative government-issued ID - front and back photos</li>
                   <li>Representative selfie photo</li>
-                  <li>Admin review and approval (1-3 business days)</li>
+                  <li>Admin review and approval (typically 1-3 business days)</li>
                 </ol>
               </div>
+
+              <p className="rounded-2xl border border-border/70 bg-brand-light px-4 py-3 text-sm text-brand-dark">
+                Note: All submitted documents are stored securely and only accessed by our
+                admin verification team.
+              </p>
             </section>
 
             <section className="space-y-4" id="refund-policy">

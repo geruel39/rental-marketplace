@@ -228,6 +228,26 @@ export default async function VerificationPage() {
 
         {renderStepCards(steps)}
 
+        <div className="rounded-3xl border border-border bg-background p-6 shadow-sm">
+          <details className="rounded-2xl border border-border bg-muted/50 p-4" open>
+            <summary className="cursor-pointer text-sm font-medium">
+              Why do we need this?
+            </summary>
+            <div className="mt-3 space-y-3 text-sm text-muted-foreground">
+              <p>
+                Business verification confirms your company is legitimately registered
+                and operating. We require:
+              </p>
+              <ul className="space-y-2">
+                <li>• Business address and TIN for identification</li>
+                <li>• Registration documents to confirm legal status</li>
+                <li>• Representative ID and selfie for accountability</li>
+              </ul>
+              <p>This builds trust with renters and protects all parties.</p>
+            </div>
+          </details>
+        </div>
+
         <section
           id="business-information"
           className="rounded-3xl border border-border bg-background p-6 shadow-sm"
@@ -552,11 +572,20 @@ export default async function VerificationPage() {
                 <summary className="cursor-pointer text-sm font-medium">
                   Why do we need this?
                 </summary>
-                <p className="mt-3 text-sm text-muted-foreground">
-                  We verify your identity to ensure the safety and trust of our
-                  marketplace. Your documents are stored securely and only reviewed by
-                  our admin team.
-                </p>
+                <div className="mt-3 space-y-3 text-sm text-muted-foreground">
+                  <p>
+                    Identity verification helps us maintain a safe and trustworthy
+                    marketplace for everyone. We require:
+                  </p>
+                  <ul className="space-y-2">
+                    <li>• Government-issued ID to confirm your identity</li>
+                    <li>• A selfie to match your ID photo</li>
+                  </ul>
+                  <p>
+                    Your documents are stored securely and only reviewed by our admin
+                    team. This is a one-time process.
+                  </p>
+                </div>
               </details>
             </div>
           </div>

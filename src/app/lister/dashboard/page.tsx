@@ -3,12 +3,15 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 
 import { getInventoryOverview } from "@/actions/inventory";
-import { getListingEligibility } from "@/actions/verification";
+import {
+  getIndividualVerification,
+  getListingEligibility,
+} from "@/actions/verification";
 import { BookingStatusBadge } from "@/components/bookings/booking-status-badge";
 import { StockSummaryCard } from "@/components/inventory/stock-summary-card";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import { createClient } from "@/lib/supabase/server";
 import { formatCurrency } from "@/lib/utils";
 import type { Booking, Listing, Profile } from "@/types";
@@ -89,6 +92,11 @@ export default async function ListerDashboardPage() {
     redirect("/login");
   }
 
+  const individualVerification =
+    profileResult.data.account_type === "individual"
+      ? await getIndividualVerification(user.id)
+      : null;
+
   const displayName =
     profileResult.data.display_name ||
     profileResult.data.full_name ||
@@ -122,13 +130,26 @@ export default async function ListerDashboardPage() {
       {!eligibility.allowed ? (
         <Alert className="border-orange-200 bg-orange-50 text-orange-950">
           <AlertTitle>Complete verification to start listing</AlertTitle>
-          <AlertDescription className="mt-2 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-            <span>
-              {eligibility.message ||
-                "Finish your account verification before publishing or managing listings."}
-            </span>
+          <AlertDescription className="mt-2 flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+            <div className="space-y-3">
+              {profileResult.data.account_type === "individual" &&
+              individualVerification?.overall_status === "incomplete" ? (
+                <div className="space-y-2">
+                  <ul className="space-y-2 text-sm">
+                    <li>○ Government ID photos (front + back)</li>
+                    <li>○ Selfie photo</li>
+                    <li>✓ These are the only documents needed</li>
+                  </ul>
+                </div>
+              ) : (
+                <span>
+                  {eligibility.message ||
+                    "Finish your account verification before publishing or managing listings."}
+                </span>
+              )}
+            </div>
             <Button asChild className="bg-brand-navy text-white hover:bg-brand-steel" size="sm">
-              <Link href="/account/verify">Open Verification</Link>
+              <Link href="/account/verify">Complete Verification -&gt;</Link>
             </Button>
           </AlertDescription>
         </Alert>
