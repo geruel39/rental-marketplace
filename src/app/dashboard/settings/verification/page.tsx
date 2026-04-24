@@ -237,7 +237,7 @@ export default async function VerificationPage() {
     const representativeSelfieComplete = Boolean(verification.rep_selfie_url);
 
     return (
-      <div className="space-y-6">
+      <div className="mx-auto w-full max-w-7xl space-y-6">
         <div className="space-y-2">
           <h1 className="text-2xl font-semibold tracking-tight">Business Verification</h1>
           <p className="text-sm text-muted-foreground">
@@ -545,7 +545,7 @@ export default async function VerificationPage() {
   const progressValue = (documentsSubmitted / 2) * 100;
 
   return (
-    <div className="space-y-6">
+    <div className="mx-auto w-full max-w-7xl space-y-6">
       <div className="space-y-2">
         <h1 className="text-2xl font-semibold tracking-tight">Verification</h1>
         <p className="text-sm text-muted-foreground">
@@ -565,10 +565,14 @@ export default async function VerificationPage() {
               {documentsSubmitted} of 2 documents submitted
             </p>
           </div>
-          <div className="w-full max-w-sm">
-            <div className="h-3 overflow-hidden rounded-full bg-muted">
+          <div className="w-full max-w-xs space-y-2">
+            <div className="flex items-center justify-between text-xs font-medium text-muted-foreground">
+              <span>Submission progress</span>
+              <span>{progressValue}%</span>
+            </div>
+            <div className="h-2.5 overflow-hidden rounded-full bg-brand-light/80">
               <div
-                className="h-full rounded-full bg-foreground transition-all"
+                className="h-full rounded-full bg-brand-navy transition-all"
                 style={{ width: `${progressValue}%` }}
               />
             </div>
