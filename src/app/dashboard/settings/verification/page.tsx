@@ -16,10 +16,12 @@ import {
   getBusinessVerificationSteps,
   getIndividualVerification,
   getIndividualVerificationSteps,
+  submitGovernmentID,
   submitBusinessDetails,
   submitBusinessDocument,
   submitRepresentativeID,
   submitRepresentativeSelfie,
+  submitSelfie,
 } from "@/actions/verification";
 import { Button } from "@/components/ui/button";
 import { createClient } from "@/lib/supabase/server";
@@ -519,10 +521,24 @@ export default async function VerificationPage() {
     redirect("/dashboard/settings");
   }
 
+  async function submitGovernmentIDAction(formData: FormData) {
+    "use server";
+    await submitGovernmentID(null, formData);
+  }
+
+  async function submitSelfieAction(formData: FormData) {
+    "use server";
+    await submitSelfie(null, formData);
+  }
+
   const documentsSubmitted = Number(
     Boolean(verification.gov_id_front_url && verification.gov_id_back_url),
   ) + Number(Boolean(verification.selfie_url));
   const missingDocuments: string[] = [];
+  const governmentIdComplete = Boolean(
+    verification.gov_id_front_url && verification.gov_id_back_url,
+  );
+  const selfieComplete = Boolean(verification.selfie_url);
 
   if (!(verification.gov_id_front_url && verification.gov_id_back_url)) {
     missingDocuments.push("Government ID (front and back photos)");
@@ -660,6 +676,120 @@ export default async function VerificationPage() {
           </div>
         </div>
       ) : null}
+
+      <div className="grid gap-6 xl:grid-cols-2">
+        <section
+          id="government-id"
+          className="rounded-3xl border border-border bg-background p-6 shadow-sm"
+        >
+          <div className="mb-6 flex items-start justify-between gap-4">
+            <div className="space-y-1">
+              <p className="flex items-center gap-2 text-sm font-medium text-muted-foreground">
+                <FileBadge2 className="size-4" />
+                Section 1
+              </p>
+              <h2 className="text-xl font-semibold">Government ID</h2>
+              <p className="text-sm text-muted-foreground">
+                Upload clear front and back photos of a valid government-issued ID.
+              </p>
+            </div>
+            {renderSectionBadge(governmentIdComplete)}
+          </div>
+
+          <form action={submitGovernmentIDAction} className="space-y-4">
+            <div className="space-y-2">
+              <label htmlFor="gov_id_document_type" className="text-sm font-medium">
+                ID Type
+              </label>
+              <select
+                id="gov_id_document_type"
+                name="gov_id_document_type"
+                required
+                defaultValue={verification.gov_id_document_type ?? ""}
+                className="flex h-11 w-full rounded-xl border border-input bg-background px-3 py-2 text-sm outline-none transition focus-visible:ring-2 focus-visible:ring-ring"
+              >
+                <option value="" disabled>
+                  Select an ID type
+                </option>
+                {governmentIdOptions.map((option) => (
+                  <option key={option.value} value={option.value}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div className="grid gap-4 md:grid-cols-2">
+              <div className="space-y-2">
+                <label htmlFor="front_photo" className="text-sm font-medium">
+                  Front Photo
+                </label>
+                <input
+                  id="front_photo"
+                  name="front_photo"
+                  type="file"
+                  required
+                  accept=".pdf,image/jpeg,image/jpg,image/png,image/webp"
+                  className="block w-full text-sm text-muted-foreground file:mr-4 file:rounded-full file:border-0 file:bg-secondary file:px-4 file:py-2 file:text-sm file:font-medium file:text-secondary-foreground"
+                />
+              </div>
+
+              <div className="space-y-2">
+                <label htmlFor="back_photo" className="text-sm font-medium">
+                  Back Photo
+                </label>
+                <input
+                  id="back_photo"
+                  name="back_photo"
+                  type="file"
+                  required
+                  accept=".pdf,image/jpeg,image/jpg,image/png,image/webp"
+                  className="block w-full text-sm text-muted-foreground file:mr-4 file:rounded-full file:border-0 file:bg-secondary file:px-4 file:py-2 file:text-sm file:font-medium file:text-secondary-foreground"
+                />
+              </div>
+            </div>
+
+            <Button type="submit">Upload ID</Button>
+          </form>
+        </section>
+
+        <section
+          id="selfie-photo"
+          className="rounded-3xl border border-border bg-background p-6 shadow-sm"
+        >
+          <div className="mb-6 flex items-start justify-between gap-4">
+            <div className="space-y-1">
+              <p className="flex items-center gap-2 text-sm font-medium text-muted-foreground">
+                <Camera className="size-4" />
+                Section 2
+              </p>
+              <h2 className="text-xl font-semibold">Selfie Photo</h2>
+              <p className="text-sm text-muted-foreground">
+                Take or upload a recent clear selfie photo for identity matching.
+              </p>
+            </div>
+            {renderSectionBadge(selfieComplete)}
+          </div>
+
+          <form action={submitSelfieAction} className="space-y-4">
+            <div className="space-y-2">
+              <label htmlFor="selfie" className="text-sm font-medium">
+                Selfie Upload
+              </label>
+              <input
+                id="selfie"
+                name="selfie"
+                type="file"
+                required
+                accept="image/jpeg,image/jpg,image/png,image/webp"
+                className="block w-full text-sm text-muted-foreground file:mr-4 file:rounded-full file:border-0 file:bg-secondary file:px-4 file:py-2 file:text-sm file:font-medium file:text-secondary-foreground"
+              />
+            </div>
+
+            <Button type="submit">Upload Selfie</Button>
+          </form>
+        </section>
+      </div>
     </div>
   );
 }
