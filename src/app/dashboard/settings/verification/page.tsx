@@ -16,12 +16,11 @@ import {
   getBusinessVerificationSteps,
   getIndividualVerification,
   getIndividualVerificationSteps,
-  submitGovernmentID,
+  submitIndividualVerification,
   submitBusinessDetails,
   submitBusinessDocument,
   submitRepresentativeID,
   submitRepresentativeSelfie,
-  submitSelfie,
 } from "@/actions/verification";
 import { Button } from "@/components/ui/button";
 import { createClient } from "@/lib/supabase/server";
@@ -78,9 +77,9 @@ function getStepStatusClass(step: VerificationStep["status"]) {
 function getStepAnchor(stepKey: VerificationStep["key"]) {
   switch (stepKey) {
     case "gov_id":
-      return "government-id";
+      return "identity-documents";
     case "selfie":
-      return "selfie-photo";
+      return "identity-documents";
     case "business_details":
       return "business-information";
     case "business_document":
@@ -521,14 +520,9 @@ export default async function VerificationPage() {
     redirect("/dashboard/settings");
   }
 
-  async function submitGovernmentIDAction(formData: FormData) {
+  async function submitIndividualVerificationAction(formData: FormData) {
     "use server";
-    await submitGovernmentID(null, formData);
-  }
-
-  async function submitSelfieAction(formData: FormData) {
-    "use server";
-    await submitSelfie(null, formData);
+    await submitIndividualVerification(null, formData);
   }
 
   const documentsSubmitted = Number(
@@ -677,26 +671,27 @@ export default async function VerificationPage() {
         </div>
       ) : null}
 
-      <div className="grid gap-6 xl:grid-cols-2">
+      <div className="grid gap-6">
         <section
-          id="government-id"
+          id="identity-documents"
           className="rounded-3xl border border-border bg-background p-6 shadow-sm"
         >
           <div className="mb-6 flex items-start justify-between gap-4">
             <div className="space-y-1">
               <p className="flex items-center gap-2 text-sm font-medium text-muted-foreground">
                 <FileBadge2 className="size-4" />
-                Section 1
+                Identity Submission
               </p>
-              <h2 className="text-xl font-semibold">Government ID</h2>
+              <h2 className="text-xl font-semibold">Government ID and Selfie</h2>
               <p className="text-sm text-muted-foreground">
-                Upload clear front and back photos of a valid government-issued ID.
+                Upload your government-issued ID front and back together with a selfie in
+                one submission.
               </p>
             </div>
-            {renderSectionBadge(governmentIdComplete)}
+            {renderSectionBadge(governmentIdComplete && selfieComplete)}
           </div>
 
-          <form action={submitGovernmentIDAction} className="space-y-4">
+          <form action={submitIndividualVerificationAction} className="space-y-6">
             <div className="space-y-2">
               <label htmlFor="gov_id_document_type" className="text-sm font-medium">
                 ID Type
@@ -715,7 +710,7 @@ export default async function VerificationPage() {
                   <option key={option.value} value={option.value}>
                     {option.label}
                   </option>
-                ))}
+                ))} 
               </select>
             </div>
 
@@ -749,32 +744,9 @@ export default async function VerificationPage() {
               </div>
             </div>
 
-            <Button type="submit">Upload ID</Button>
-          </form>
-        </section>
-
-        <section
-          id="selfie-photo"
-          className="rounded-3xl border border-border bg-background p-6 shadow-sm"
-        >
-          <div className="mb-6 flex items-start justify-between gap-4">
-            <div className="space-y-1">
-              <p className="flex items-center gap-2 text-sm font-medium text-muted-foreground">
-                <Camera className="size-4" />
-                Section 2
-              </p>
-              <h2 className="text-xl font-semibold">Selfie Photo</h2>
-              <p className="text-sm text-muted-foreground">
-                Take or upload a recent clear selfie photo for identity matching.
-              </p>
-            </div>
-            {renderSectionBadge(selfieComplete)}
-          </div>
-
-          <form action={submitSelfieAction} className="space-y-4">
             <div className="space-y-2">
               <label htmlFor="selfie" className="text-sm font-medium">
-                Selfie Upload
+                Selfie Photo
               </label>
               <input
                 id="selfie"
@@ -786,7 +758,12 @@ export default async function VerificationPage() {
               />
             </div>
 
-            <Button type="submit">Upload Selfie</Button>
+            <div className="rounded-2xl border border-border bg-muted/40 p-4 text-sm text-muted-foreground">
+              Submit all three files together so the admin team can review your identity in
+              one pass.
+            </div>
+
+            <Button type="submit">Submit Verification</Button>
           </form>
         </section>
       </div>

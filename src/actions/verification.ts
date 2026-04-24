@@ -576,7 +576,7 @@ function buildIndividualSteps(
         : govIdSubmitted
           ? "Update ID"
           : "Upload ID",
-      actionUrl: "/account/verify#government-id",
+      actionUrl: "/account/verify#identity-documents",
     },
     {
       key: "selfie",
@@ -593,7 +593,7 @@ function buildIndividualSteps(
         : selfieSubmitted
           ? "Update Selfie"
           : "Upload Selfie",
-      actionUrl: "/account/verify#selfie-photo",
+      actionUrl: "/account/verify#identity-documents",
     },
     {
       key: "admin_approval",
@@ -831,6 +831,105 @@ export async function submitGovernmentID(
         error instanceof Error
           ? error.message
           : "Could not submit government ID.",
+    };
+  }
+}
+
+export async function submitIndividualVerification(
+  prevState: unknown,
+  formData: FormData,
+): Promise<ActionResponse> {
+  void prevState;
+
+  try {
+    const auth = await requireMatchingAccountType("individual");
+    await ensureIndividualVerificationRecord(auth.user.id, auth.profile.email_verified);
+
+    const parsed = individualVerificationSchema.safeParse({
+      phone_number: auth.profile.phone ?? "09123456789",
+      gov_id_document_type: formData.get("gov_id_document_type"),
+    });
+
+    if (!parsed.success) {
+      return { error: parsed.error.issues[0]?.message ?? "Invalid verification details" };
+    }
+
+    const frontFile = ensureFile(formData.get("front_photo"), {
+      allowedTypes: INDIVIDUAL_FILE_TYPES,
+      label: "Front ID photo",
+      maxBytes: MAX_INDIVIDUAL_FILE_BYTES,
+      requirePdfOrImage: true,
+    });
+    const backFile = ensureFile(formData.get("back_photo"), {
+      allowedTypes: INDIVIDUAL_FILE_TYPES,
+      label: "Back ID photo",
+      maxBytes: MAX_INDIVIDUAL_FILE_BYTES,
+      requirePdfOrImage: true,
+    });
+    const selfieFile = ensureFile(formData.get("selfie"), {
+      allowedTypes: SELFIE_FILE_TYPES,
+      label: "Selfie",
+      maxBytes: MAX_INDIVIDUAL_FILE_BYTES,
+    });
+
+    const [frontPath, backPath, selfiePath] = await Promise.all([
+      uploadPrivateFile({
+        bucket: "id-documents",
+        userId: auth.user.id,
+        folder: "gov-id",
+        file: frontFile,
+        prefix: "front",
+      }),
+      uploadPrivateFile({
+        bucket: "id-documents",
+        userId: auth.user.id,
+        folder: "gov-id",
+        file: backFile,
+        prefix: "back",
+      }),
+      uploadPrivateFile({
+        bucket: "selfie-photos",
+        userId: auth.user.id,
+        folder: "selfie",
+        file: selfieFile,
+        prefix: "selfie",
+      }),
+    ]);
+
+    const admin = createAdminClient();
+    const now = new Date().toISOString();
+    const { error } = await admin
+      .from("individual_verifications")
+      .update({
+        gov_id_document_type: parsed.data.gov_id_document_type,
+        gov_id_front_url: frontPath,
+        gov_id_back_url: backPath,
+        gov_id_submitted_at: now,
+        gov_id_rejection_reason: null,
+        gov_id_verified: false,
+        gov_id_verified_at: null,
+        selfie_url: selfiePath,
+        selfie_submitted_at: now,
+        selfie_rejection_reason: null,
+        selfie_verified: false,
+        selfie_verified_at: null,
+      })
+      .eq("user_id", auth.user.id);
+
+    if (error) {
+      return { error: error.message };
+    }
+
+    await checkAndUpdateOverallStatus(auth.user.id);
+    revalidateVerificationViews();
+    return { success: "Verification documents submitted for review." };
+  } catch (error) {
+    console.error("submitIndividualVerification failed:", error);
+    return {
+      error:
+        error instanceof Error
+          ? error.message
+          : "Could not submit verification documents.",
     };
   }
 }

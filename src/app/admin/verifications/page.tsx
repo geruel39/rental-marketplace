@@ -6,7 +6,6 @@ import { approveVerification, getVerificationQueue } from "@/actions/verificatio
 import { AdminPageHeader } from "@/components/admin/admin-page-header";
 import { DocumentViewerModalRoute } from "@/components/admin/document-viewer-modal-route";
 import { VerificationDecisionDialog } from "@/components/admin/verification-decision-dialog";
-import { VerificationFieldActionButton } from "@/components/admin/verification-field-action-button";
 import { EmptyState } from "@/components/shared/empty-state";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
@@ -195,20 +194,6 @@ function IndividualVerificationCard({
               <div className="space-y-1">
                 <p className="text-sm font-medium">{item.label}</p>
                 <div>{item.value}</div>
-              </div>
-              <div className="flex flex-wrap gap-2">
-                <VerificationFieldActionButton
-                  accountType="individual"
-                  approved
-                  field={item.field}
-                  userId={row.id}
-                />
-                <VerificationFieldActionButton
-                  accountType="individual"
-                  approved={false}
-                  field={item.field}
-                  userId={row.id}
-                />
               </div>
             </div>
           ))}
@@ -401,20 +386,6 @@ function BusinessVerificationCard({
               <div className="space-y-1">
                 <p className="text-sm font-medium">{item.label}</p>
                 <div>{item.value}</div>
-              </div>
-              <div className="flex flex-wrap gap-2">
-                <VerificationFieldActionButton
-                  accountType="business"
-                  approved
-                  field={item.field}
-                  userId={row.id}
-                />
-                <VerificationFieldActionButton
-                  accountType="business"
-                  approved={false}
-                  field={item.field}
-                  userId={row.id}
-                />
               </div>
             </div>
           ))}
