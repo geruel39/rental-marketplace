@@ -1,7 +1,15 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { addHours, differenceInHours, format } from "date-fns";
+import {
+  addDays,
+  addHours,
+  addMonths,
+  addWeeks,
+  differenceInHours,
+  format,
+  startOfDay,
+} from "date-fns";
 
 import { createNotification } from "@/actions/notifications";
 import {
@@ -88,6 +96,47 @@ function formatDateTime(value: string | Date | null | undefined) {
 
 function formatMoney(value: number) {
   return `$${value.toFixed(2)}`;
+}
+
+function toIsoDate(value: Date) {
+  return value.toISOString().slice(0, 10);
+}
+
+function computeBookingDates(params: {
+  pricingPeriod: PricingPeriod;
+  rentalUnits: number;
+  now?: Date;
+}) {
+  const startDate = startOfDay(params.now ?? new Date());
+  const safeUnits = Math.max(1, params.rentalUnits);
+
+  let endDate: Date;
+  switch (params.pricingPeriod) {
+    case "hour":
+      // The schema stores date-only booking windows, so we reserve at least one day
+      // for hourly rentals and extend by whole-day equivalents after that.
+      endDate = addDays(startDate, Math.max(1, Math.ceil(safeUnits / 24)));
+      break;
+    case "day":
+      endDate = addDays(startDate, safeUnits);
+      break;
+    case "week":
+      endDate = addWeeks(startDate, safeUnits);
+      break;
+    case "month":
+      endDate = addMonths(startDate, safeUnits);
+      break;
+    default:
+      endDate = addDays(startDate, 1);
+      break;
+  }
+
+  return {
+    startDate,
+    endDate,
+    startDateIso: toIsoDate(startDate),
+    endDateIso: toIsoDate(endDate),
+  };
 }
 
 function unwrapRelation<T>(value: MaybeArray<T>): T | null {
@@ -553,26 +602,41 @@ async function checkBookingConflict(params: {
   rentalUnits: number;
   pricingPeriod: PricingPeriod;
 }) {
-  const result = await callRpcWithFallbacks<unknown>(
-    params.supabase,
-    "check_booking_conflict",
-    [
-      {
-        p_listing_id: params.listingId,
-        p_renter_id: params.renterId,
-        p_quantity: params.quantity,
-        p_rental_units: params.rentalUnits,
-        p_pricing_period: params.pricingPeriod,
-      },
-      {
-        listing_id: params.listingId,
-        renter_id: params.renterId,
-        quantity: params.quantity,
-        rental_units: params.rentalUnits,
-        pricing_period: params.pricingPeriod,
-      },
-    ],
-  );
+  let result: unknown;
+
+  try {
+    result = await callRpcWithFallbacks<unknown>(
+      params.supabase,
+      "check_booking_conflict",
+      [
+        {
+          p_listing_id: params.listingId,
+          p_renter_id: params.renterId,
+          p_quantity: params.quantity,
+          p_rental_units: params.rentalUnits,
+          p_pricing_period: params.pricingPeriod,
+        },
+        {
+          listing_id: params.listingId,
+          renter_id: params.renterId,
+          quantity: params.quantity,
+          rental_units: params.rentalUnits,
+          pricing_period: params.pricingPeriod,
+        },
+      ],
+    );
+  } catch (error) {
+    if (!isMissingRpcSignatureError(error, "check_booking_conflict")) {
+      throw error;
+    }
+
+    // Older environments may not have the booking conflict RPC yet.
+    // In that case we fall back to stock reservation as the authoritative guard.
+    return {
+      hasConflict: false,
+      reason: null,
+    };
+  }
 
   if (typeof result === "boolean") {
     return {
@@ -734,6 +798,10 @@ export async function createAndPayBooking(
     const totalPrice = roundMoney(subtotal + serviceFeeRenter + depositAmount);
     const listerPayout = roundMoney(subtotal - serviceFeeLister);
     const deadline = addHours(new Date(), PAYMENT_EXPIRY_HOURS).toISOString();
+    const bookingDates = computeBookingDates({
+      pricingPeriod: parsed.data.pricing_period,
+      rentalUnits: parsed.data.rental_units,
+    });
 
     const { data: createdBooking, error: insertError } = await auth.supabase
       .from("bookings")
@@ -741,6 +809,8 @@ export async function createAndPayBooking(
         listing_id: listing.id,
         renter_id: auth.user.id,
         lister_id: listing.owner_id,
+        start_date: bookingDates.startDateIso,
+        end_date: bookingDates.endDateIso,
         rental_units: parsed.data.rental_units,
         pricing_period: parsed.data.pricing_period,
         unit_price: unitPrice,
@@ -811,6 +881,8 @@ export async function createAndPayBooking(
         quantity: parsed.data.quantity,
         subtotal,
         total_price: totalPrice,
+        start_date: bookingDates.startDateIso,
+        end_date: bookingDates.endDateIso,
         lister_confirmation_deadline: deadline,
       },
     });
@@ -867,7 +939,12 @@ export async function createAndPayBooking(
     };
   } catch (error) {
     console.error("createAndPayBooking failed:", error);
-    return { error: "Something went wrong. Please try again." };
+    return {
+      error:
+        error instanceof Error
+          ? error.message
+          : "Something went wrong. Please try again.",
+    };
   }
 }
 
