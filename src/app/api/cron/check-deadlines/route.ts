@@ -1,6 +1,7 @@
 import { addHours, addMinutes } from "date-fns";
 import { NextRequest, NextResponse } from "next/server";
 
+import { expireUnconfirmedBookings } from "@/actions/bookings";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { sendNotification } from "@/lib/notifications";
 
@@ -61,9 +62,9 @@ export async function POST(request: NextRequest) {
       throw new Error(cancelLookupError.message);
     }
 
-    const { error: rpcError } = await admin.rpc("auto_cancel_unconfirmed_bookings");
-    if (rpcError) {
-      throw new Error(rpcError.message);
+    const expireResult = await expireUnconfirmedBookings();
+    if (expireResult.error) {
+      throw new Error(expireResult.error);
     }
 
     const twelveHourBookings = await loadReminderWindow({

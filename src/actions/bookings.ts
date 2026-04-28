@@ -1746,6 +1746,7 @@ export async function getIncomingBookings(
   status?: BookingStatus,
 ): Promise<BookingWithDetails[]> {
   try {
+    await processExpiredUnconfirmedBookingsIfNeeded();
     const supabase = await createClient();
     let query = supabase
       .from("bookings")
@@ -1791,6 +1792,7 @@ export async function getMyRentals(
   status?: BookingStatus,
 ): Promise<BookingWithDetails[]> {
   try {
+    await processExpiredUnconfirmedBookingsIfNeeded();
     const supabase = await createClient();
     let query = supabase
       .from("bookings")
@@ -1835,6 +1837,7 @@ export async function getBookingDetails(
   bookingId: string,
 ): Promise<BookingWithDetails | null> {
   try {
+    await processExpiredUnconfirmedBookingsIfNeeded();
     const supabase = await createClient();
     const booking = await getBookingRecord(supabase, bookingId);
     const timeline = await getBookingTimeline(bookingId);
@@ -2007,6 +2010,13 @@ export async function expireUnconfirmedBookings(): Promise<ActionResponse> {
   } catch (error) {
     console.error("expireUnconfirmedBookings failed:", error);
     return { error: "Could not expire unconfirmed bookings." };
+  }
+}
+
+async function processExpiredUnconfirmedBookingsIfNeeded() {
+  const result = await expireUnconfirmedBookings();
+  if (result.error) {
+    console.error("processExpiredUnconfirmedBookingsIfNeeded failed:", result.error);
   }
 }
 
