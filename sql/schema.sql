@@ -114,9 +114,9 @@ CREATE TABLE IF NOT EXISTS profiles (
   payout_email TEXT,
   notification_preferences JSONB DEFAULT '{
     "email_bookings": true,
-    "email_messages": true,
+    "email_messages": false,
     "email_reviews": true,
-    "email_low_stock": true
+    "email_low_stock": false
   }'::jsonb,
   member_since TIMESTAMPTZ DEFAULT NOW(),
   last_active TIMESTAMPTZ DEFAULT NOW(),

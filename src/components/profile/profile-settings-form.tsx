@@ -13,6 +13,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
 import { profileUpdateSchema, type ProfileUpdateInput } from "@/lib/validations";
 import { getInitials } from "@/lib/utils";
@@ -28,6 +29,12 @@ export function ProfileSettingsForm({ profile }: ProfileSettingsFormProps) {
   const router = useRouter();
   const [state, formAction, isPending] = useActionState(updateProfile, initialState);
   const [avatarFile, setAvatarFile] = useState<File | null>(null);
+  const [emailPreferences, setEmailPreferences] = useState({
+    email_bookings: profile.notification_preferences?.email_bookings !== false,
+    email_reviews: profile.notification_preferences?.email_reviews !== false,
+    email_low_stock: profile.notification_preferences?.email_low_stock === true,
+    email_messages: profile.notification_preferences?.email_messages === true,
+  });
   const form = useForm<ProfileUpdateInput>({
     resolver: zodResolver(profileUpdateSchema),
     defaultValues: {
@@ -40,6 +47,10 @@ export function ProfileSettingsForm({ profile }: ProfileSettingsFormProps) {
       state: profile.state ?? "",
       country: profile.country ?? "",
       website_url: profile.website_url ?? "",
+      email_bookings: profile.notification_preferences?.email_bookings !== false,
+      email_reviews: profile.notification_preferences?.email_reviews !== false,
+      email_low_stock: profile.notification_preferences?.email_low_stock === true,
+      email_messages: profile.notification_preferences?.email_messages === true,
     },
   });
 
@@ -80,6 +91,10 @@ export function ProfileSettingsForm({ profile }: ProfileSettingsFormProps) {
     formData.set("state", values.state ?? "");
     formData.set("country", values.country ?? "");
     formData.set("website_url", values.website_url ?? "");
+    formData.set("email_bookings", String(emailPreferences.email_bookings));
+    formData.set("email_reviews", String(emailPreferences.email_reviews));
+    formData.set("email_low_stock", String(emailPreferences.email_low_stock));
+    formData.set("email_messages", String(emailPreferences.email_messages));
 
     if (avatarFile) {
       formData.set("avatar", avatarFile);
@@ -219,14 +234,97 @@ export function ProfileSettingsForm({ profile }: ProfileSettingsFormProps) {
         </div>
       </div>
 
+      <div className="rounded-3xl border border-border bg-muted/20 p-5">
+        <div className="space-y-1">
+          <h2 className="text-lg font-semibold tracking-tight">Email Notifications</h2>
+          <p className="text-sm text-muted-foreground">
+            Choose which updates should also arrive in your inbox.
+          </p>
+        </div>
+
+        <div className="mt-5 space-y-4">
+          <div className="flex items-start justify-between gap-4 rounded-2xl border border-border bg-background p-4">
+            <div className="space-y-1">
+              <Label className="text-sm font-medium">Booking Updates</Label>
+              <p className="text-sm text-muted-foreground">
+                Booking requests, confirmations, payments, and cancellations
+              </p>
+            </div>
+            <Switch
+              checked={emailPreferences.email_bookings}
+              onCheckedChange={(checked) =>
+                setEmailPreferences((current) => ({
+                  ...current,
+                  email_bookings: checked,
+                }))
+              }
+            />
+          </div>
+
+          <div className="flex items-start justify-between gap-4 rounded-2xl border border-border bg-background p-4">
+            <div className="space-y-1">
+              <Label className="text-sm font-medium">Reviews</Label>
+              <p className="text-sm text-muted-foreground">
+                When someone reviews you
+              </p>
+            </div>
+            <Switch
+              checked={emailPreferences.email_reviews}
+              onCheckedChange={(checked) =>
+                setEmailPreferences((current) => ({
+                  ...current,
+                  email_reviews: checked,
+                }))
+              }
+            />
+          </div>
+
+          <div className="flex items-start justify-between gap-4 rounded-2xl border border-border bg-background p-4">
+            <div className="space-y-1">
+              <Label className="text-sm font-medium">Low Stock Alerts</Label>
+              <p className="text-sm text-muted-foreground">
+                When your items are low on stock
+              </p>
+            </div>
+            <Switch
+              checked={emailPreferences.email_low_stock}
+              onCheckedChange={(checked) =>
+                setEmailPreferences((current) => ({
+                  ...current,
+                  email_low_stock: checked,
+                }))
+              }
+            />
+          </div>
+
+          <div className="flex items-start justify-between gap-4 rounded-2xl border border-border bg-background p-4">
+            <div className="space-y-1">
+              <Label className="text-sm font-medium">New Messages</Label>
+              <p className="text-sm text-muted-foreground">
+                When you receive a new message (high frequency — in-app only)
+              </p>
+            </div>
+            <Switch
+              checked={emailPreferences.email_messages}
+              onCheckedChange={(checked) =>
+                setEmailPreferences((current) => ({
+                  ...current,
+                  email_messages: checked,
+                }))
+              }
+            />
+          </div>
+        </div>
+      </div>
+
       <Button disabled={isPending} type="submit">
         {isPending ? (
           <>
             <Loader2 className="size-4 animate-spin" />
-            Saving...
+            Saving Preferences...
           </>
         ) : (
-          "Save Changes"
+          "Save Preferences"
         )}
       </Button>
     </form>

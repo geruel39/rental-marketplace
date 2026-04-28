@@ -199,6 +199,10 @@ export async function updateProfile(
       state: formData.get("state")?.toString().trim() || undefined,
       country: formData.get("country")?.toString().trim() || undefined,
       website_url: formData.get("website_url")?.toString().trim() || "",
+      email_bookings: formData.get("email_bookings")?.toString() === "true",
+      email_messages: formData.get("email_messages")?.toString() === "true",
+      email_reviews: formData.get("email_reviews")?.toString() === "true",
+      email_low_stock: formData.get("email_low_stock")?.toString() === "true",
     });
 
     if (!parsed.success) {
@@ -215,6 +219,12 @@ export async function updateProfile(
       state: parsed.data.state ?? null,
       country: parsed.data.country ?? null,
       website_url: parsed.data.website_url || null,
+      notification_preferences: {
+        email_bookings: parsed.data.email_bookings ?? true,
+        email_messages: parsed.data.email_messages ?? false,
+        email_reviews: parsed.data.email_reviews ?? true,
+        email_low_stock: parsed.data.email_low_stock ?? false,
+      },
       ...(avatarUrl ? { avatar_url: avatarUrl } : {}),
     };
 

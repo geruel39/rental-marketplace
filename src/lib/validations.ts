@@ -254,6 +254,10 @@ export const profileUpdateSchema = z.object({
   state: z.string().optional(),
   country: z.string().optional(),
   website_url: z.string().url().optional().or(z.literal("")),
+  email_bookings: z.boolean().optional(),
+  email_messages: z.boolean().optional(),
+  email_reviews: z.boolean().optional(),
+  email_low_stock: z.boolean().optional(),
 });
 
 export const stockAdjustmentSchema = z.object({
