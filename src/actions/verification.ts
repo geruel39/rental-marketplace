@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { headers } from "next/headers";
 
 import { createNotification } from "@/actions/notifications";
+import * as Email from "@/lib/email";
 import { getAdminIds, sendNotification } from "@/lib/notifications";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
@@ -360,6 +361,19 @@ async function notifyVerificationApproved(userId: string) {
     body: "You can now create listings.",
     actionUrl: "/dashboard/settings/verification",
   });
+
+  try {
+    const profile = await getProfileById(userId);
+    if (profile.email) {
+      void Email.sendVerificationApprovedEmail({
+        to: profile.email,
+        displayName: profile.display_name || profile.full_name || "User",
+        accountType: profile.account_type || "individual",
+      });
+    }
+  } catch (e) {
+    console.error("Email error in notifyVerificationApproved:", e);
+  }
 }
 
 async function notifyVerificationRejected(params: {
@@ -379,6 +393,20 @@ async function notifyVerificationRejected(params: {
     body: `${params.reason}.${fieldText}`.trim(),
     actionUrl: "/dashboard/settings/verification",
   });
+
+  try {
+    const profile = await getProfileById(params.userId);
+    if (profile.email) {
+      void Email.sendVerificationRejectedEmail({
+        to: profile.email,
+        displayName: profile.display_name || profile.full_name || "User",
+        reason: params.reason ?? "",
+        rejectedItems: params.rejectedFields ?? [],
+      });
+    }
+  } catch (e) {
+    console.error("Email error in notifyVerificationRejected:", e);
+  }
 }
 
 async function getProfileById(userId: string) {

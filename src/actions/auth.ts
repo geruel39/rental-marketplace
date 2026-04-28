@@ -2,6 +2,7 @@
 
 import { redirect } from "next/navigation";
 
+import { sendWelcomeEmail } from "@/lib/email";
 import { getAppUrl } from "@/lib/env";
 import { createClient } from "@/lib/supabase/server";
 import {
@@ -63,6 +64,15 @@ export async function registerIndividual(
       return { error: error.message };
     }
 
+    if (data.user) {
+      void sendWelcomeEmail({
+        to: validated.data.email,
+        displayName:
+          validated.data.display_name || validated.data.first_name || "User",
+        accountType: "individual",
+      });
+    }
+
     if (data.session) {
       redirect("/listings");
     }
@@ -122,6 +132,18 @@ export async function registerBusiness(
 
     if (error) {
       return { error: error.message };
+    }
+
+    if (data.user) {
+      void sendWelcomeEmail({
+        to: validated.data.email,
+        displayName:
+          validated.data.display_name ||
+          validated.data.business_name ||
+          validated.data.representative_first_name ||
+          "User",
+        accountType: "business",
+      });
     }
 
     if (data.session) {

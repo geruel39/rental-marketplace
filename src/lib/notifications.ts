@@ -1,3 +1,4 @@
+import * as Email from "@/lib/email";
 import { createAdminClient } from "@/lib/supabase/admin";
 import {
   NOTIFICATION_CONFIG,
@@ -31,6 +32,30 @@ interface NotificationResult {
   id: string | null;
   bundled: boolean;
   bundleCount?: number;
+}
+
+async function getUserEmailPrefs(userId: string): Promise<{
+  email: string;
+  emailBookings: boolean;
+  emailReviews: boolean;
+  wantsEmails: boolean;
+}> {
+  const adminClient = createAdminClient();
+  const { data } = await adminClient
+    .from("profiles")
+    .select("email, notification_preferences")
+    .eq("id", userId)
+    .single();
+
+  const prefs =
+    (data?.notification_preferences as Record<string, boolean> | null) ?? {};
+
+  return {
+    email: data?.email ?? "",
+    emailBookings: prefs.email_bookings !== false,
+    emailReviews: prefs.email_reviews !== false,
+    wantsEmails: true,
+  };
 }
 
 export async function sendNotification(
@@ -129,8 +154,10 @@ export async function notifyNewReview(params: {
   reviewerName: string;
   rating: number;
   listingTitle: string;
+  revieweeName?: string;
+  comment?: string;
 }) {
-  return sendNotification({
+  const result = await sendNotification({
     userId: params.revieweeId,
     type: "review_received",
     previewItem: {
@@ -140,49 +167,122 @@ export async function notifyNewReview(params: {
       created_at: new Date().toISOString(),
     },
   });
+
+  try {
+    const prefs = await getUserEmailPrefs(params.revieweeId);
+    if (prefs.email && prefs.emailReviews) {
+      void Email.sendReviewReceivedEmail({
+        to: prefs.email,
+        recipientName: params.revieweeName ?? "User",
+        reviewerName: params.reviewerName,
+        rating: params.rating,
+        comment: params.comment,
+        listingTitle: params.listingTitle,
+      });
+    }
+  } catch (e) {
+    console.error("Email error in notifyNewReview:", e);
+  }
+
+  return result;
 }
 
 export async function notifyNewBookingRequest(params: {
   listerId: string;
   renterName: string;
-  listingTitle: string;
-  bookingId: string;
-  rentalUnits: number;
-  pricingPeriod: string;
-  totalPrice: number;
+  listingTitle?: string;
+  bookingId?: string;
+  rentalUnits?: number;
+  pricingPeriod?: string;
+  totalPrice?: number;
+  renterId?: string;
+  listingId?: string;
+  quantity?: number;
 }) {
-  return sendNotification({
+  const result = await sendNotification({
     userId: params.listerId,
     type: "booking_request",
     bookingId: params.bookingId,
+    listingId: params.listingId,
     previewItem: {
       text:
-        `${params.renterName} wants to rent ${params.listingTitle} ` +
-        `for ${params.rentalUnits} ${params.pricingPeriod}(s) — ` +
-        `$${params.totalPrice}`,
+        `${params.renterName} wants to rent ${params.listingTitle ?? "your listing"} ` +
+        `for ${params.rentalUnits ?? 1} ${params.pricingPeriod ?? "day"}(s) - ` +
+        `$${params.totalPrice ?? 0}`,
       from_name: params.renterName,
-      related_title: params.listingTitle,
+      related_title: params.listingTitle ?? "your listing",
       created_at: new Date().toISOString(),
     },
   });
+
+  try {
+    const prefs = await getUserEmailPrefs(params.listerId);
+    if (prefs.email && prefs.emailBookings) {
+      const adminClient = createAdminClient();
+      const [listerResult, renterResult, listingResult] = await Promise.all([
+        adminClient
+          .from("profiles")
+          .select("display_name")
+          .eq("id", params.listerId)
+          .single(),
+        adminClient
+          .from("profiles")
+          .select("display_name")
+          .eq("id", params.renterId ?? "")
+          .single(),
+        adminClient
+          .from("listings")
+          .select("title, pricing_period: primary_pricing_period")
+          .eq("id", params.listingId ?? "")
+          .single(),
+      ]);
+
+      void Email.sendBookingConfirmationRequiredEmail({
+        to: prefs.email,
+        listerName: listerResult.data?.display_name ?? "Lister",
+        renterName: renterResult.data?.display_name ?? params.renterName,
+        listingTitle:
+          params.listingTitle ?? listingResult.data?.title ?? "Your listing",
+        rentalUnits: params.rentalUnits ?? 1,
+        pricingPeriod:
+          params.pricingPeriod ??
+          listingResult.data?.pricing_period ??
+          "day",
+        quantity: params.quantity ?? 1,
+        totalPrice: params.totalPrice ?? 0,
+        deadline: new Date(
+          Date.now() + 24 * 60 * 60 * 1000,
+        ).toLocaleString(),
+        bookingId: params.bookingId ?? "",
+      });
+    }
+  } catch (e) {
+    console.error("Email error in notifyNewBookingRequest:", e);
+  }
+
+  return result;
 }
 
 export async function notifyBookingAccepted(params: {
   renterId: string;
   listingTitle: string;
   bookingId: string;
-  paymentUrl: string;
-  paymentExpiresAt: string;
+  paymentUrl?: string;
+  paymentExpiresAt?: string;
   totalPrice: number;
+  renterName?: string;
+  listerName?: string;
+  rentalUnits?: number;
+  pricingPeriod?: string;
+  quantity?: number;
 }) {
-  return sendNotification({
+  const result = await sendNotification({
     userId: params.renterId,
-    type: "booking_accepted",
-    title: "Booking accepted — payment required",
+    type: "payment_confirmed",
+    title: "Booking confirmed!",
     body:
-      `Your booking for "${params.listingTitle}" has been accepted! ` +
-      `Complete payment of $${params.totalPrice} to confirm. ` +
-      `Payment expires: ${new Date(params.paymentExpiresAt).toLocaleString()}.`,
+      `${params.listerName ?? "The lister"} confirmed your booking for "${params.listingTitle}". ` +
+      "Contact them to arrange handover.",
     actionUrl: `/renter/rentals/${params.bookingId}`,
     bookingId: params.bookingId,
     metadata: {
@@ -190,6 +290,27 @@ export async function notifyBookingAccepted(params: {
       paymentExpiresAt: params.paymentExpiresAt,
     },
   });
+
+  try {
+    const prefs = await getUserEmailPrefs(params.renterId);
+    if (prefs.email && prefs.emailBookings) {
+      void Email.sendBookingConfirmedEmail({
+        to: prefs.email,
+        renterName: params.renterName ?? "Renter",
+        listerName: params.listerName ?? "Lister",
+        listingTitle: params.listingTitle,
+        rentalUnits: params.rentalUnits ?? 1,
+        pricingPeriod: params.pricingPeriod ?? "day",
+        quantity: params.quantity ?? 1,
+        totalPrice: params.totalPrice,
+        bookingId: params.bookingId,
+      });
+    }
+  } catch (e) {
+    console.error("Email error in notifyBookingAccepted:", e);
+  }
+
+  return result;
 }
 
 export async function notifyBookingDeclined(params: {
@@ -216,8 +337,21 @@ export async function notifyBookingCancelled(params: {
   bookingId: string;
   cancelledByName: string;
   reason?: string;
+  recipientName?: string;
+  cancelledByRole?: "renter" | "lister" | "system";
+  rentalUnits?: number;
+  pricingPeriod?: string;
+  totalPrice?: number;
+  refundAmount?: number;
+  refundPercent?: number;
+  recipientRole?: "renter" | "lister";
 }) {
-  return sendNotification({
+  const actionUrl =
+    params.recipientRole === "lister"
+      ? `/lister/bookings/${params.bookingId}`
+      : `/renter/rentals/${params.bookingId}`;
+
+  const result = await sendNotification({
     userId: params.recipientId,
     type: "booking_cancelled",
     title: "Booking cancelled",
@@ -225,9 +359,34 @@ export async function notifyBookingCancelled(params: {
       `The booking for "${params.listingTitle}" was cancelled ` +
       `by ${params.cancelledByName}.` +
       (params.reason ? ` Reason: ${params.reason}` : ""),
-    actionUrl: `/renter/rentals/${params.bookingId}`,
+    actionUrl,
     bookingId: params.bookingId,
   });
+
+  try {
+    const prefs = await getUserEmailPrefs(params.recipientId);
+    if (prefs.email && prefs.emailBookings) {
+      void Email.sendBookingCancelledEmail({
+        to: prefs.email,
+        recipientName: params.recipientName ?? "User",
+        cancelledByName: params.cancelledByName,
+        cancelledByRole: params.cancelledByRole ?? "system",
+        listingTitle: params.listingTitle,
+        rentalUnits: params.rentalUnits ?? 1,
+        pricingPeriod: params.pricingPeriod ?? "day",
+        totalPrice: params.totalPrice ?? 0,
+        refundAmount: params.refundAmount ?? 0,
+        refundPercent: params.refundPercent ?? 0,
+        reason: params.reason,
+        bookingId: params.bookingId,
+        recipientRole: params.recipientRole ?? "renter",
+      });
+    }
+  } catch (e) {
+    console.error("Email error in notifyBookingCancelled:", e);
+  }
+
+  return result;
 }
 
 export async function notifyBookingCompleted(params: {
@@ -235,6 +394,8 @@ export async function notifyBookingCompleted(params: {
   listerId: string;
   listingTitle: string;
   bookingId: string;
+  renterName?: string;
+  listerName?: string;
 }) {
   await Promise.all([
     sendNotification({
@@ -258,6 +419,45 @@ export async function notifyBookingCompleted(params: {
       bookingId: params.bookingId,
     }),
   ]);
+
+  try {
+    const [renterPrefs, listerPrefs] = await Promise.all([
+      getUserEmailPrefs(params.renterId),
+      getUserEmailPrefs(params.listerId),
+    ]);
+
+    const emailPromises: Promise<void>[] = [];
+
+    if (renterPrefs.email && renterPrefs.emailBookings) {
+      emailPromises.push(
+        Email.sendRentalCompletedEmail({
+          to: renterPrefs.email,
+          recipientName: params.renterName ?? "Renter",
+          role: "renter",
+          listingTitle: params.listingTitle,
+          otherPartyName: params.listerName ?? "Lister",
+          bookingId: params.bookingId,
+        }),
+      );
+    }
+
+    if (listerPrefs.email && listerPrefs.emailBookings) {
+      emailPromises.push(
+        Email.sendRentalCompletedEmail({
+          to: listerPrefs.email,
+          recipientName: params.listerName ?? "Lister",
+          role: "lister",
+          listingTitle: params.listingTitle,
+          otherPartyName: params.renterName ?? "Renter",
+          bookingId: params.bookingId,
+        }),
+      );
+    }
+
+    void Promise.all(emailPromises);
+  } catch (e) {
+    console.error("Email error in notifyBookingCompleted:", e);
+  }
 }
 
 export async function notifyPaymentConfirmed(params: {
@@ -266,6 +466,13 @@ export async function notifyPaymentConfirmed(params: {
   listingTitle: string;
   bookingId: string;
   amount: number;
+  renterName?: string;
+  listerName?: string;
+  rentalUnits?: number;
+  pricingPeriod?: string;
+  quantity?: number;
+  paymentReference?: string;
+  listerPayout?: number;
 }) {
   await Promise.all([
     sendNotification({
@@ -289,6 +496,54 @@ export async function notifyPaymentConfirmed(params: {
       bookingId: params.bookingId,
     }),
   ]);
+
+  try {
+    const [renterPrefs, listerPrefs] = await Promise.all([
+      getUserEmailPrefs(params.renterId),
+      getUserEmailPrefs(params.listerId),
+    ]);
+
+    const emailPromises: Promise<void>[] = [];
+
+    if (renterPrefs.email && renterPrefs.emailBookings) {
+      emailPromises.push(
+        Email.sendPaymentConfirmedEmail({
+          to: renterPrefs.email,
+          recipientName: params.renterName ?? "Renter",
+          role: "renter",
+          listingTitle: params.listingTitle,
+          rentalUnits: params.rentalUnits ?? 1,
+          pricingPeriod: params.pricingPeriod ?? "day",
+          quantity: params.quantity ?? 1,
+          amountPaid: params.amount,
+          paymentReference: params.paymentReference ?? "",
+          bookingId: params.bookingId,
+        }),
+      );
+    }
+
+    if (listerPrefs.email && listerPrefs.emailBookings) {
+      emailPromises.push(
+        Email.sendPaymentConfirmedEmail({
+          to: listerPrefs.email,
+          recipientName: params.listerName ?? "Lister",
+          role: "lister",
+          listingTitle: params.listingTitle,
+          rentalUnits: params.rentalUnits ?? 1,
+          pricingPeriod: params.pricingPeriod ?? "day",
+          quantity: params.quantity ?? 1,
+          amountPaid: params.amount,
+          payoutAmount: params.listerPayout,
+          paymentReference: params.paymentReference ?? "",
+          bookingId: params.bookingId,
+        }),
+      );
+    }
+
+    void Promise.all(emailPromises);
+  } catch (e) {
+    console.error("Email error in notifyPaymentConfirmed:", e);
+  }
 }
 
 export async function notifyPayoutCompleted(params: {
@@ -297,8 +552,10 @@ export async function notifyPayoutCompleted(params: {
   method: string;
   reference?: string;
   bookingId: string;
+  listerName?: string;
+  listingTitle?: string;
 }) {
-  return sendNotification({
+  const result = await sendNotification({
     userId: params.listerId,
     type: "payout_completed",
     title: "Payout sent!",
@@ -308,6 +565,25 @@ export async function notifyPayoutCompleted(params: {
     actionUrl: "/dashboard/earnings",
     bookingId: params.bookingId,
   });
+
+  try {
+    const prefs = await getUserEmailPrefs(params.listerId);
+    if (prefs.email) {
+      void Email.sendPayoutProcessedEmail({
+        to: prefs.email,
+        listerName: params.listerName ?? "Lister",
+        amount: params.amount,
+        payoutMethod: params.method,
+        reference: params.reference,
+        listingTitle: params.listingTitle ?? "",
+        bookingId: params.bookingId,
+      });
+    }
+  } catch (e) {
+    console.error("Email error in notifyPayoutCompleted:", e);
+  }
+
+  return result;
 }
 
 export async function notifyPayoutFailed(params: {
@@ -315,8 +591,9 @@ export async function notifyPayoutFailed(params: {
   amount: number;
   reason: string;
   bookingId: string;
+  listerName?: string;
 }) {
-  return sendNotification({
+  const result = await sendNotification({
     userId: params.listerId,
     type: "payout_failed",
     title: "Payout failed",
@@ -327,6 +604,22 @@ export async function notifyPayoutFailed(params: {
     actionUrl: "/dashboard/settings/payments",
     bookingId: params.bookingId,
   });
+
+  try {
+    const prefs = await getUserEmailPrefs(params.listerId);
+    if (prefs.email) {
+      void Email.sendPayoutFailedEmail({
+        to: prefs.email,
+        listerName: params.listerName ?? "Lister",
+        amount: params.amount,
+        reason: params.reason,
+      });
+    }
+  } catch (e) {
+    console.error("Email error in notifyPayoutFailed:", e);
+  }
+
+  return result;
 }
 
 export async function notifyRefundInitiated(params: {
@@ -335,8 +628,10 @@ export async function notifyRefundInitiated(params: {
   originalAmount: number;
   reason: string;
   bookingId: string;
+  renterName?: string;
+  listingTitle?: string;
 }) {
-  return sendNotification({
+  const result = await sendNotification({
     userId: params.renterId,
     type: "refund_initiated",
     title: "Refund initiated",
@@ -350,6 +645,25 @@ export async function notifyRefundInitiated(params: {
     actionUrl: `/renter/rentals/${params.bookingId}`,
     bookingId: params.bookingId,
   });
+
+  try {
+    const prefs = await getUserEmailPrefs(params.renterId);
+    if (prefs.email) {
+      void Email.sendRefundInitiatedEmail({
+        to: prefs.email,
+        renterName: params.renterName ?? "Renter",
+        refundAmount: params.refundAmount,
+        originalAmount: params.originalAmount,
+        reason: params.reason,
+        listingTitle: params.listingTitle ?? "",
+        bookingId: params.bookingId,
+      });
+    }
+  } catch (e) {
+    console.error("Email error in notifyRefundInitiated:", e);
+  }
+
+  return result;
 }
 
 export async function notifyRentalStarted(params: {
@@ -357,8 +671,12 @@ export async function notifyRentalStarted(params: {
   listingTitle: string;
   bookingId: string;
   rentalEndsAt: string;
+  renterName?: string;
+  listerName?: string;
+  rentalUnits?: number;
+  pricingPeriod?: string;
 }) {
-  return sendNotification({
+  const result = await sendNotification({
     userId: params.renterId,
     type: "rental_started",
     title: "Rental period started!",
@@ -368,6 +686,26 @@ export async function notifyRentalStarted(params: {
     actionUrl: `/renter/rentals/${params.bookingId}`,
     bookingId: params.bookingId,
   });
+
+  try {
+    const prefs = await getUserEmailPrefs(params.renterId);
+    if (prefs.email && prefs.emailBookings) {
+      void Email.sendRentalStartedEmail({
+        to: prefs.email,
+        renterName: params.renterName ?? "Renter",
+        listerName: params.listerName ?? "Lister",
+        listingTitle: params.listingTitle,
+        rentalUnits: params.rentalUnits ?? 1,
+        pricingPeriod: params.pricingPeriod ?? "day",
+        rentalEndsAt: new Date(params.rentalEndsAt).toLocaleString(),
+        bookingId: params.bookingId,
+      });
+    }
+  } catch (e) {
+    console.error("Email error in notifyRentalStarted:", e);
+  }
+
+  return result;
 }
 
 export async function notifyItemReturned(params: {
@@ -376,8 +714,9 @@ export async function notifyItemReturned(params: {
   listingTitle: string;
   bookingId: string;
   isLate: boolean;
+  listerName?: string;
 }) {
-  return sendNotification({
+  const result = await sendNotification({
     userId: params.listerId,
     type: "item_returned",
     title: params.isLate ? "Item returned (late)" : "Item returned",
@@ -388,6 +727,25 @@ export async function notifyItemReturned(params: {
     actionUrl: `/lister/bookings/${params.bookingId}`,
     bookingId: params.bookingId,
   });
+
+  try {
+    const prefs = await getUserEmailPrefs(params.listerId);
+    if (prefs.email && prefs.emailBookings) {
+      void Email.sendItemReturnedEmail({
+        to: prefs.email,
+        listerName: params.listerName ?? "Lister",
+        renterName: params.renterName,
+        listingTitle: params.listingTitle,
+        isLate: params.isLate,
+        returnedAt: new Date().toLocaleString(),
+        bookingId: params.bookingId,
+      });
+    }
+  } catch (e) {
+    console.error("Email error in notifyItemReturned:", e);
+  }
+
+  return result;
 }
 
 export async function notifyDisputeRaised(params: {
@@ -397,6 +755,9 @@ export async function notifyDisputeRaised(params: {
   bookingId: string;
   raisedByName: string;
   amount: number;
+  otherPartyName?: string;
+  disputeReason?: string;
+  otherPartyRole?: "renter" | "lister";
 }) {
   await Promise.all([
     sendNotification({
@@ -406,14 +767,17 @@ export async function notifyDisputeRaised(params: {
       body:
         `${params.raisedByName} raised a dispute on the booking for ` +
         `"${params.listingTitle}". An admin will review it shortly.`,
-      actionUrl: `/renter/rentals/${params.bookingId}`,
+      actionUrl:
+        params.otherPartyRole === "lister"
+          ? `/lister/bookings/${params.bookingId}`
+          : `/renter/rentals/${params.bookingId}`,
       bookingId: params.bookingId,
     }),
     ...params.adminIds.map((adminId) =>
       sendNotification({
         userId: adminId,
         type: "dispute_raised",
-        title: `Dispute requires review — $${params.amount} at stake`,
+        title: `Dispute requires review - $${params.amount} at stake`,
         body:
           `${params.raisedByName} raised a dispute on booking ` +
           `for "${params.listingTitle}".`,
@@ -422,6 +786,23 @@ export async function notifyDisputeRaised(params: {
       }),
     ),
   ]);
+
+  try {
+    const prefs = await getUserEmailPrefs(params.otherPartyId);
+    if (prefs.email) {
+      void Email.sendDisputeRaisedEmail({
+        to: prefs.email,
+        recipientName: params.otherPartyName ?? "User",
+        raisedByName: params.raisedByName,
+        listingTitle: params.listingTitle,
+        disputeReason: params.disputeReason ?? "",
+        bookingId: params.bookingId,
+        recipientRole: params.otherPartyRole ?? "renter",
+      });
+    }
+  } catch (e) {
+    console.error("Email error in notifyDisputeRaised:", e);
+  }
 }
 
 export async function notifyDisputeResolved(params: {
@@ -431,6 +812,10 @@ export async function notifyDisputeResolved(params: {
   listerAmount: number;
   bookingId: string;
   resolutionType: string;
+  renterName?: string;
+  listerName?: string;
+  listingTitle?: string;
+  resolutionNotes?: string;
 }) {
   await Promise.all([
     sendNotification({
@@ -458,6 +843,87 @@ export async function notifyDisputeResolved(params: {
       metadata: { resolutionType: params.resolutionType },
     }),
   ]);
+
+  try {
+    const [renterPrefs, listerPrefs] = await Promise.all([
+      getUserEmailPrefs(params.renterId),
+      getUserEmailPrefs(params.listerId),
+    ]);
+
+    if (renterPrefs.email) {
+      void Email.sendDisputeResolvedEmail({
+        to: renterPrefs.email,
+        recipientName: params.renterName ?? "Renter",
+        role: "renter",
+        listingTitle: params.listingTitle ?? "",
+        outcome: params.renterAmount > 0 ? "refund" : "none",
+        amount: params.renterAmount,
+        resolutionNotes: params.resolutionNotes ?? "",
+        bookingId: params.bookingId,
+      });
+    }
+
+    if (listerPrefs.email) {
+      void Email.sendDisputeResolvedEmail({
+        to: listerPrefs.email,
+        recipientName: params.listerName ?? "Lister",
+        role: "lister",
+        listingTitle: params.listingTitle ?? "",
+        outcome: params.listerAmount > 0 ? "payout" : "none",
+        amount: params.listerAmount,
+        resolutionNotes: params.resolutionNotes ?? "",
+        bookingId: params.bookingId,
+      });
+    }
+  } catch (e) {
+    console.error("Email error in notifyDisputeResolved:", e);
+  }
+}
+
+export async function notifyListerConfirmationWarning(params: {
+  listerId: string;
+  listerName?: string;
+  listingTitle: string;
+  renterName?: string;
+  hoursRemaining: number;
+  deadline: string;
+  bookingId: string;
+}) {
+  const result = await sendNotification({
+    userId: params.listerId,
+    type: "booking_confirmation_required",
+    title:
+      params.hoursRemaining <= 2
+        ? "Urgent: confirm booking within 2 hours"
+        : "Reminder: confirm booking within 12 hours",
+    body:
+      `${params.listingTitle} must be confirmed by ${params.deadline} ` +
+      "or it will auto-cancel.",
+    bookingId: params.bookingId,
+    actionUrl: `/lister/bookings/${params.bookingId}`,
+    metadata: {
+      reminder_window: `${params.hoursRemaining}h`,
+    },
+  });
+
+  try {
+    const prefs = await getUserEmailPrefs(params.listerId);
+    if (prefs.email) {
+      void Email.sendConfirmationDeadlineWarningEmail({
+        to: prefs.email,
+        listerName: params.listerName ?? "Lister",
+        listingTitle: params.listingTitle,
+        renterName: params.renterName ?? "Renter",
+        hoursRemaining: params.hoursRemaining,
+        deadline: params.deadline,
+        bookingId: params.bookingId,
+      });
+    }
+  } catch (e) {
+    console.error("Email error in notifyListerConfirmationWarning:", e);
+  }
+
+  return result;
 }
 
 export async function notifyLowStock(params: {
@@ -533,7 +999,7 @@ export async function notifyKYCVerified(params: {
   return sendNotification({
     userId: params.userId,
     type: "kyc_verified",
-    title: "✅ KYC verified!",
+    title: "KYC verified!",
     body:
       "Your identity has been verified. You can now create listings " +
       "and receive payouts via bank transfer.",

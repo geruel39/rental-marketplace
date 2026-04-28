@@ -1256,9 +1256,16 @@ export async function handlePaymentConfirmed(params: {
     await notifyPaymentConfirmed({
       renterId: booking.renter_id,
       listerId: booking.lister_id,
+      renterName: getDisplayName(booking.renter),
+      listerName: getDisplayName(booking.lister),
       listingTitle: booking.listing.title,
       bookingId: booking.id,
       amount: params.amount,
+      rentalUnits: booking.rental_units,
+      pricingPeriod: booking.pricing_period,
+      quantity: booking.quantity,
+      paymentReference: params.hitpayPaymentId,
+      listerPayout: booking.lister_payout,
     });
 
     revalidatePaymentViews();
@@ -1468,9 +1475,11 @@ export async function processCancellationRefund(
 
       void notifyRefundInitiated({
         renterId: booking.renter_id,
+        renterName: getDisplayName(booking.renter),
         refundAmount,
         originalAmount: booking.total_price,
         reason,
+        listingTitle: booking.listing.title,
         bookingId: booking.id,
       }).catch((error) => {
         console.error("processCancellationRefund notification failed:", error);
@@ -1510,9 +1519,11 @@ export async function processCancellationRefund(
 
         void notifyRefundInitiated({
           renterId: booking.renter_id,
+          renterName: getDisplayName(booking.renter),
           refundAmount,
           originalAmount: booking.total_price,
           reason,
+          listingTitle: booking.listing.title,
           bookingId: booking.id,
         }).catch((error) => {
           console.error("processCancellationRefund notification failed:", error);
@@ -1632,6 +1643,7 @@ export async function handleFailedPayout(
     await Promise.all([
       notifyPayoutFailed({
         listerId: payout.lister_id,
+        listerName: getDisplayName(payout.lister),
         amount: payout.amount,
         reason: failureReason,
         bookingId: payout.booking_id ?? payout.booking.id,
@@ -1793,6 +1805,7 @@ export async function processPayoutToLister(
 
     void notifyPayoutCompleted({
       listerId: payout.lister_id,
+      listerName: getDisplayName(payout.lister),
       amount: payout.amount,
       method: currentPayoutMethod ?? "configured method",
       reference,
@@ -2320,8 +2333,12 @@ export async function resolveDisputePayment(params: {
     await notifyDisputeResolved({
       renterId: booking.renter_id,
       listerId: booking.lister_id,
+      renterName: getDisplayName(booking.renter),
+      listerName: getDisplayName(booking.lister),
+      listingTitle: booking.listing.title,
       renterAmount: renterRefundAmount,
       listerAmount: listerPayoutAmount,
+      resolutionNotes: params.resolutionNotes,
       bookingId: booking.id,
       resolutionType: params.resolutionType,
     });
@@ -2447,6 +2464,7 @@ export async function markPayoutFailedByAdmin(
 
     void notifyPayoutFailed({
       listerId: payout.lister_id,
+      listerName: getDisplayName(payout.lister),
       amount: payout.amount,
       reason: trimmedReason,
       bookingId: payout.booking_id ?? payout.id,

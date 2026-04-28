@@ -3,7 +3,7 @@ import { NextRequest, NextResponse } from "next/server";
 
 import { expireUnconfirmedBookings } from "@/actions/bookings";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { sendNotification } from "@/lib/notifications";
+import { notifyListerConfirmationWarning } from "@/lib/notifications";
 
 export const dynamic = "force-dynamic";
 
@@ -81,28 +81,26 @@ export async function POST(request: NextRequest) {
     await Promise.all([
       ...twelveHourBookings.map((booking) => {
         const listing = unwrapListing(booking.listing);
-        return sendNotification({
-          userId: booking.lister_id,
-          type: "booking_confirmation_required",
-          title: "Reminder: confirm booking within 12 hours",
-          body: `Please confirm ${listing?.title ?? "this booking"} before ${new Date(booking.lister_confirmation_deadline ?? now).toLocaleString()} or it will auto-cancel.`,
+        return notifyListerConfirmationWarning({
+          listerId: booking.lister_id,
+          listingTitle: listing?.title ?? "this booking",
+          hoursRemaining: 12,
+          deadline: new Date(
+            booking.lister_confirmation_deadline ?? now,
+          ).toLocaleString(),
           bookingId: booking.id,
-          listingId: booking.listing_id,
-          actionUrl: `/lister/bookings/${booking.id}`,
-          metadata: { reminder_window: "12h" },
         });
       }),
       ...twoHourBookings.map((booking) => {
         const listing = unwrapListing(booking.listing);
-        return sendNotification({
-          userId: booking.lister_id,
-          type: "booking_confirmation_required",
-          title: "Urgent: confirm booking within 2 hours",
-          body: `${listing?.title ?? "This booking"} must be confirmed by ${new Date(booking.lister_confirmation_deadline ?? now).toLocaleString()} or it will auto-cancel.`,
+        return notifyListerConfirmationWarning({
+          listerId: booking.lister_id,
+          listingTitle: listing?.title ?? "This booking",
+          hoursRemaining: 2,
+          deadline: new Date(
+            booking.lister_confirmation_deadline ?? now,
+          ).toLocaleString(),
           bookingId: booking.id,
-          listingId: booking.listing_id,
-          actionUrl: `/lister/bookings/${booking.id}`,
-          metadata: { reminder_window: "2h" },
         });
       }),
     ]);

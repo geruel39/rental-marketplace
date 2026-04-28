@@ -147,6 +147,8 @@ export async function submitReview(
       reviewerName: reviewerProfile?.display_name || "Someone",
       rating: parsed.data.overall_rating,
       listingTitle: listing?.title || "your listing",
+      revieweeName: "User",
+      comment: parsed.data.comment || undefined,
     }).catch((error) => {
       console.error("submitReview notification failed:", error);
     });

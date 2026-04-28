@@ -21,10 +21,13 @@ import {
 } from "@/actions/payments";
 import {
   getAdminIds,
+  notifyBookingAccepted,
+  notifyBookingCancelled,
   notifyBookingCompleted,
+  notifyDisputeRaised,
   notifyItemReturned,
+  notifyNewBookingRequest,
   notifyRentalStarted,
-  sendNotification,
 } from "@/lib/notifications";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
@@ -914,20 +917,17 @@ export async function createAndPayBooking(
     }
 
     const renterName = getActorDisplayName(auth.profile, auth.user.email);
-    void sendNotification({
-      userId: listing.owner_id,
-      type: "booking_confirmation_required",
-      title: `New booking - confirm by ${formatDateTime(deadline)}`,
-      body: `${renterName} booked ${listing.title} for ${parsed.data.rental_units} ${parsed.data.pricing_period}. Confirm by ${formatDateTime(deadline)} or it auto-cancels.`,
-      bookingId: createdBooking.id,
+    void notifyNewBookingRequest({
+      listerId: listing.owner_id,
+      renterId: auth.user.id,
+      renterName,
       listingId: listing.id,
-      fromUserId: auth.user.id,
-      actionUrl: `/lister/bookings/${createdBooking.id}`,
-      metadata: {
-        quantity: parsed.data.quantity,
-        total_price: totalPrice,
-        deadline,
-      },
+      listingTitle: listing.title,
+      bookingId: createdBooking.id,
+      rentalUnits: parsed.data.rental_units,
+      pricingPeriod: parsed.data.pricing_period,
+      quantity: parsed.data.quantity,
+      totalPrice,
     }).catch((error) => {
       console.error("createAndPayBooking notification failed:", error);
     });
@@ -998,15 +998,16 @@ export async function listerConfirmBooking(
     });
 
     const listerName = getActorDisplayName(auth.profile, auth.user.email);
-    void sendNotification({
-      userId: booking.renter_id,
-      type: "payment_confirmed",
-      title: "Booking confirmed!",
-      body: `${listerName} confirmed your booking. Contact them to arrange handover.`,
+    void notifyBookingAccepted({
+      renterId: booking.renter_id,
+      renterName: booking.renter.display_name || booking.renter.full_name || "Renter",
+      listerName,
+      listingTitle: booking.listing.title,
       bookingId: booking.id,
-      listingId: booking.listing_id,
-      fromUserId: auth.user.id,
-      actionUrl: `/renter/rentals/${booking.id}`,
+      totalPrice: booking.total_price,
+      rentalUnits: booking.rental_units,
+      pricingPeriod: booking.pricing_period,
+      quantity: booking.quantity,
     }).catch((notificationError) => {
       console.error("listerConfirmBooking notification failed:", notificationError);
     });
@@ -1095,16 +1096,20 @@ export async function listerCancelBooking(
       console.error("listerCancelBooking refund failed:", refundResult.error);
     }
 
-    void sendNotification({
-      userId: booking.renter_id,
-      type: "booking_cancelled",
-      title: "Booking cancelled - full refund coming",
-      body: `Lister cancelled. Reason: ${parsed.data.reason}. Full refund within 5-10 days.`,
+    void notifyBookingCancelled({
+      recipientId: booking.renter_id,
+      recipientName: booking.renter.display_name || booking.renter.full_name || "User",
+      cancelledByName: getActorDisplayName(auth.profile, auth.user.email),
+      cancelledByRole: "lister",
+      listingTitle: booking.listing.title,
+      rentalUnits: booking.rental_units,
+      pricingPeriod: booking.pricing_period,
+      totalPrice: booking.total_price,
+      refundAmount: booking.total_price,
+      refundPercent: 100,
+      reason: parsed.data.reason,
       bookingId: booking.id,
-      listingId: booking.listing_id,
-      fromUserId: auth.user.id,
-      actionUrl: `/renter/rentals/${booking.id}`,
-      metadata: { refund_policy: "full_refund_lister_cancelled" },
+      recipientRole: "renter",
     }).catch((notificationError) => {
       console.error("listerCancelBooking notification failed:", notificationError);
     });
@@ -1255,9 +1260,13 @@ export async function markReceivedByRenter(
     if (rentalEndsAt) {
       void notifyRentalStarted({
         renterId: booking.renter_id,
+        renterName: booking.renter.display_name || booking.renter.full_name || "Renter",
+        listerName: booking.lister.display_name || booking.lister.full_name || "Lister",
         listingTitle: booking.listing.title,
         bookingId: booking.id,
         rentalEndsAt,
+        rentalUnits: booking.rental_units,
+        pricingPeriod: booking.pricing_period,
       }).catch((error) => {
         console.error("markReceivedByRenter notification failed:", error);
       });
@@ -1356,6 +1365,7 @@ export async function markReturnedToLister(
 
     void notifyItemReturned({
       listerId: booking.lister_id,
+      listerName: booking.lister.display_name || booking.lister.full_name || "Lister",
       renterName:
         auth.profile?.display_name || getActorDisplayName(auth.profile, auth.user.email),
       listingTitle: booking.listing.title,
@@ -1507,6 +1517,8 @@ export async function confirmReturnAndComplete(
     void notifyBookingCompleted({
       renterId: booking.renter_id,
       listerId: booking.lister_id,
+      renterName: booking.renter.display_name || booking.renter.full_name || "Renter",
+      listerName: booking.lister.display_name || booking.lister.full_name || "Lister",
       listingTitle: booking.listing.title,
       bookingId: booking.id,
     }).catch((error) => {
@@ -1627,15 +1639,20 @@ export async function cancelBookingAsRenter(
     }
 
     const renterName = getActorDisplayName(auth.profile, auth.user.email);
-    void sendNotification({
-      userId: booking.lister_id,
-      type: "booking_cancelled",
-      title: "Renter cancelled booking",
-      body: `${renterName} cancelled. Stock released.`,
+    void notifyBookingCancelled({
+      recipientId: booking.lister_id,
+      recipientName: booking.lister.display_name || booking.lister.full_name || "User",
+      cancelledByName: renterName,
+      cancelledByRole: "renter",
+      listingTitle: booking.listing.title,
+      rentalUnits: booking.rental_units,
+      pricingPeriod: booking.pricing_period,
+      totalPrice: booking.total_price,
+      refundAmount,
+      refundPercent,
+      reason: `Renter cancellation policy applied: ${policyLabel}.`,
       bookingId: booking.id,
-      listingId: booking.listing_id,
-      fromUserId: auth.user.id,
-      actionUrl: `/lister/bookings/${booking.id}`,
+      recipientRole: "lister",
     }).catch((notificationError) => {
       console.error("cancelBookingAsRenter notification failed:", notificationError);
     });
@@ -1701,35 +1718,20 @@ export async function raiseDispute(
       auth.profile?.display_name || getActorDisplayName(auth.profile, auth.user.email);
     const otherPartyId =
       actorRole === "renter" ? booking.lister_id : booking.renter_id;
-    const otherPartyActionUrl =
-      actorRole === "renter"
-        ? `/lister/bookings/${booking.id}`
-        : `/renter/rentals/${booking.id}`;
-
-    await Promise.all([
-      sendNotification({
-        userId: otherPartyId,
-        type: "dispute_raised",
-        title: "Dispute raised on your booking",
-        body: `${raisedByName} raised a dispute on the booking for "${booking.listing.title}". An admin will review it shortly.`,
-        bookingId: booking.id,
-        listingId: booking.listing_id,
-        fromUserId: auth.user.id,
-        actionUrl: otherPartyActionUrl,
-      }),
-      ...adminIds.map((adminId) =>
-        sendNotification({
-          userId: adminId,
-          type: "dispute_raised",
-          title: `Dispute requires review - $${booking.total_price} at stake`,
-          body: `${raisedByName} raised a dispute on booking for "${booking.listing.title}".`,
-          bookingId: booking.id,
-          listingId: booking.listing_id,
-          fromUserId: auth.user.id,
-          actionUrl: `/admin/bookings/${booking.id}`,
-        }),
-      ),
-    ]);
+    await notifyDisputeRaised({
+      otherPartyId,
+      otherPartyName:
+        actorRole === "renter"
+          ? booking.lister.display_name || booking.lister.full_name || "User"
+          : booking.renter.display_name || booking.renter.full_name || "User",
+      otherPartyRole: actorRole === "renter" ? "lister" : "renter",
+      adminIds,
+      listingTitle: booking.listing.title,
+      bookingId: booking.id,
+      raisedByName,
+      amount: booking.total_price,
+      disputeReason,
+    });
 
     await holdPaymentForDispute(booking.id);
 
@@ -1993,15 +1995,21 @@ export async function expireUnconfirmedBookings(): Promise<ActionResponse> {
         console.error("expireUnconfirmedBookings refund failed:", refundResult.error);
       }
 
-      await sendNotification({
-        userId: fullBooking.renter_id,
-        type: "booking_cancelled",
-        title: "Booking cancelled - full refund coming",
-        body: "Lister did not confirm within 24 hours. Full refund within 5-10 days.",
-        listingId: fullBooking.listing_id,
+      await notifyBookingCancelled({
+        recipientId: fullBooking.renter_id,
+        recipientName:
+          fullBooking.renter.display_name || fullBooking.renter.full_name || "User",
+        cancelledByName: "System",
+        cancelledByRole: "system",
+        listingTitle: fullBooking.listing.title,
+        rentalUnits: fullBooking.rental_units,
+        pricingPeriod: fullBooking.pricing_period,
+        totalPrice: fullBooking.total_price,
+        refundAmount: fullBooking.total_price,
+        refundPercent: 100,
+        reason: "Lister did not confirm within 24 hours.",
         bookingId: booking.id,
-        actionUrl: `/renter/rentals/${booking.id}`,
-        metadata: { auto_cancelled_reason: "lister_confirmation_expired" },
+        recipientRole: "renter",
       });
     }
 
