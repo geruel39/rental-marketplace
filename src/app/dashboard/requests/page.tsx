@@ -73,17 +73,22 @@ function getConfirmationCountdown(deadline?: string | null) {
 function RequestActions({ booking }: { booking: BookingWithDetails }) {
   if (booking.status === "lister_confirmation") {
     return (
-      <div className="space-y-3">
-        <p className="text-sm font-medium text-red-700">
+      <div className="space-y-4 rounded-2xl border border-red-200 bg-red-50/70 p-4">
+        <p className="text-sm font-semibold text-red-700">
           {getConfirmationCountdown(booking.lister_confirmation_deadline)}
         </p>
-        <div className="flex flex-wrap justify-end gap-2">
+        <div className="flex flex-col gap-2 sm:flex-row sm:justify-end">
           <form
             action={
               listerConfirmBooking.bind(null, booking.id) as unknown as (formData: FormData) => Promise<void>
             }
+            className="sm:flex-1 sm:max-w-[140px]"
           >
-            <Button className="bg-emerald-600 text-white hover:bg-emerald-700" size="sm" type="submit">
+            <Button
+              className="w-full bg-emerald-600 text-white hover:bg-emerald-700"
+              size="sm"
+              type="submit"
+            >
               Confirm
             </Button>
           </form>
@@ -95,11 +100,11 @@ function RequestActions({ booking }: { booking: BookingWithDetails }) {
 
   if (booking.status === "confirmed") {
     return (
-      <div className="space-y-3">
-        <div className="flex justify-end">
+      <div className="space-y-3 rounded-2xl border border-border/60 bg-muted/30 p-4">
+        <div className="flex justify-start lg:justify-end">
           <HandoverDialog booking={booking} />
         </div>
-        <Button asChild size="sm" variant="outline">
+        <Button asChild className="w-full lg:w-auto" size="sm" variant="outline">
           <Link href="/dashboard/messages">Message renter</Link>
         </Button>
       </div>
@@ -108,9 +113,9 @@ function RequestActions({ booking }: { booking: BookingWithDetails }) {
 
   if (booking.status === "active") {
     return (
-      <div className="space-y-3 text-right">
+      <div className="space-y-3 rounded-2xl border border-border/60 bg-muted/30 p-4 text-left lg:text-right">
         <p className="text-sm text-muted-foreground">Waiting for renter to mark return.</p>
-        <div className="flex justify-end">
+        <div className="flex justify-start lg:justify-end">
           <RaiseDisputeDialog bookingId={booking.id} buttonSize="sm" />
         </div>
       </div>
@@ -122,7 +127,7 @@ function RequestActions({ booking }: { booking: BookingWithDetails }) {
   }
 
   return (
-    <p className="text-right text-sm text-muted-foreground capitalize">
+    <p className="rounded-2xl border border-border/60 bg-muted/30 p-4 text-left text-sm text-muted-foreground capitalize lg:text-right">
       {booking.status.replaceAll("_", " ")}
     </p>
   );
@@ -188,14 +193,14 @@ export default async function RequestsPage({
               <article
                 key={booking.id}
                 className={cn(
-                  "rounded-2xl border border-border/70 bg-background p-4 shadow-sm",
+                  "rounded-3xl border border-border/70 bg-background p-4 shadow-sm",
                   urgent && "border-l-4 border-l-red-600",
                 )}
               >
-                <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-                  <div className="flex min-w-0 flex-1 items-start gap-3">
+                <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_280px] lg:items-start">
+                  <div className="flex min-w-0 items-start gap-4">
                     <Link
-                      className="block size-[60px] shrink-0 overflow-hidden rounded-xl bg-muted"
+                      className="block size-[72px] shrink-0 overflow-hidden rounded-2xl bg-muted"
                       href={`/listings/${booking.listing.id}`}
                     >
                       {booking.listing.images[0] ? (
@@ -204,32 +209,58 @@ export default async function RequestsPage({
                       ) : null}
                     </Link>
 
-                    <div className="min-w-0 flex-1 space-y-2">
-                      <p className="line-clamp-1 font-semibold">{booking.listing.title}</p>
-                      <div className="flex flex-wrap items-center gap-2 text-sm">
-                        <Avatar size="sm">
-                          <AvatarImage alt={renterName} src={booking.renter.avatar_url ?? undefined} />
-                          <AvatarFallback>{getInitials(renterName)}</AvatarFallback>
-                        </Avatar>
-                        <span className="font-medium">{renterName}</span>
-                        <span className="inline-flex items-center gap-1 text-muted-foreground">
-                          <Star className="size-3.5 fill-current text-amber-500" />
-                          {booking.renter.rating_as_renter.toFixed(1)}
-                        </span>
+                    <div className="min-w-0 flex-1 space-y-3">
+                      <div className="space-y-2">
+                        <p className="line-clamp-1 text-base font-semibold text-foreground">
+                          {booking.listing.title}
+                        </p>
+                        <div className="flex flex-wrap items-center gap-2 text-sm">
+                          <Avatar size="sm">
+                            <AvatarImage alt={renterName} src={booking.renter.avatar_url ?? undefined} />
+                            <AvatarFallback>{getInitials(renterName)}</AvatarFallback>
+                          </Avatar>
+                          <span className="font-medium">{renterName}</span>
+                          <span className="inline-flex items-center gap-1 text-muted-foreground">
+                            <Star className="size-3.5 fill-current text-amber-500" />
+                            {booking.renter.rating_as_renter.toFixed(1)}
+                          </span>
+                        </div>
                       </div>
 
-                      <p className="text-sm text-muted-foreground">
-                        {formatDuration(booking)} x {booking.quantity} item{booking.quantity === 1 ? "" : "s"}
-                      </p>
-                      <p className="font-semibold text-brand-navy">Paid: {formatCurrency(booking.total_price)}</p>
-                      <BookingStatusBadge size="sm" status={booking.status} />
+                      <div className="flex flex-wrap items-center gap-x-4 gap-y-2 text-sm text-muted-foreground">
+                        <span>
+                          {formatDuration(booking)} x {booking.quantity} item{booking.quantity === 1 ? "" : "s"}
+                        </span>
+                        <span className="font-semibold text-brand-navy">
+                          Paid: {formatCurrency(booking.total_price)}
+                        </span>
+                        <BookingStatusBadge size="sm" status={booking.status} />
+                      </div>
 
                       {urgent ? (
                         <p className="inline-flex items-center gap-2 text-sm font-medium text-red-700">
                           <AlertTriangle className="size-4" />
-                          {getConfirmationCountdown(booking.lister_confirmation_deadline)}
+                          Priority confirmation required
                         </p>
                       ) : null}
+
+                      <div className="flex flex-wrap items-center gap-3">
+                        <Link
+                          className="inline-flex text-sm font-medium text-brand-navy hover:underline"
+                          href={`/lister/bookings/${booking.id}`}
+                        >
+                          View details
+                        </Link>
+
+                        {booking.status === "confirmed" && booking.lister_confirmation_deadline ? (
+                          <p className="text-xs text-muted-foreground">
+                            Confirmed{" "}
+                            {formatDistanceToNowStrict(new Date(booking.lister_confirmation_deadline), {
+                              addSuffix: true,
+                            })}
+                          </p>
+                        ) : null}
+                      </div>
 
                       {booking.status === "active" &&
                       booking.rental_ends_at &&
@@ -240,23 +271,10 @@ export default async function RequestsPage({
                           variant="compact"
                         />
                       ) : null}
-
-                      {booking.status === "confirmed" && booking.lister_confirmation_deadline ? (
-                        <p className="text-xs text-muted-foreground">
-                          Confirmed {formatDistanceToNowStrict(new Date(booking.lister_confirmation_deadline), { addSuffix: true })}
-                        </p>
-                      ) : null}
-
-                      <Link
-                        className="inline-flex text-sm font-medium text-brand-navy hover:underline"
-                        href={`/lister/bookings/${booking.id}`}
-                      >
-                        View Details {"->"}
-                      </Link>
                     </div>
                   </div>
 
-                  <div className="w-full lg:w-[280px]">
+                  <div className="w-full">
                     <RequestActions booking={booking} />
                   </div>
                 </div>
