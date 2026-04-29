@@ -1,8 +1,8 @@
 "use server";
 
-import { getAppUrl } from "@/lib/env";
-import { createPaymentRequest, getPaymentStatus } from "@/lib/hitpay";
+import { getPaymentStatus } from "@/lib/hitpay";
 import { createClient } from "@/lib/supabase/server";
+import { createPaymentForBooking as createBookingPaymentRequest } from "@/actions/payments";
 
 interface PaymentBookingRecord {
   id: string;
@@ -31,107 +31,15 @@ interface PaymentBookingRecord {
   hitpay_payment_status?: string | null;
 }
 
-function extractPaymentId(payments: Record<string, unknown>[]) {
-  const firstPayment = payments[0];
-
-  if (!firstPayment) {
-    return undefined;
-  }
-
-  if (typeof firstPayment.id === "string" && firstPayment.id.length > 0) {
-    return firstPayment.id;
-  }
-
-  if (
-    typeof firstPayment.payment_id === "string" &&
-    firstPayment.payment_id.length > 0
-  ) {
-    return firstPayment.payment_id;
-  }
-
-  return undefined;
-}
-
 export async function createPaymentForBooking(
   bookingId: string,
 ): Promise<{ paymentUrl: string } | { error: string }> {
-  try {
-    const supabase = await createClient();
-    const { data: booking, error } = await supabase
-      .from("bookings")
-      .select(
-        `
-          id,
-          total_price,
-          hitpay_payment_request_id,
-          hitpay_payment_url,
-          hitpay_payment_status,
-          renter:profiles!bookings_renter_id_fkey(email, display_name, full_name),
-          listing:listings!bookings_listing_id_fkey(title)
-        `,
-      )
-      .eq("id", bookingId)
-      .maybeSingle<PaymentBookingRecord>();
-
-    if (error || !booking) {
-      return { error: "Booking not found" };
-    }
-
-    const renter = Array.isArray(booking.renter)
-      ? booking.renter[0]
-      : booking.renter;
-    const listing = Array.isArray(booking.listing)
-      ? booking.listing[0]
-      : booking.listing;
-
-    if (!renter?.email || !listing?.title) {
-      return { error: "Booking is missing renter or listing details" };
-    }
-
-    if (
-      booking.hitpay_payment_url &&
-      booking.hitpay_payment_status !== "completed"
-    ) {
-      return { paymentUrl: booking.hitpay_payment_url };
-    }
-
-    const appUrl = getAppUrl();
-    const payment = await createPaymentRequest({
-      amount: Number(booking.total_price),
-      currency: "SGD",
-      email: renter.email,
-      name: renter.display_name || renter.full_name || renter.email,
-      purpose: `Rental: ${listing.title}`.slice(0, 100),
-      reference_number: bookingId,
-      redirect_url: `${appUrl}/payment/success?booking=${bookingId}`,
-      webhook: `${appUrl}/api/webhooks/hitpay`,
-    });
-
-    const { error: updateError } = await supabase
-      .from("bookings")
-      .update({
-        hitpay_payment_request_id: payment.id,
-        hitpay_payment_url: payment.url,
-        hitpay_payment_status: payment.status,
-      })
-      .eq("id", bookingId);
-
-    if (updateError) {
-      console.error("createPaymentForBooking booking update failed:", updateError);
-      return { error: "Could not create the payment link. Please try again." };
-    }
-
-    return { paymentUrl: payment.url };
-  } catch (error) {
-    console.error("createPaymentForBooking failed:", error);
-    const message =
-      error instanceof Error && error.message.trim().length > 0
-        ? error.message
-        : "Something went wrong. Please try again.";
-    return {
-      error: message,
-    };
+  const result = await createBookingPaymentRequest(bookingId);
+  if ("error" in result) {
+    return result;
   }
+
+  return { paymentUrl: result.paymentUrl };
 }
 
 export async function checkPaymentStatus(
@@ -176,25 +84,7 @@ export async function checkPaymentStatus(
 
     console.log("[PAYMENT_STATUS] HitPay API status:", payment.status);
     console.log("[PAYMENT_STATUS] Payment payments array:", payment.payments);
-
-    // Check for various completed status values
-    const completedStatuses = ["completed", "succeeded", "paid", "success"];
-    const isCompleted = completedStatuses.includes(payment.status.toLowerCase());
-    
-    if (isCompleted) {
-      console.log("[PAYMENT_STATUS] Payment is completed, confirming booking");
-      const { confirmPayment } = await import("@/actions/bookings");
-      const result = await confirmPayment(
-        booking.id,
-        extractPaymentId(payment.payments),
-      );
-      if (result.error) {
-        console.log("[PAYMENT_STATUS] Error confirming payment:", result.error);
-        return { error: result.error };
-      }
-    } else {
-      console.log("[PAYMENT_STATUS] Payment not yet completed, status is:", payment.status);
-    }
+    console.log("[PAYMENT_STATUS] Returning read-only status. Booking updates must come from webhook processing.");
 
     return { status: payment.status };
   } catch (error) {

@@ -20,8 +20,6 @@ import VerificationApprovedEmail from "@/emails/verification-approved";
 import VerificationRejectedEmail from "@/emails/verification-rejected";
 import WelcomeEmail from "@/emails/welcome";
 
-const resend = new Resend(process.env.RESEND_API_KEY);
-
 const FROM = `${process.env.RESEND_FROM_NAME ?? "RentHub"} <${process.env.RESEND_FROM_EMAIL ?? "noreply@renthub.com"}>`;
 
 const APP_URL = process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3000";
@@ -30,6 +28,15 @@ interface SendEmailParams {
   to: string;
   subject: string;
   react: ReactElement;
+}
+
+function getResendClient() {
+  const apiKey = process.env.RESEND_API_KEY;
+  if (!apiKey) {
+    return null;
+  }
+
+  return new Resend(apiKey);
 }
 
 async function sendEmail({
@@ -43,6 +50,12 @@ async function sendEmail({
   }
 
   try {
+    const resend = getResendClient();
+    if (!resend) {
+      console.warn("RESEND_API_KEY not configured - skipping email:", subject);
+      return;
+    }
+
     const html = await render(react);
 
     const { error } = await resend.emails.send({

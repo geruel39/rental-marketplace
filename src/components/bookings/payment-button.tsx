@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { useTransition } from "react";
 import { toast } from "sonner";
 
-import { createPaymentForBooking } from "@/actions/hitpay";
+import { createPaymentForBooking } from "@/actions/payments";
 import { Button } from "@/components/ui/button";
 
 interface PaymentButtonProps {

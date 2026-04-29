@@ -891,7 +891,12 @@ export async function createAndPayBooking(
     });
 
     const paymentResult = await createPaymentForBooking(createdBooking.id);
-    if ("error" in paymentResult) {
+    if (!paymentResult || "error" in paymentResult || !paymentResult.paymentUrl) {
+      const failureReason =
+        paymentResult && "error" in paymentResult
+          ? paymentResult.error
+          : "Payment creation failed";
+
       await releaseStock(
         auth.supabase,
         {
@@ -909,11 +914,11 @@ export async function createAndPayBooking(
         bookingId: createdBooking.id,
         status: "cancelled_by_renter",
         actorId: auth.user.id,
-        reason: paymentResult.error,
+        reason: failureReason,
         stockRestored: true,
       });
 
-      return { error: paymentResult.error };
+      return { error: "Payment setup failed. Please try again." };
     }
 
     const renterName = getActorDisplayName(auth.profile, auth.user.email);
@@ -960,6 +965,11 @@ export async function listerConfirmBooking(
     const booking = await getBookingRecord(auth.supabase, bookingId);
     if (booking.lister_id !== auth.user.id) {
       return { error: "Only the lister can confirm this booking." };
+    }
+    if (!booking.paid_at || booking.hitpay_payment_status !== "completed") {
+      return {
+        error: "Cannot confirm - payment has not been received yet.",
+      };
     }
     if (booking.status !== "lister_confirmation") {
       return { error: "Only bookings awaiting lister confirmation can be confirmed." };
@@ -1126,31 +1136,12 @@ export async function confirmPayment(
   bookingId: string,
   paymentId?: string,
 ): Promise<ActionResponse> {
-  try {
-    const auth = await requireAuthenticatedUser();
-    if (!auth) {
-      const admin = createAdminClient();
-      return await confirmPaymentInternal({
-        supabase: admin,
-        bookingId,
-        paymentId,
-      });
-    }
-
-    const booking = await getBookingRecord(auth.supabase, bookingId);
-    if (booking.renter_id !== auth.user.id && booking.lister_id !== auth.user.id) {
-      return { error: "You are not allowed to confirm this payment." };
-    }
-
-    return await confirmPaymentInternal({
-      supabase: auth.supabase,
-      bookingId,
-      paymentId,
-    });
-  } catch (error) {
-    console.error("confirmPayment failed:", error);
-    return { error: "Something went wrong. Please try again." };
-  }
+  void bookingId;
+  void paymentId;
+  return {
+    error:
+      "Direct payment confirmation is disabled. Wait for the HitPay webhook to confirm payment.",
+  };
 }
 
 export async function confirmPaymentFromWebhook(
@@ -1193,6 +1184,9 @@ export async function markReceivedByRenter(
     const booking = await getBookingRecord(auth.supabase, bookingId);
     if (booking.lister_id !== auth.user.id) {
       return { error: "Only the lister can mark item handover." };
+    }
+    if (!booking.paid_at || booking.hitpay_payment_status !== "completed") {
+      return { error: "Cannot mark handover - booking is not paid." };
     }
     if (booking.status !== "confirmed") {
       return { error: "Only confirmed bookings can start rental period." };

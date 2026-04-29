@@ -42,7 +42,12 @@ type MaybeArray<T> = T | T[] | null;
 type TransactionStatus = Transaction["status"];
 
 type BookingWithRelations = Booking & {
-  listing: { id: string; title: string; cancellation_policy?: string | null };
+  listing: {
+    id: string;
+    title: string;
+    cancellation_policy?: string | null;
+    instant_book: boolean;
+  };
   renter: Profile;
   lister: Profile;
 };
@@ -316,7 +321,7 @@ async function getBookingWithRelations(
     .select(
       `
         *,
-        listing:listings!bookings_listing_id_fkey(id, title, cancellation_policy),
+        listing:listings!bookings_listing_id_fkey(id, title, cancellation_policy, instant_book),
         renter:profiles!bookings_renter_id_fkey(*),
         lister:profiles!bookings_lister_id_fkey(*)
       `,
@@ -1177,7 +1182,7 @@ export async function handlePaymentConfirmed(params: {
 
     const booking = await getBookingWithRelations(admin, params.bookingId);
 
-    if (booking.status === "confirmed") {
+    if (booking.status === "confirmed" && booking.paid_at) {
       return;
     }
 
@@ -1188,6 +1193,23 @@ export async function handlePaymentConfirmed(params: {
     ) {
       console.log("[PAYMENTS] Ignoring payment confirmation for status:", booking.status);
       return;
+    }
+
+    const now = new Date().toISOString();
+    const nextStatus = booking.listing.instant_book ? "confirmed" : "lister_confirmation";
+    const bookingUpdate: Partial<Booking> = {
+      status: nextStatus,
+      paid_at: now,
+      hitpay_payment_id: params.hitpayPaymentId,
+      hitpay_payment_request_id: params.hitpayPaymentRequestId,
+      hitpay_payment_status: "completed",
+      stock_deducted: true,
+      last_webhook_at: now,
+    };
+
+    if (booking.listing.instant_book) {
+      bookingUpdate.lister_confirmed_at = now;
+      bookingUpdate.lister_confirmed_by = booking.lister_id;
     }
 
     const transactionId = await createTransactionRecord({
@@ -1210,18 +1232,9 @@ export async function handlePaymentConfirmed(params: {
       },
     });
 
-    const now = new Date().toISOString();
     const { error: bookingError } = await admin
       .from("bookings")
-      .update({
-        status: booking.status === "lister_confirmation" ? "lister_confirmation" : booking.status,
-        paid_at: now,
-        hitpay_payment_id: params.hitpayPaymentId,
-        hitpay_payment_request_id: params.hitpayPaymentRequestId,
-        hitpay_payment_status: "completed",
-        stock_deducted: true,
-        last_webhook_at: now,
-      })
+      .update(bookingUpdate)
       .eq("id", booking.id)
       .in("status", ["lister_confirmation", "cancelled_by_renter", "cancelled_by_lister"]);
 
@@ -1240,16 +1253,19 @@ export async function handlePaymentConfirmed(params: {
 
     await addBookingTimeline({
       bookingId: booking.id,
-      status: "lister_confirmation",
-      previousStatus: "lister_confirmation",
+      status: nextStatus,
+      previousStatus: booking.status,
       actorRole: "system",
-      title: "Payment confirmed",
-      description: `Payment of ${formatMoney(params.amount, params.currency)} confirmed via HitPay. Waiting for the lister to confirm availability within 24 hours.`,
+      title: booking.listing.instant_book ? "Payment confirmed and booking auto-confirmed" : "Payment confirmed",
+      description: booking.listing.instant_book
+        ? `Payment of ${formatMoney(params.amount, params.currency)} confirmed via HitPay. Instant Book is enabled, so the booking was auto-confirmed.`
+        : `Payment of ${formatMoney(params.amount, params.currency)} confirmed via HitPay. Waiting for the lister to confirm availability within 24 hours.`,
       metadata: {
         amount: params.amount,
         currency: params.currency,
         hitpay_payment_id: params.hitpayPaymentId,
         hitpay_payment_request_id: params.hitpayPaymentRequestId,
+        instant_book: booking.listing.instant_book,
       },
     });
 

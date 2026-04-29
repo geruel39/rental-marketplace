@@ -4,7 +4,6 @@ import Link from "next/link";
 import { startTransition, useActionState, useEffect, useMemo } from "react";
 import { useForm } from "react-hook-form";
 import { Loader2, Minus, Plus } from "lucide-react";
-import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 
 import { createAndPayBooking } from "@/actions/bookings";
@@ -72,7 +71,6 @@ function formatDurationMeaning(units: number, period: PricingPeriod) {
 }
 
 export function BookingWidget({ listing, isOwner, isLoggedIn }: BookingWidgetProps) {
-  const router = useRouter();
   const [state, formAction, isPending] = useActionState<BookingActionState, FormData>(
     createAndPayBooking,
     initialState,
@@ -111,14 +109,12 @@ export function BookingWidget({ listing, isOwner, isLoggedIn }: BookingWidgetPro
 
     if (state.paymentUrl) {
       toast.success("Booking created. Redirecting to payment...");
-      router.push(state.paymentUrl);
+      window.location.assign(state.paymentUrl);
       return;
     }
 
-    toast.success("Booking created.");
-    router.push("/renter/rentals");
-    router.refresh();
-  }, [router, state?.bookingId, state?.paymentUrl]);
+    toast.error("Payment URL not received. Please try again.");
+  }, [state?.bookingId, state?.paymentUrl]);
 
   useEffect(() => {
     if (!state?.error) {

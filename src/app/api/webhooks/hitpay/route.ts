@@ -24,6 +24,8 @@ type BookingSnapshot = {
   lister_id: string;
   listing_id: string;
   status: string;
+  hitpay_payment_request_id: string | null;
+  instant_book: boolean;
 };
 
 function roundMoney(value: number) {
@@ -211,17 +213,35 @@ async function fetchBooking(bookingId: string) {
         renter_id,
         lister_id,
         listing_id,
-        status
+        status,
+        hitpay_payment_request_id,
+        listing:listings!bookings_listing_id_fkey(instant_book)
       `,
     )
     .eq("id", bookingId)
-    .maybeSingle<BookingSnapshot>();
+    .maybeSingle<
+      Omit<BookingSnapshot, "instant_book"> & {
+        listing:
+          | { instant_book: boolean }
+          | Array<{ instant_book: boolean }>
+          | null;
+      }
+    >();
 
   if (error) {
     throw new Error(error.message);
   }
 
-  return data ?? null;
+  if (!data) {
+    return null;
+  }
+
+  const listing = Array.isArray(data.listing) ? data.listing[0] : data.listing;
+
+  return {
+    ...data,
+    instant_book: listing?.instant_book ?? false,
+  };
 }
 
 async function markWebhookReceipt(params: {
@@ -346,10 +366,21 @@ export async function POST(request: NextRequest) {
   const receivedAt = new Date().toISOString();
 
   try {
+    console.log("=== HITPAY WEBHOOK RECEIVED ===");
+    console.log("Timestamp:", receivedAt);
+
     const rawBody = await request.text();
+    console.log("Raw body:", rawBody);
     const payload = parseWebhookBody(rawBody);
 
     const { hmac, ...payloadWithoutHmac } = payload;
+    console.log("Parsed payload:", {
+      payment_request_id: payload.payment_request_id ?? null,
+      payment_id: payload.payment_id ?? null,
+      status: payload.status ?? null,
+      reference_number: payload.reference_number ?? null,
+      amount: payload.amount ?? null,
+    });
 
     console.log("[HITPAY_WEBHOOK] Webhook received:", {
       payment_request_id: payload.payment_request_id ?? null,
@@ -364,7 +395,10 @@ export async function POST(request: NextRequest) {
     }
 
     if (!verifyHitPaySignature(payloadWithoutHmac, hmac)) {
-      console.error("[HITPAY_WEBHOOK] HMAC verification failed");
+      console.error("[HITPAY_WEBHOOK] HMAC verification failed", {
+        received_hmac: hmac,
+        payload_keys: Object.keys(payloadWithoutHmac).sort(),
+      });
       return NextResponse.json({ error: "Invalid signature" }, { status: 401 });
     }
 
@@ -396,7 +430,16 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Invalid amount" }, { status: 400 });
     }
 
+    console.log("Looking for booking:", bookingId);
     const booking = await fetchBooking(bookingId);
+    console.log("Found booking:", booking
+      ? {
+          id: booking.id,
+          status: booking.status,
+          hitpay_payment_request_id: booking.hitpay_payment_request_id,
+          instant_book: booking.instant_book,
+        }
+      : null);
     if (!booking) {
       console.error("[HITPAY_WEBHOOK] Booking not found:", bookingId);
       await notifyAdmins({
@@ -491,8 +534,9 @@ export async function POST(request: NextRequest) {
 
       const bookingAfter = bookingResult.data;
       const transactionAfter = transactionResult.data;
+      const expectedStatus = booking.instant_book ? "confirmed" : "lister_confirmation";
       const completedSuccessfully =
-        bookingAfter?.status === "confirmed" &&
+        bookingAfter?.status === expectedStatus &&
         bookingAfter.hitpay_payment_status === "completed" &&
         Boolean(bookingAfter.paid_at) &&
         transactionAfter?.status === "completed";
