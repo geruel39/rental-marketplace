@@ -117,7 +117,7 @@ function RentalActions({ booking }: { booking: BookingWithDetails }) {
   }
 
   return (
-    <p className="inline-flex min-h-11 items-center rounded-2xl border border-border/60 bg-muted/30 px-4 py-2.5 text-left text-sm text-muted-foreground capitalize lg:justify-end lg:text-right">
+    <p className="inline-flex min-h-11 items-center rounded-2xl border border-border/60 bg-muted/30 px-4 py-2.5 text-left text-sm text-muted-foreground capitalize lg:text-right">
       {booking.status.replaceAll("_", " ")}
     </p>
   );
@@ -253,7 +253,7 @@ export default async function MyRentalsPage({
                     </div>
                   </div>
 
-                  <div className="w-full lg:justify-self-end">
+                  <div className="w-full lg:w-[280px] lg:justify-self-end">
                     <RentalActions booking={booking} />
                   </div>
                 </div>
