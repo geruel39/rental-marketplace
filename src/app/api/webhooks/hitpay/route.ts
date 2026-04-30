@@ -3,6 +3,7 @@ import crypto from "node:crypto";
 import { NextRequest, NextResponse } from "next/server";
 
 import { handleCompletedCheckoutPayment, handlePaymentConfirmed } from "@/actions/payments";
+import { getHitPayApiUrl } from "@/lib/env";
 import { getAdminIds, sendNotification } from "@/lib/notifications";
 import { createAdminClient } from "@/lib/supabase/admin";
 
@@ -225,6 +226,131 @@ function extractWebhookFieldsFromJson(payload: HitPayJsonWebhookPayload) {
     paymentRequestId,
     status,
   };
+}
+
+type VerifiedPaymentRequest = {
+  amount: number | null;
+  currency: string | null;
+  paymentId: string | null;
+  paymentRequestId: string;
+  referenceNumber: string | null;
+  status: string;
+};
+
+async function fetchVerifiedPaymentRequest(
+  paymentRequestId: string,
+): Promise<VerifiedPaymentRequest | null> {
+  const apiKey = process.env.HITPAY_API_KEY;
+  if (!apiKey) {
+    console.error("[HITPAY_WEBHOOK] HITPAY_API_KEY not configured");
+    return null;
+  }
+
+  const response = await fetch(
+    `${getHitPayApiUrl()}/payment-requests/${paymentRequestId}`,
+    {
+      method: "GET",
+      headers: {
+        "X-BUSINESS-API-KEY": apiKey,
+        "X-Requested-With": "XMLHttpRequest",
+      },
+      cache: "no-store",
+    },
+  );
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    console.error("[HITPAY_WEBHOOK] Failed to verify payment request via API:", {
+      paymentRequestId,
+      status: response.status,
+      body: errorText,
+    });
+    return null;
+  }
+
+  const data = (await response.json()) as Record<string, unknown>;
+  const payments = Array.isArray(data.payments)
+    ? (data.payments as Array<Record<string, unknown>>)
+    : [];
+  const completedPayment =
+    payments.find((payment) => {
+      const paymentStatus =
+        typeof payment.status === "string"
+          ? payment.status
+          : typeof payment.payment_status === "string"
+            ? payment.payment_status
+            : null;
+
+      return normalizeWebhookStatus(paymentStatus) === "completed";
+    }) ?? payments[0] ?? null;
+  const amountRaw =
+    typeof data.amount === "number"
+      ? data.amount
+      : typeof data.amount === "string"
+        ? Number(data.amount)
+        : null;
+  const referenceNumber =
+    typeof data.reference_number === "string" ? data.reference_number : null;
+  const currency = typeof data.currency === "string" ? data.currency : null;
+  const status = normalizeWebhookStatus(
+    typeof data.current_status === "string"
+      ? data.current_status
+      : typeof data.status === "string"
+        ? data.status
+        : null,
+  );
+  const paymentId =
+    completedPayment && typeof completedPayment.id === "string"
+      ? completedPayment.id
+      : null;
+
+  return {
+    amount:
+      typeof amountRaw === "number" && Number.isFinite(amountRaw)
+        ? roundMoney(amountRaw)
+        : null,
+    currency,
+    paymentId,
+    paymentRequestId,
+    referenceNumber,
+    status,
+  };
+}
+
+async function verifyJsonWebhookViaApi(params: {
+  amountRaw: string;
+  bookingId: string;
+  currency: string;
+  paymentId: string;
+  paymentRequestId: string;
+}) {
+  const verified = await fetchVerifiedPaymentRequest(params.paymentRequestId);
+  if (!verified) {
+    return false;
+  }
+
+  const normalizedCurrency = params.currency.trim().toLowerCase();
+  const parsedAmount = roundMoney(Number(params.amountRaw));
+  const amountMatches =
+    Number.isFinite(parsedAmount) &&
+    verified.amount !== null &&
+    verified.amount === parsedAmount;
+  const currencyMatches =
+    !normalizedCurrency ||
+    !verified.currency ||
+    verified.currency.trim().toLowerCase() === normalizedCurrency;
+  const referenceMatches =
+    verified.referenceNumber?.trim() === params.bookingId.trim();
+  const paymentMatches =
+    !verified.paymentId || !params.paymentId || verified.paymentId === params.paymentId;
+
+  return (
+    verified.status === "completed" &&
+    amountMatches &&
+    currencyMatches &&
+    referenceMatches &&
+    paymentMatches
+  );
 }
 
 function getRequiredField(
@@ -552,18 +678,51 @@ export async function POST(request: NextRequest) {
       }
 
       if (!verifyHitPayJsonSignature(rawBody, signatureHeader)) {
-        console.error("[HITPAY_WEBHOOK] JSON signature verification failed");
-        return NextResponse.json({ error: "Invalid signature" }, { status: 401 });
+        ({
+          amount: amountRaw,
+          bookingId,
+          currency,
+          paymentId,
+          paymentRequestId,
+          status,
+        } = extractWebhookFieldsFromJson(payload));
+
+        const apiVerified =
+          bookingId &&
+          paymentRequestId &&
+          status === "completed" &&
+          (await verifyJsonWebhookViaApi({
+            amountRaw,
+            bookingId,
+            currency,
+            paymentId,
+            paymentRequestId,
+          }));
+
+        if (!apiVerified) {
+          console.error("[HITPAY_WEBHOOK] JSON signature verification failed");
+          return NextResponse.json({ error: "Invalid signature" }, { status: 401 });
+        }
+
+        console.warn(
+          "[HITPAY_WEBHOOK] JSON signature failed but HitPay API verification succeeded",
+          {
+            bookingId,
+            paymentRequestId,
+          },
+        );
       }
 
-      ({
-        amount: amountRaw,
-        bookingId,
-        currency,
-        paymentId,
-        paymentRequestId,
-        status,
-      } = extractWebhookFieldsFromJson(payload));
+      if (!bookingId || !paymentRequestId || !status) {
+        ({
+          amount: amountRaw,
+          bookingId,
+          currency,
+          paymentId,
+          paymentRequestId,
+          status,
+        } = extractWebhookFieldsFromJson(payload));
+      }
     } else {
       const payload = parseWebhookBody(rawBody);
       const { hmac, ...payloadWithoutHmac } = payload;
