@@ -2,7 +2,7 @@ import Link from "next/link";
 import { CheckCircle2, Loader2, TriangleAlert } from "lucide-react";
 
 import { getBookingDetails } from "@/actions/bookings";
-import { getFeeConfig } from "@/actions/payments";
+import { getCheckoutStatusForSuccessPage, getFeeConfig } from "@/actions/payments";
 import { PaymentBreakdownCard } from "@/components/payments/payment-breakdown-card";
 import { PaymentStatusPoller } from "@/components/payments/payment-status-poller";
 import { Button } from "@/components/ui/button";
@@ -37,9 +37,12 @@ export default async function PaymentSuccessPage({
 }: PaymentSuccessPageProps) {
   const resolvedSearchParams = await searchParams;
   const bookingId = getSingleValue(resolvedSearchParams.booking);
-  const booking = bookingId ? await getBookingDetails(bookingId) : null;
+  const checkoutId = getSingleValue(resolvedSearchParams.checkout);
+  const checkout = checkoutId ? await getCheckoutStatusForSuccessPage(checkoutId) : null;
+  const resolvedBookingId = bookingId ?? checkout?.bookingId ?? undefined;
+  const booking = resolvedBookingId ? await getBookingDetails(resolvedBookingId) : null;
 
-  if (!bookingId || !booking) {
+  if (!resolvedBookingId && !checkout) {
     return (
       <main className="mx-auto flex min-h-[70vh] max-w-3xl items-center px-4 py-12 sm:px-6 lg:px-8">
         <Card className="w-full border-border/70">
@@ -54,6 +57,33 @@ export default async function PaymentSuccessPage({
             <Button asChild>
               <Link href="/dashboard/my-rentals">Go to My Rentals</Link>
             </Button>
+          </CardContent>
+        </Card>
+      </main>
+    );
+  }
+
+  if (!booking) {
+    return (
+      <main className="mx-auto flex min-h-[70vh] max-w-5xl items-center px-4 py-12 sm:px-6 lg:px-8">
+        <PaymentStatusPoller
+          enabled
+          fallbackMessage="Payment is being verified. Your booking will appear once the webhook finishes creating it."
+        />
+        <Card className="w-full border-border/70">
+          <CardHeader className="text-center">
+            <Loader2 className="mx-auto size-12 animate-spin text-amber-500" />
+            <CardTitle className="text-2xl">Processing your payment...</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-6 text-center">
+            <p className="text-sm text-muted-foreground">
+              Your payment redirect was received. We are waiting for the payment webhook to finalize your booking.
+            </p>
+            <div className="flex justify-center">
+              <Button asChild variant="outline">
+                <Link href="/renter/rentals">Check My Rentals</Link>
+              </Button>
+            </div>
           </CardContent>
         </Card>
       </main>

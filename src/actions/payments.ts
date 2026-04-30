@@ -2,11 +2,13 @@
 
 import { revalidatePath } from "next/cache";
 import { headers } from "next/headers";
+import { addHours } from "date-fns";
 
 import { createNotification } from "@/actions/notifications";
 import { getAppUrl, getHitPayApiUrl } from "@/lib/env";
 import {
   notifyDisputeResolved,
+  notifyNewBookingRequest,
   notifyPaymentConfirmed,
   notifyPayoutCompleted,
   notifyPayoutFailed,
@@ -23,6 +25,7 @@ import type {
   DisputeResolution,
   DisputeResolutionType,
   FeeConfig,
+  Listing,
   PaginatedResponse,
   Payout,
   PayoutTrigger,
@@ -50,6 +53,33 @@ type BookingWithRelations = Booking & {
   };
   renter: Profile;
   lister: Profile;
+};
+
+type CheckoutBookingMetadata = {
+  flow_version: "post_payment_booking_v2";
+  listing_id: string;
+  listing_title: string;
+  listing_instant_book: boolean;
+  renter_id: string;
+  lister_id: string;
+  rental_units: number;
+  pricing_period: Booking["pricing_period"];
+  quantity: number;
+  unit_price: number;
+  subtotal: number;
+  service_fee_renter: number;
+  service_fee_lister: number;
+  deposit_amount: number;
+  total_price: number;
+  lister_payout: number;
+  start_date: string;
+  end_date: string;
+  message: string | null;
+};
+
+type CheckoutTransaction = Transaction & {
+  booking_id: string | null;
+  metadata: CheckoutBookingMetadata;
 };
 
 type PayoutWithRelations = Payout & {
@@ -125,6 +155,34 @@ function normalizeBoolConfig(value: number) {
 
 function getDisplayName(profile: Pick<Profile, "display_name" | "full_name" | "email">) {
   return profile.display_name || profile.full_name || profile.email;
+}
+
+function isCheckoutMetadata(value: unknown): value is CheckoutBookingMetadata {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+
+  const metadata = value as Record<string, unknown>;
+  return (
+    metadata.flow_version === "post_payment_booking_v2" &&
+    typeof metadata.listing_id === "string" &&
+    typeof metadata.renter_id === "string" &&
+    typeof metadata.lister_id === "string" &&
+    typeof metadata.listing_title === "string" &&
+    typeof metadata.rental_units === "number" &&
+    typeof metadata.pricing_period === "string" &&
+    typeof metadata.quantity === "number" &&
+    typeof metadata.unit_price === "number" &&
+    typeof metadata.subtotal === "number" &&
+    typeof metadata.service_fee_renter === "number" &&
+    typeof metadata.service_fee_lister === "number" &&
+    typeof metadata.deposit_amount === "number" &&
+    typeof metadata.total_price === "number" &&
+    typeof metadata.lister_payout === "number" &&
+    typeof metadata.start_date === "string" &&
+    typeof metadata.end_date === "string" &&
+    typeof metadata.listing_instant_book === "boolean"
+  );
 }
 
 function revalidatePaymentViews() {
@@ -347,6 +405,544 @@ async function getBookingWithRelations(
     renter,
     lister,
   };
+}
+
+async function getTransactionById(
+  transactionId: string,
+): Promise<Transaction | null> {
+  const admin = createAdminClient();
+  const { data, error } = await admin
+    .from("transactions")
+    .select("*")
+    .eq("id", transactionId)
+    .maybeSingle<Transaction>();
+
+  if (error) {
+    throw new Error(error.message);
+  }
+
+  return data ?? null;
+}
+
+async function checkCheckoutConflict(params: {
+  listingId: string;
+  renterId: string;
+  quantity: number;
+  rentalUnits: number;
+  pricingPeriod: Booking["pricing_period"];
+}) {
+  const admin = createAdminClient();
+  let result: unknown;
+
+  try {
+    result = await admin.rpc("check_booking_conflict", {
+      p_listing_id: params.listingId,
+      p_renter_id: params.renterId,
+      p_quantity: params.quantity,
+      p_rental_units: params.rentalUnits,
+      p_pricing_period: params.pricingPeriod,
+    }).then((response) => {
+      if (response.error) {
+        throw new Error(response.error.message);
+      }
+      return response.data;
+    });
+  } catch (primaryError) {
+    try {
+      result = await admin.rpc("check_booking_conflict", {
+        listing_id: params.listingId,
+        renter_id: params.renterId,
+        quantity: params.quantity,
+        rental_units: params.rentalUnits,
+        pricing_period: params.pricingPeriod,
+      }).then((response) => {
+        if (response.error) {
+          throw new Error(response.error.message);
+        }
+        return response.data;
+      });
+    } catch {
+      return { hasConflict: false, reason: null };
+    }
+  }
+
+  if (typeof result === "boolean") {
+    return {
+      hasConflict: result,
+      reason: result ? "This item is no longer available for those dates." : null,
+    };
+  }
+
+  const record = Array.isArray(result)
+    ? ((result[0] as Record<string, unknown> | undefined) ?? null)
+    : result && typeof result === "object"
+      ? (result as Record<string, unknown>)
+      : null;
+
+  return {
+    hasConflict: Boolean(record?.has_conflict ?? record?.conflict),
+    reason:
+      typeof record?.reason === "string"
+        ? record.reason
+        : typeof record?.message === "string"
+          ? record.message
+          : null,
+  };
+}
+
+async function reserveCheckoutStock(params: {
+  bookingId: string;
+  listingId: string;
+  quantity: number;
+  userId: string;
+}) {
+  const admin = createAdminClient();
+  const attempts = [
+    {
+      p_listing_id: params.listingId,
+      p_booking_id: params.bookingId,
+      p_quantity: params.quantity,
+      p_user_id: params.userId,
+    },
+    {
+      listing_id: params.listingId,
+      booking_id: params.bookingId,
+      quantity: params.quantity,
+      user_id: params.userId,
+    },
+  ];
+
+  for (const args of attempts) {
+    const { data, error } = await admin.rpc("reserve_stock", args);
+    if (!error) {
+      if (data === false) {
+        throw new Error("Not enough stock available to reserve this booking.");
+      }
+      return;
+    }
+  }
+
+  throw new Error("Failed to reserve stock for this booking.");
+}
+
+async function getCheckoutTransaction(
+  transactionId: string,
+): Promise<CheckoutTransaction | null> {
+  const transaction = await getTransactionById(transactionId);
+  if (!transaction || !isCheckoutMetadata(transaction.metadata)) {
+    return null;
+  }
+
+  return {
+    ...transaction,
+    booking_id: transaction.booking_id ?? null,
+    metadata: transaction.metadata,
+  } as CheckoutTransaction;
+}
+
+async function materializeBookingFromCheckout(params: {
+  checkout: CheckoutTransaction;
+  hitpayPaymentId: string;
+  hitpayPaymentRequestId: string;
+  amount: number;
+  currency: string;
+}) {
+  const admin = createAdminClient();
+  const metadata = params.checkout.metadata;
+  const existingBookingId = params.checkout.booking_id;
+  if (existingBookingId) {
+    return existingBookingId;
+  }
+
+  const listingResult = await admin
+    .from("listings")
+    .select("id, title, instant_book, status")
+    .eq("id", metadata.listing_id)
+    .maybeSingle<Pick<Listing, "id" | "title" | "instant_book" | "status">>();
+
+  if (listingResult.error || !listingResult.data) {
+    throw new Error("Listing not found for paid checkout.");
+  }
+
+  const listing = listingResult.data;
+  if (listing.status !== "active") {
+    throw new Error("Listing is no longer active.");
+  }
+
+  const conflict = await checkCheckoutConflict({
+    listingId: metadata.listing_id,
+    renterId: metadata.renter_id,
+    quantity: metadata.quantity,
+    rentalUnits: metadata.rental_units,
+    pricingPeriod: metadata.pricing_period,
+  });
+  if (conflict.hasConflict) {
+    throw new Error(conflict.reason ?? "This item is no longer available for those dates.");
+  }
+
+  const now = new Date().toISOString();
+  const listerDeadline = addHours(new Date(), 24).toISOString();
+  const nextStatus = listing.instant_book ? "confirmed" : "lister_confirmation";
+
+  const { data: insertedBooking, error: insertError } = await admin
+    .from("bookings")
+    .insert({
+      listing_id: metadata.listing_id,
+      renter_id: metadata.renter_id,
+      lister_id: metadata.lister_id,
+      start_date: metadata.start_date,
+      end_date: metadata.end_date,
+      rental_units: metadata.rental_units,
+      pricing_period: metadata.pricing_period,
+      unit_price: metadata.unit_price,
+      num_units: metadata.rental_units,
+      quantity: metadata.quantity,
+      subtotal: metadata.subtotal,
+      service_fee_renter: metadata.service_fee_renter,
+      service_fee_lister: metadata.service_fee_lister,
+      deposit_amount: metadata.deposit_amount,
+      delivery_fee: 0,
+      total_price: metadata.total_price,
+      lister_payout: metadata.lister_payout,
+      status: nextStatus,
+      lister_confirmation_deadline: listerDeadline,
+      paid_at: now,
+      hitpay_payment_id: params.hitpayPaymentId,
+      hitpay_payment_request_id: params.hitpayPaymentRequestId,
+      hitpay_payment_status: "completed",
+      hitpay_fee: params.checkout.hitpay_fee,
+      net_collected: params.amount,
+      stock_deducted: true,
+      stock_reserved: true,
+      stock_reserved_at: now,
+      stock_restored: false,
+      handover_proof_urls: [],
+      return_proof_urls: [],
+      message: metadata.message,
+      last_webhook_at: now,
+      ...(listing.instant_book
+        ? {
+            lister_confirmed_at: now,
+            lister_confirmed_by: metadata.lister_id,
+          }
+        : {}),
+    })
+    .select("id")
+    .maybeSingle<{ id: string }>();
+
+  if (insertError || !insertedBooking?.id) {
+    throw new Error(insertError?.message ?? "Could not create booking after payment.");
+  }
+
+  try {
+    await reserveCheckoutStock({
+      bookingId: insertedBooking.id,
+      listingId: metadata.listing_id,
+      quantity: metadata.quantity,
+      userId: metadata.renter_id,
+    });
+  } catch (error) {
+    await admin.from("bookings").delete().eq("id", insertedBooking.id);
+    throw error;
+  }
+
+  await updateTransaction(params.checkout.id, {
+    booking_id: insertedBooking.id,
+    hitpay_payment_request_id: params.hitpayPaymentRequestId,
+    hitpay_payment_id: params.hitpayPaymentId,
+    status: "completed",
+    processed_at: now,
+  });
+
+  await addBookingTimeline({
+    bookingId: insertedBooking.id,
+    status: nextStatus,
+    actorRole: "system",
+    title: listing.instant_book ? "Payment confirmed and booking auto-confirmed" : "Payment confirmed",
+    description: listing.instant_book
+      ? `Payment of ${formatMoney(params.amount, params.currency)} confirmed via HitPay. Instant Book is enabled, so the booking was auto-confirmed.`
+      : `Payment of ${formatMoney(params.amount, params.currency)} confirmed via HitPay. Waiting for the lister to confirm availability within 24 hours.`,
+    metadata: {
+      amount: params.amount,
+      currency: params.currency,
+      hitpay_payment_id: params.hitpayPaymentId,
+      hitpay_payment_request_id: params.hitpayPaymentRequestId,
+      instant_book: listing.instant_book,
+    },
+  });
+
+  if (!listing.instant_book) {
+    await createNotification({
+      userId: metadata.lister_id,
+      type: "booking_request",
+      title: "New paid booking requires confirmation",
+      body: `${metadata.listing_title} has been paid for and is waiting for your confirmation.`,
+      listingId: metadata.listing_id,
+      bookingId: insertedBooking.id,
+      fromUserId: metadata.renter_id,
+      actionUrl: `/dashboard/bookings/${insertedBooking.id}`,
+    });
+  }
+
+  return insertedBooking.id;
+}
+
+export async function createCheckoutPayment(params: {
+  listingId: string;
+  listingTitle: string;
+  instantBook: boolean;
+  renterId: string;
+  listerId: string;
+  renter: Pick<Profile, "email" | "display_name" | "full_name">;
+  rentalUnits: number;
+  pricingPeriod: Booking["pricing_period"];
+  quantity: number;
+  unitPrice: number;
+  subtotal: number;
+  serviceFeeRenter: number;
+  serviceFeeLister: number;
+  depositAmount: number;
+  totalPrice: number;
+  listerPayout: number;
+  startDate: string;
+  endDate: string;
+  message?: string | null;
+}): Promise<
+  | { paymentUrl: string; checkoutId: string; paymentRequestId: string }
+  | { error: string }
+> {
+  try {
+    const fees = await getFeeConfig();
+    const hitpayFee = calculateHitPayFee(params.totalPrice, fees);
+    const chargedToRenter = fees.platform_absorbs_hitpay_fee
+      ? roundMoney(params.totalPrice)
+      : roundMoney(params.totalPrice + hitpayFee);
+
+    const checkoutId = await createTransactionRecord({
+      bookingId: null,
+      renterId: params.renterId,
+      listerId: params.listerId,
+      eventType: "payment_initiated",
+      grossAmount: chargedToRenter,
+      hitpayFee,
+      platformFee: params.serviceFeeRenter,
+      netAmount: params.subtotal,
+      currency: "SGD",
+      idempotencyKey: `checkout_init_${params.renterId}_${params.listingId}_${params.pricingPeriod}_${params.rentalUnits}_${params.quantity}_${params.startDate}_${params.endDate}`,
+      triggeredBy: params.renterId,
+      triggeredByRole: "renter",
+      metadata: {
+        flow_version: "post_payment_booking_v2",
+        listing_id: params.listingId,
+        listing_title: params.listingTitle,
+        listing_instant_book: params.instantBook,
+        renter_id: params.renterId,
+        lister_id: params.listerId,
+        rental_units: params.rentalUnits,
+        pricing_period: params.pricingPeriod,
+        quantity: params.quantity,
+        unit_price: params.unitPrice,
+        subtotal: params.subtotal,
+        service_fee_renter: params.serviceFeeRenter,
+        service_fee_lister: params.serviceFeeLister,
+        deposit_amount: params.depositAmount,
+        total_price: params.totalPrice,
+        lister_payout: params.listerPayout,
+        start_date: params.startDate,
+        end_date: params.endDate,
+        message: params.message ?? null,
+      } satisfies CheckoutBookingMetadata,
+    });
+
+    const apiKey = process.env.HITPAY_API_KEY;
+    if (!apiKey) {
+      throw new Error("Missing required environment variable: HITPAY_API_KEY");
+    }
+
+    const body = new URLSearchParams({
+      amount: chargedToRenter.toFixed(2),
+      currency: "SGD",
+      email: params.renter.email,
+      name: getDisplayName(params.renter),
+      purpose: `RentHub: ${params.listingTitle}`.slice(0, 100),
+      reference_number: checkoutId,
+      redirect_url: `${getAppUrl()}/payment/success?checkout=${checkoutId}`,
+      webhook: `${getAppUrl()}/api/webhooks/hitpay`,
+      allow_repeated_payments: "false",
+    });
+
+    const response = await fetch(`${getHitPayApiUrl()}/payment-requests`, {
+      method: "POST",
+      headers: {
+        "X-BUSINESS-API-KEY": apiKey,
+        "X-Requested-With": "XMLHttpRequest",
+        "Content-Type": "application/x-www-form-urlencoded",
+      },
+      body: body.toString(),
+      cache: "no-store",
+    });
+
+    const rawText = await response.text();
+    if (!response.ok) {
+      await updateTransaction(checkoutId, {
+        status: "failed",
+        failure_reason: rawText || "Failed to create HitPay payment request",
+      });
+      return {
+        error: rawText || "Failed to create payment request with HitPay.",
+      };
+    }
+
+    const parsed = rawText
+      ? (JSON.parse(rawText) as Record<string, unknown>)
+      : {};
+    const paymentRequestId =
+      typeof parsed.id === "string" ? parsed.id : undefined;
+    const paymentUrl = typeof parsed.url === "string" ? parsed.url : undefined;
+
+    if (!paymentRequestId || !paymentUrl) {
+      await updateTransaction(checkoutId, {
+        status: "failed",
+        failure_reason: "HitPay response did not include payment request details",
+      });
+      return {
+        error: "HitPay did not return a usable payment link.",
+      };
+    }
+
+    await updateTransaction(checkoutId, {
+      status: "completed",
+      hitpay_payment_request_id: paymentRequestId,
+      external_reference: paymentUrl,
+      processed_at: new Date().toISOString(),
+    });
+
+    return {
+      paymentUrl,
+      checkoutId,
+      paymentRequestId,
+    };
+  } catch (error) {
+    console.error("createCheckoutPayment failed:", error);
+    return {
+      error:
+        error instanceof Error
+          ? error.message
+          : "Could not create checkout payment.",
+    };
+  }
+}
+
+export async function getCheckoutStatusForSuccessPage(checkoutId: string) {
+  try {
+    const checkout = await getCheckoutTransaction(checkoutId);
+    if (!checkout) {
+      return null;
+    }
+
+    return {
+      id: checkout.id,
+      bookingId: checkout.booking_id,
+      paymentRequestId: checkout.hitpay_payment_request_id ?? null,
+      paymentId: checkout.hitpay_payment_id ?? null,
+      status: checkout.status,
+      failureReason: checkout.failure_reason ?? null,
+      metadata: checkout.metadata,
+      processedAt: checkout.processed_at ?? null,
+      createdAt: checkout.created_at,
+    };
+  } catch (error) {
+    console.error("getCheckoutStatusForSuccessPage failed:", error);
+    return null;
+  }
+}
+
+export async function handleCompletedCheckoutPayment(params: {
+  checkoutId: string;
+  hitpayPaymentId: string;
+  hitpayPaymentRequestId: string;
+  amount: number;
+  currency: string;
+}): Promise<string> {
+  const checkout = await getCheckoutTransaction(params.checkoutId);
+  if (!checkout) {
+    throw new Error("Checkout transaction not found.");
+  }
+
+  const existingProcessed = await getTransactionByIdempotency(
+    `payment_confirmed_checkout_${params.checkoutId}`,
+  );
+  if (existingProcessed?.status === "completed" && checkout.booking_id) {
+    return checkout.booking_id;
+  }
+
+  const bookingId = await materializeBookingFromCheckout({
+    checkout,
+    hitpayPaymentId: params.hitpayPaymentId,
+    hitpayPaymentRequestId: params.hitpayPaymentRequestId,
+    amount: params.amount,
+    currency: params.currency,
+  });
+
+  const booking = await getBookingWithRelations(createAdminClient(), bookingId);
+  const now = new Date().toISOString();
+
+  await createTransactionRecord({
+    bookingId,
+    renterId: booking.renter_id,
+    listerId: booking.lister_id,
+    eventType: "payment_completed",
+    grossAmount: params.amount,
+    hitpayFee: booking.hitpay_fee ?? checkout.hitpay_fee ?? 0,
+    platformFee: booking.service_fee_renter,
+    netAmount: booking.subtotal,
+    currency: params.currency,
+    hitpayPaymentRequestId: params.hitpayPaymentRequestId,
+    hitpayPaymentId: params.hitpayPaymentId,
+    idempotencyKey: `payment_confirmed_checkout_${params.checkoutId}`,
+    triggeredBy: null,
+    triggeredByRole: "system",
+    metadata: {
+      source: "webhook",
+      checkout_id: params.checkoutId,
+    },
+    status: "completed",
+    processedAt: now,
+  });
+
+  const renterName = getDisplayName(booking.renter);
+  if (!booking.listing.instant_book) {
+    await notifyNewBookingRequest({
+      listerId: booking.lister_id,
+      renterId: booking.renter_id,
+      renterName,
+      listingId: booking.listing_id,
+      listingTitle: booking.listing.title,
+      bookingId: booking.id,
+      rentalUnits: booking.rental_units,
+      pricingPeriod: booking.pricing_period,
+      quantity: booking.quantity,
+      totalPrice: booking.total_price,
+    });
+  }
+
+  await notifyPaymentConfirmed({
+    renterId: booking.renter_id,
+    listerId: booking.lister_id,
+    renterName,
+    listerName: getDisplayName(booking.lister),
+    listingTitle: booking.listing.title,
+    bookingId: booking.id,
+    amount: params.amount,
+    rentalUnits: booking.rental_units,
+    pricingPeriod: booking.pricing_period,
+    quantity: booking.quantity,
+    paymentReference: params.hitpayPaymentId,
+    listerPayout: booking.lister_payout,
+  });
+
+  revalidatePaymentViews();
+  return bookingId;
 }
 
 async function getPayoutWithRelations(

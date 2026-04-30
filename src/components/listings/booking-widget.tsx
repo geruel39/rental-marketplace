@@ -103,7 +103,7 @@ export function BookingWidget({ listing, isOwner, isLoggedIn }: BookingWidgetPro
   const total = subtotal + serviceFee + deposit;
 
   useEffect(() => {
-    if (!state?.bookingId) {
+    if (!state) {
       return;
     }
 
@@ -113,8 +113,12 @@ export function BookingWidget({ listing, isOwner, isLoggedIn }: BookingWidgetPro
       return;
     }
 
+    if (state.error) {
+      return;
+    }
+
     toast.error("Payment URL not received. Please try again.");
-  }, [state?.bookingId, state?.paymentUrl]);
+  }, [state]);
 
   useEffect(() => {
     if (!state?.error) {

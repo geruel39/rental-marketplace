@@ -2,7 +2,7 @@ import crypto from "node:crypto";
 
 import { NextRequest, NextResponse } from "next/server";
 
-import { handlePaymentConfirmed } from "@/actions/payments";
+import { handleCompletedCheckoutPayment, handlePaymentConfirmed } from "@/actions/payments";
 import { getAdminIds, sendNotification } from "@/lib/notifications";
 import { createAdminClient } from "@/lib/supabase/admin";
 
@@ -26,6 +26,13 @@ type BookingSnapshot = {
   status: string;
   hitpay_payment_request_id: string | null;
   instant_book: boolean;
+};
+
+type TransactionSnapshot = {
+  id: string;
+  booking_id: string | null;
+  status: string;
+  hitpay_payment_request_id: string | null;
 };
 
 function roundMoney(value: number) {
@@ -244,6 +251,21 @@ async function fetchBooking(bookingId: string) {
   };
 }
 
+async function fetchTransaction(transactionId: string) {
+  const adminClient = createAdminClient();
+  const { data, error } = await adminClient
+    .from("transactions")
+    .select("id, booking_id, status, hitpay_payment_request_id")
+    .eq("id", transactionId)
+    .maybeSingle<TransactionSnapshot>();
+
+  if (error) {
+    throw new Error(error.message);
+  }
+
+  return data ?? null;
+}
+
 async function markWebhookReceipt(params: {
   bookingId: string;
   paymentId: string;
@@ -430,6 +452,28 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Invalid amount" }, { status: 400 });
     }
 
+    const checkout = await fetchTransaction(bookingId);
+    if (checkout) {
+      console.log("Found checkout transaction:", checkout);
+
+      if (status === "completed") {
+        const createdBookingId = await handleCompletedCheckoutPayment({
+          checkoutId: checkout.id,
+          hitpayPaymentId: paymentId,
+          hitpayPaymentRequestId: paymentRequestId,
+          amount: parsedAmount,
+          currency,
+        });
+
+        return NextResponse.json(
+          { received: true, bookingId: createdBookingId },
+          { status: 200 },
+        );
+      }
+
+      return NextResponse.json({ received: true, note: "checkout_status_ignored" }, { status: 200 });
+    }
+
     console.log("Looking for booking:", bookingId);
     const booking = await fetchBooking(bookingId);
     console.log("Found booking:", booking
@@ -445,10 +489,10 @@ export async function POST(request: NextRequest) {
       await notifyAdmins({
         bookingId,
         title: "Verified HitPay webhook for missing booking",
-        body: `HitPay sent a verified ${status} webhook for booking ${bookingId}, but no booking row was found.`,
+        body: `HitPay sent a verified ${status} webhook for reference ${bookingId}, but no booking row or checkout transaction was found.`,
       });
       return NextResponse.json(
-        { received: true, note: "booking_not_found" },
+        { received: true, note: "reference_not_found" },
         { status: 200 },
       );
     }

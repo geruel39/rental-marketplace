@@ -14,6 +14,7 @@ import {
 import { createNotification } from "@/actions/notifications";
 import {
   autoTriggerPayout,
+  createCheckoutPayment,
   createPaymentForBooking,
   handlePaymentConfirmed,
   holdPaymentForDispute,
@@ -800,147 +801,44 @@ export async function createAndPayBooking(
     );
     const totalPrice = roundMoney(subtotal + serviceFeeRenter + depositAmount);
     const listerPayout = roundMoney(subtotal - serviceFeeLister);
-    const deadline = addHours(new Date(), PAYMENT_EXPIRY_HOURS).toISOString();
     const bookingDates = computeBookingDates({
       pricingPeriod: parsed.data.pricing_period,
       rentalUnits: parsed.data.rental_units,
     });
-
-    const { data: createdBooking, error: insertError } = await auth.supabase
-      .from("bookings")
-      .insert({
-        listing_id: listing.id,
-        renter_id: auth.user.id,
-        lister_id: listing.owner_id,
-        start_date: bookingDates.startDateIso,
-        end_date: bookingDates.endDateIso,
-        rental_units: parsed.data.rental_units,
-        pricing_period: parsed.data.pricing_period,
-        unit_price: unitPrice,
-        num_units: parsed.data.rental_units,
-        quantity: parsed.data.quantity,
-        subtotal,
-        service_fee_renter: serviceFeeRenter,
-        service_fee_lister: serviceFeeLister,
-        deposit_amount: depositAmount,
-        delivery_fee: 0,
-        total_price: totalPrice,
-        lister_payout: listerPayout,
-        status: "lister_confirmation",
-        lister_confirmation_deadline: deadline,
-        stock_deducted: true,
-        stock_reserved: true,
-        stock_reserved_at: new Date().toISOString(),
-        stock_restored: false,
-        handover_proof_urls: [],
-        return_proof_urls: [],
-        message: parsed.data.message ?? null,
-      })
-      .select("id")
-      .maybeSingle<{ id: string }>();
-
-    if (insertError || !createdBooking) {
-      return { error: insertError?.message ?? "Could not create booking." };
-    }
-
-    try {
-      await reserveStock(
-        auth.supabase,
-        {
-          id: createdBooking.id,
-          listing_id: listing.id,
-          quantity: parsed.data.quantity,
-        },
-        auth.user.id,
-      );
-    } catch (error) {
-      await updateBookingAsCancelled({
-        supabase: auth.supabase,
-        bookingId: createdBooking.id,
-        status: "cancelled_by_renter",
-        actorId: auth.user.id,
-        reason: "Could not reserve stock for this booking.",
-        stockRestored: true,
-      });
-
-      return {
-        error:
-          error instanceof Error
-            ? error.message
-            : "Could not reserve stock for this booking.",
-      };
-    }
-
-    await addTimeline({
-      bookingId: createdBooking.id,
-      status: "lister_confirmation",
-      actorId: auth.user.id,
-      actorRole: "renter",
-      title: "Booking created - payment required",
-      description: `You booked ${listing.title} for ${parsed.data.rental_units} ${parsed.data.pricing_period}(s). Complete payment to confirm. Lister has 24 hours to confirm availability.`,
-      metadata: {
-        rental_units: parsed.data.rental_units,
-        pricing_period: parsed.data.pricing_period,
-        quantity: parsed.data.quantity,
-        subtotal,
-        total_price: totalPrice,
-        start_date: bookingDates.startDateIso,
-        end_date: bookingDates.endDateIso,
-        lister_confirmation_deadline: deadline,
-      },
-    });
-
-    const paymentResult = await createPaymentForBooking(createdBooking.id);
-    if (!paymentResult || "error" in paymentResult || !paymentResult.paymentUrl) {
-      const failureReason =
-        paymentResult && "error" in paymentResult
-          ? paymentResult.error
-          : "Payment creation failed";
-
-      await releaseStock(
-        auth.supabase,
-        {
-          id: createdBooking.id,
-          listing_id: listing.id,
-          quantity: parsed.data.quantity,
-        },
-        auth.user.id,
-      ).catch((releaseError) => {
-        console.error("createAndPayBooking releaseStock failed:", releaseError);
-      });
-
-      await updateBookingAsCancelled({
-        supabase: auth.supabase,
-        bookingId: createdBooking.id,
-        status: "cancelled_by_renter",
-        actorId: auth.user.id,
-        reason: failureReason,
-        stockRestored: true,
-      });
-
-      return { error: "Payment setup failed. Please try again." };
-    }
-
-    const renterName = getActorDisplayName(auth.profile, auth.user.email);
-    void notifyNewBookingRequest({
-      listerId: listing.owner_id,
-      renterId: auth.user.id,
-      renterName,
+    const paymentResult = await createCheckoutPayment({
       listingId: listing.id,
       listingTitle: listing.title,
-      bookingId: createdBooking.id,
+      instantBook: listing.instant_book,
+      renterId: auth.user.id,
+      listerId: listing.owner_id,
+      renter: {
+        email: auth.user.email ?? "",
+        display_name: auth.profile?.display_name ?? auth.user.email ?? "",
+        full_name: auth.profile?.full_name ?? auth.user.email ?? "",
+      },
       rentalUnits: parsed.data.rental_units,
       pricingPeriod: parsed.data.pricing_period,
       quantity: parsed.data.quantity,
+      unitPrice,
+      subtotal,
+      serviceFeeRenter,
+      serviceFeeLister,
+      depositAmount,
       totalPrice,
-    }).catch((error) => {
-      console.error("createAndPayBooking notification failed:", error);
+      listerPayout,
+      startDate: bookingDates.startDateIso,
+      endDate: bookingDates.endDateIso,
+      message: parsed.data.message ?? null,
     });
+
+    if (!paymentResult || "error" in paymentResult || !paymentResult.paymentUrl) {
+      return { error: "Payment setup failed. Please try again." };
+    }
 
     revalidateBookingViews();
     return {
       paymentUrl: paymentResult.paymentUrl,
-      bookingId: createdBooking.id,
+      bookingId: undefined,
     };
   } catch (error) {
     console.error("createAndPayBooking failed:", error);
@@ -1768,6 +1666,11 @@ export async function getIncomingBookings(
 
     return (data ?? []).flatMap((booking) => {
       const typed = booking as BookingRecord;
+      const isPaid =
+        Boolean(typed.paid_at) && typed.hitpay_payment_status === "completed";
+      if (!isPaid) {
+        return [];
+      }
       const listing = unwrapRelation(typed.listing);
       const renter = unwrapRelation(typed.renter);
       const lister = unwrapRelation(typed.lister);
@@ -1814,6 +1717,11 @@ export async function getMyRentals(
 
     return (data ?? []).flatMap((booking) => {
       const typed = booking as BookingRecord;
+      const isPaid =
+        Boolean(typed.paid_at) && typed.hitpay_payment_status === "completed";
+      if (!isPaid) {
+        return [];
+      }
       const listing = unwrapRelation(typed.listing);
       const renter = unwrapRelation(typed.renter);
       const lister = unwrapRelation(typed.lister);
