@@ -2,7 +2,12 @@ import Link from "next/link";
 import { CheckCircle2, Loader2, TriangleAlert } from "lucide-react";
 
 import { getBookingDetails } from "@/actions/bookings";
-import { getCheckoutStatusForSuccessPage, getFeeConfig } from "@/actions/payments";
+import {
+  getCheckoutStatusForSuccessPage,
+  getFeeConfig,
+  reconcileCheckoutPayment,
+  reconcilePendingBookingPayment,
+} from "@/actions/payments";
 import { PaymentBreakdownCard } from "@/components/payments/payment-breakdown-card";
 import { PaymentStatusPoller } from "@/components/payments/payment-status-poller";
 import { Button } from "@/components/ui/button";
@@ -38,8 +43,19 @@ export default async function PaymentSuccessPage({
   const resolvedSearchParams = await searchParams;
   const bookingId = getSingleValue(resolvedSearchParams.booking);
   const checkoutId = getSingleValue(resolvedSearchParams.checkout);
-  const checkout = checkoutId ? await getCheckoutStatusForSuccessPage(checkoutId) : null;
+  let checkout = checkoutId ? await getCheckoutStatusForSuccessPage(checkoutId) : null;
+
+  if (checkoutId && checkout && !checkout.bookingId) {
+    const reconciledBookingId = await reconcileCheckoutPayment(checkoutId);
+    if (reconciledBookingId) {
+      checkout = await getCheckoutStatusForSuccessPage(checkoutId);
+    }
+  }
+
   const resolvedBookingId = bookingId ?? checkout?.bookingId ?? undefined;
+  if (resolvedBookingId) {
+    await reconcilePendingBookingPayment(resolvedBookingId);
+  }
   const booking = resolvedBookingId ? await getBookingDetails(resolvedBookingId) : null;
 
   if (!resolvedBookingId && !checkout) {

@@ -19,6 +19,8 @@ import {
   handlePaymentConfirmed,
   holdPaymentForDispute,
   processCancellationRefund,
+  reconcileOutstandingCheckoutPaymentsForUser,
+  reconcilePendingBookingPayment,
 } from "@/actions/payments";
 import {
   getAdminIds,
@@ -1641,30 +1643,58 @@ export async function getIncomingBookings(
 ): Promise<BookingWithDetails[]> {
   try {
     await processExpiredUnconfirmedBookingsIfNeeded();
+    await reconcileOutstandingCheckoutPaymentsForUser({
+      role: "lister",
+      userId,
+    });
     const supabase = await createClient();
-    let query = supabase
-      .from("bookings")
-      .select(
-        `
-          *,
-          listing:listings!bookings_listing_id_fkey(*),
-          renter:profiles!bookings_renter_id_fkey(*),
-          lister:profiles!bookings_lister_id_fkey(*)
-        `,
+    const loadBookings = async () => {
+      let query = supabase
+        .from("bookings")
+        .select(
+          `
+            *,
+            listing:listings!bookings_listing_id_fkey(*),
+            renter:profiles!bookings_renter_id_fkey(*),
+            lister:profiles!bookings_lister_id_fkey(*)
+          `,
+        )
+        .eq("lister_id", userId)
+        .order("created_at", { ascending: false });
+
+      if (status) {
+        query = query.eq("status", status);
+      }
+
+      const { data, error } = await query;
+      if (error) {
+        throw error;
+      }
+
+      return data ?? [];
+    };
+
+    let data = await loadBookings();
+    const unpaidBookingIds = data
+      .map((booking) => booking as BookingRecord)
+      .filter(
+        (booking) =>
+          booking.hitpay_payment_request_id &&
+          (!booking.paid_at || booking.hitpay_payment_status !== "completed"),
       )
-      .eq("lister_id", userId)
-      .order("created_at", { ascending: false });
+      .slice(0, 5)
+      .map((booking) => booking.id);
 
-    if (status) {
-      query = query.eq("status", status);
+    if (unpaidBookingIds.length > 0) {
+      const results = await Promise.all(
+        unpaidBookingIds.map((bookingId) => reconcilePendingBookingPayment(bookingId)),
+      );
+      if (results.some(Boolean)) {
+        data = await loadBookings();
+      }
     }
 
-    const { data, error } = await query;
-    if (error) {
-      throw error;
-    }
-
-    return (data ?? []).flatMap((booking) => {
+    return data.flatMap((booking) => {
       const typed = booking as BookingRecord;
       const isPaid =
         Boolean(typed.paid_at) && typed.hitpay_payment_status === "completed";
@@ -1692,30 +1722,58 @@ export async function getMyRentals(
 ): Promise<BookingWithDetails[]> {
   try {
     await processExpiredUnconfirmedBookingsIfNeeded();
+    await reconcileOutstandingCheckoutPaymentsForUser({
+      role: "renter",
+      userId,
+    });
     const supabase = await createClient();
-    let query = supabase
-      .from("bookings")
-      .select(
-        `
-          *,
-          listing:listings!bookings_listing_id_fkey(*),
-          renter:profiles!bookings_renter_id_fkey(*),
-          lister:profiles!bookings_lister_id_fkey(*)
-        `,
+    const loadBookings = async () => {
+      let query = supabase
+        .from("bookings")
+        .select(
+          `
+            *,
+            listing:listings!bookings_listing_id_fkey(*),
+            renter:profiles!bookings_renter_id_fkey(*),
+            lister:profiles!bookings_lister_id_fkey(*)
+          `,
+        )
+        .eq("renter_id", userId)
+        .order("created_at", { ascending: false });
+
+      if (status) {
+        query = query.eq("status", status);
+      }
+
+      const { data, error } = await query;
+      if (error) {
+        throw error;
+      }
+
+      return data ?? [];
+    };
+
+    let data = await loadBookings();
+    const unpaidBookingIds = data
+      .map((booking) => booking as BookingRecord)
+      .filter(
+        (booking) =>
+          booking.hitpay_payment_request_id &&
+          (!booking.paid_at || booking.hitpay_payment_status !== "completed"),
       )
-      .eq("renter_id", userId)
-      .order("created_at", { ascending: false });
+      .slice(0, 5)
+      .map((booking) => booking.id);
 
-    if (status) {
-      query = query.eq("status", status);
+    if (unpaidBookingIds.length > 0) {
+      const results = await Promise.all(
+        unpaidBookingIds.map((bookingId) => reconcilePendingBookingPayment(bookingId)),
+      );
+      if (results.some(Boolean)) {
+        data = await loadBookings();
+      }
     }
 
-    const { data, error } = await query;
-    if (error) {
-      throw error;
-    }
-
-    return (data ?? []).flatMap((booking) => {
+    return data.flatMap((booking) => {
       const typed = booking as BookingRecord;
       const isPaid =
         Boolean(typed.paid_at) && typed.hitpay_payment_status === "completed";
