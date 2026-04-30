@@ -480,6 +480,7 @@ export async function POST(request: NextRequest) {
   const receivedAt = new Date().toISOString();
 
   try {
+    console.log("[HITPAY_WEBHOOK] JSON-capable handler v2");
     console.log("=== HITPAY WEBHOOK RECEIVED ===");
     console.log("Timestamp:", receivedAt);
 
