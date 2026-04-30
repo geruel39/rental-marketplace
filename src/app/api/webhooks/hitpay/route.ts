@@ -197,9 +197,9 @@ function extractWebhookFieldsFromJson(payload: HitPayJsonWebhookPayload) {
   const currency =
     typeof payload.currency === "string" ? payload.currency.trim() : "";
   const status = normalizeWebhookStatus(
-    payload.payment_request?.current_status ||
-      payload.payment_request?.status ||
-      payload.status,
+    payload.status ||
+      payload.payment_request?.current_status ||
+      payload.payment_request?.status,
   );
 
   return {
