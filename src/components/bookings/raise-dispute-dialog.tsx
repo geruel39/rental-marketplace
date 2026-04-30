@@ -92,13 +92,12 @@ export function RaiseDisputeDialog({
         </div>
         <DialogFooter>
           <Button
-            className="min-w-36"
             disabled={isPending || reason.trim().length < 5}
             onClick={submit}
             type="button"
             variant="outline"
           >
-            {isPending ? "Submitting..." : "Raise Dispute"}
+            Raise Dispute
           </Button>
         </DialogFooter>
       </DialogContent>

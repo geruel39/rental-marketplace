@@ -24,14 +24,12 @@ interface RenterCancelDialogProps {
   booking: BookingWithDetails;
   refundPreview: string;
   triggerLabel?: string;
-  triggerClassName?: string;
 }
 
 export function RenterCancelDialog({
   booking,
   refundPreview,
   triggerLabel = "Cancel Booking",
-  triggerClassName,
 }: RenterCancelDialogProps) {
   const [open, setOpen] = useState(false);
   const [reason, setReason] = useState("");
@@ -58,7 +56,7 @@ export function RenterCancelDialog({
   return (
     <Dialog onOpenChange={setOpen} open={open}>
       <DialogTrigger asChild>
-        <Button className={triggerClassName} type="button" variant="outline">
+        <Button type="button" variant="outline">
           {triggerLabel}
         </Button>
       </DialogTrigger>
@@ -87,14 +85,13 @@ export function RenterCancelDialog({
 
         <DialogFooter>
           <Button
-            className="min-w-44"
             disabled={isPending}
             onClick={submit}
             type="button"
             variant="destructive"
           >
             {isPending ? <Loader2 className="size-4 animate-spin" /> : null}
-            {isPending ? "Cancelling..." : "Confirm Cancellation"}
+            Confirm Cancellation
           </Button>
         </DialogFooter>
       </DialogContent>
