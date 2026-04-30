@@ -184,6 +184,22 @@ export async function getPaymentStatus(
 
       return paymentStatus?.toLowerCase() === "completed";
     }) ?? payments[0] ?? null;
+  const nestedCompletedStatus =
+    completedPayment &&
+    (() => {
+      const nestedStatus =
+        typeof completedPayment.status === "string"
+          ? completedPayment.status
+          : typeof completedPayment.payment_status === "string"
+            ? completedPayment.payment_status
+            : typeof completedPayment.state === "string"
+              ? completedPayment.state
+              : typeof completedPayment.payment_state === "string"
+                ? completedPayment.payment_state
+                : null;
+
+      return nestedStatus?.toLowerCase() === "completed";
+    })();
 
   const paymentId =
     completedPayment && typeof completedPayment.id === "string"
@@ -215,7 +231,7 @@ export async function getPaymentStatus(
     currency,
     paymentId,
     paymentRequestId,
-    status: foundStatus,
+    status: nestedCompletedStatus ? "completed" : foundStatus,
     payments,
   };
 }
