@@ -25,9 +25,16 @@ import type { BookingWithDetails } from "@/types";
 interface ReturnDialogProps {
   booking: BookingWithDetails;
   onSuccess?: () => void;
+  triggerClassName?: string;
+  triggerLabel?: string;
 }
 
-export function ReturnDialog({ booking, onSuccess }: ReturnDialogProps) {
+export function ReturnDialog({
+  booking,
+  onSuccess,
+  triggerClassName,
+  triggerLabel = "Confirm Return",
+}: ReturnDialogProps) {
   const [open, setOpen] = useState(false);
   const [isPending, startTransition] = useTransition();
   const [notes, setNotes] = useState("");
@@ -84,8 +91,12 @@ export function ReturnDialog({ booking, onSuccess }: ReturnDialogProps) {
   return (
     <Dialog onOpenChange={setOpen} open={open}>
       <DialogTrigger asChild>
-        <Button type="button" variant="outline">
-          Confirm Return
+        <Button
+          className={triggerClassName}
+          type="button"
+          variant="outline"
+        >
+          {triggerLabel}
         </Button>
       </DialogTrigger>
       <DialogContent className="flex max-h-[90vh] flex-col overflow-hidden bg-white sm:max-w-2xl">
@@ -148,13 +159,13 @@ export function ReturnDialog({ booking, onSuccess }: ReturnDialogProps) {
 
         <DialogFooter>
           <Button
-            className="bg-brand-navy text-white hover:bg-brand-steel"
+            className="min-w-40 bg-brand-navy text-white hover:bg-brand-steel"
             disabled={isPending}
             onClick={submit}
             type="button"
           >
-            {isPending ? <Loader2 className="mr-2 size-4 animate-spin" /> : null}
-            Confirm Return
+            {isPending ? <Loader2 className="size-4 animate-spin" /> : null}
+            {isPending ? "Saving..." : "Confirm Return"}
           </Button>
         </DialogFooter>
       </DialogContent>

@@ -33,6 +33,7 @@ import type { BookingWithDetails } from "@/types";
 
 interface ConditionCheckFormProps {
   booking: BookingWithDetails;
+  triggerClassName?: string;
 }
 
 const conditionSchema = confirmReturnSchema.refine(
@@ -56,7 +57,10 @@ const conditionDescriptions: Record<
   missing_parts: "Parts or accessories are missing",
 };
 
-export function ConditionCheckForm({ booking }: ConditionCheckFormProps) {
+export function ConditionCheckForm({
+  booking,
+  triggerClassName,
+}: ConditionCheckFormProps) {
   const [isPending, startTransition] = useTransition();
   const form = useForm<z.infer<typeof conditionSchema>>({
     resolver: zodResolver(conditionSchema),
@@ -95,7 +99,7 @@ export function ConditionCheckForm({ booking }: ConditionCheckFormProps) {
   return (
     <Dialog>
       <DialogTrigger asChild>
-        <Button type="button">
+        <Button className={triggerClassName} type="button">
           <SearchCheck className="size-4" />
           Inspect & Complete
         </Button>
@@ -221,9 +225,9 @@ export function ConditionCheckForm({ booking }: ConditionCheckFormProps) {
           ) : null}
 
           <DialogFooter>
-            <Button disabled={isPending} type="submit">
+            <Button className="min-w-40" disabled={isPending} type="submit">
               {isPending ? <Loader2 className="size-4 animate-spin" /> : null}
-              Complete Booking
+              {isPending ? "Saving..." : "Complete Booking"}
             </Button>
           </DialogFooter>
         </form>
