@@ -24,9 +24,16 @@ import type { BookingWithDetails } from "@/types";
 interface HandoverDialogProps {
   booking: BookingWithDetails;
   onSuccess?: () => void;
+  triggerClassName?: string;
+  triggerSize?: "default" | "sm" | "lg" | "icon";
 }
 
-export function HandoverDialog({ booking, onSuccess }: HandoverDialogProps) {
+export function HandoverDialog({
+  booking,
+  onSuccess,
+  triggerClassName,
+  triggerSize = "default",
+}: HandoverDialogProps) {
   const [open, setOpen] = useState(false);
   const [isPending, startTransition] = useTransition();
   const [notes, setNotes] = useState("");
@@ -63,7 +70,11 @@ export function HandoverDialog({ booking, onSuccess }: HandoverDialogProps) {
   return (
     <Dialog onOpenChange={setOpen} open={open}>
       <DialogTrigger asChild>
-        <Button className="bg-brand-navy text-white hover:bg-brand-steel" type="button">
+        <Button
+          className={triggerClassName ?? "bg-brand-navy text-white hover:bg-brand-steel"}
+          size={triggerSize}
+          type="button"
+        >
           Confirm Handover
         </Button>
       </DialogTrigger>
@@ -131,8 +142,8 @@ export function HandoverDialog({ booking, onSuccess }: HandoverDialogProps) {
             onClick={submit}
             type="button"
           >
-            {isPending ? <Loader2 className="mr-2 size-4 animate-spin" /> : null}
-            Confirm Handover
+            <Loader2 className={isPending ? "size-4 animate-spin" : "size-4 opacity-0"} />
+            <span>{isPending ? "Confirming..." : "Confirm Handover"}</span>
           </Button>
         </DialogFooter>
       </DialogContent>

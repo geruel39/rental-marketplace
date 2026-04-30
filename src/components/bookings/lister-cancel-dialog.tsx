@@ -22,9 +22,15 @@ import type { BookingWithDetails } from "@/types";
 
 interface ListerCancelDialogProps {
   booking: BookingWithDetails;
+  triggerClassName?: string;
+  triggerSize?: "default" | "sm" | "lg" | "icon";
 }
 
-export function ListerCancelDialog({ booking }: ListerCancelDialogProps) {
+export function ListerCancelDialog({
+  booking,
+  triggerClassName,
+  triggerSize = "default",
+}: ListerCancelDialogProps) {
   const [open, setOpen] = useState(false);
   const [reason, setReason] = useState("");
   const [isPending, startTransition] = useTransition();
@@ -56,7 +62,12 @@ export function ListerCancelDialog({ booking }: ListerCancelDialogProps) {
   return (
     <Dialog onOpenChange={setOpen} open={open}>
       <DialogTrigger asChild>
-        <Button type="button" variant="destructive">
+        <Button
+          className={triggerClassName}
+          size={triggerSize}
+          type="button"
+          variant="destructive"
+        >
           Cancel
         </Button>
       </DialogTrigger>
@@ -92,8 +103,8 @@ export function ListerCancelDialog({ booking }: ListerCancelDialogProps) {
             type="button"
             variant="destructive"
           >
-            {isPending ? <Loader2 className="size-4 animate-spin" /> : null}
-            Confirm Cancellation
+            <Loader2 className={isPending ? "size-4 animate-spin" : "size-4 opacity-0"} />
+            <span>{isPending ? "Cancelling..." : "Confirm Cancellation"}</span>
           </Button>
         </DialogFooter>
       </DialogContent>

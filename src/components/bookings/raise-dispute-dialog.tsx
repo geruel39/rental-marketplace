@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useTransition } from "react";
-import { ShieldAlert } from "lucide-react";
+import { Loader2, ShieldAlert } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 
@@ -97,7 +97,8 @@ export function RaiseDisputeDialog({
             type="button"
             variant="outline"
           >
-            Raise Dispute
+            <Loader2 className={isPending ? "size-4 animate-spin" : "size-4 opacity-0"} />
+            <span>{isPending ? "Submitting..." : "Raise Dispute"}</span>
           </Button>
         </DialogFooter>
       </DialogContent>
