@@ -129,20 +129,35 @@ function verifyHitPayJsonSignature(
     return false;
   }
 
-  const normalizedSignature = receivedSignature.trim().toLowerCase();
-  if (!/^[0-9a-f]{64}$/.test(normalizedSignature)) {
+  const normalizedSignature = receivedSignature
+    .trim()
+    .replace(/^sha256=/i, "")
+    .replace(/^"+|"+$/g, "");
+
+  let signatureBytes: Buffer;
+  try {
+    if (
+      /^[\da-f]+$/i.test(normalizedSignature) &&
+      normalizedSignature.length % 2 === 0
+    ) {
+      signatureBytes = Buffer.from(normalizedSignature.toLowerCase(), "hex");
+    } else {
+      const paddedBase64 = normalizedSignature
+        .replace(/-/g, "+")
+        .replace(/_/g, "/")
+        .padEnd(Math.ceil(normalizedSignature.length / 4) * 4, "=");
+      signatureBytes = Buffer.from(paddedBase64, "base64");
+    }
+  } catch {
     return false;
   }
 
-  const computed = crypto
-    .createHmac("sha256", salt)
-    .update(rawBody)
-    .digest("hex");
+  const computed = crypto.createHmac("sha256", salt).update(rawBody).digest();
 
   try {
-    return crypto.timingSafeEqual(
-      Buffer.from(computed, "hex"),
-      Buffer.from(normalizedSignature, "hex"),
+    return (
+      computed.length === signatureBytes.length &&
+      crypto.timingSafeEqual(computed, signatureBytes)
     );
   } catch {
     return false;
