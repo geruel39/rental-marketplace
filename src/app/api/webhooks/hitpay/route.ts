@@ -18,6 +18,21 @@ type HitPayWebhookPayload = {
   reference_number: string;
 };
 
+type HitPayJsonWebhookPayload = {
+  id?: string;
+  amount?: number | string;
+  currency?: string;
+  payment_request_id?: string;
+  reference_number?: string;
+  status?: string;
+  payment_request?: {
+    current_status?: string;
+    id?: string;
+    reference_number?: string;
+    status?: string;
+  } | null;
+};
+
 type BookingSnapshot = {
   id: string;
   renter_id: string;
@@ -104,6 +119,36 @@ function verifyHitPaySignature(
   }
 }
 
+function verifyHitPayJsonSignature(
+  rawBody: string,
+  receivedSignature: string,
+): boolean {
+  const salt = process.env.HITPAY_WEBHOOK_SALT;
+  if (!salt) {
+    console.error("[HITPAY_WEBHOOK] HITPAY_WEBHOOK_SALT not configured");
+    return false;
+  }
+
+  const normalizedSignature = receivedSignature.trim().toLowerCase();
+  if (!/^[0-9a-f]{64}$/.test(normalizedSignature)) {
+    return false;
+  }
+
+  const computed = crypto
+    .createHmac("sha256", salt)
+    .update(rawBody)
+    .digest("hex");
+
+  try {
+    return crypto.timingSafeEqual(
+      Buffer.from(computed, "hex"),
+      Buffer.from(normalizedSignature, "hex"),
+    );
+  } catch {
+    return false;
+  }
+}
+
 function parseWebhookBody(rawBody: string) {
   const params = new URLSearchParams(rawBody);
   const payload: Record<string, string> = {};
@@ -118,6 +163,53 @@ function parseWebhookBody(rawBody: string) {
   }
 
   return payload;
+}
+
+function parseJsonWebhookBody(rawBody: string) {
+  return JSON.parse(rawBody) as HitPayJsonWebhookPayload;
+}
+
+function normalizeWebhookStatus(status: string | null | undefined) {
+  const normalized = status?.trim().toLowerCase();
+  if (normalized === "succeeded") {
+    return "completed";
+  }
+  return normalized ?? "";
+}
+
+function extractWebhookFieldsFromJson(payload: HitPayJsonWebhookPayload) {
+  const bookingId =
+    payload.payment_request?.reference_number?.trim() ||
+    payload.reference_number?.trim() ||
+    "";
+  const paymentRequestId =
+    payload.payment_request?.id?.trim() ||
+    payload.payment_request_id?.trim() ||
+    "";
+  const paymentId = payload.id?.trim() || "";
+  const rawAmount = payload.amount;
+  const amount =
+    typeof rawAmount === "number"
+      ? String(rawAmount)
+      : typeof rawAmount === "string"
+        ? rawAmount
+        : "";
+  const currency =
+    typeof payload.currency === "string" ? payload.currency.trim() : "";
+  const status = normalizeWebhookStatus(
+    payload.payment_request?.current_status ||
+      payload.payment_request?.status ||
+      payload.status,
+  );
+
+  return {
+    amount,
+    bookingId,
+    currency,
+    paymentId,
+    paymentRequestId,
+    status,
+  };
 }
 
 function getRequiredField(
@@ -393,43 +485,108 @@ export async function POST(request: NextRequest) {
 
     const rawBody = await request.text();
     console.log("Raw body:", rawBody);
-    const payload = parseWebhookBody(rawBody);
+    const trimmedBody = rawBody.trim();
+    const signatureHeader = request.headers.get("Hitpay-Signature");
+    const isJsonPayload = trimmedBody.startsWith("{");
 
-    const { hmac, ...payloadWithoutHmac } = payload;
-    console.log("Parsed payload:", {
-      payment_request_id: payload.payment_request_id ?? null,
-      payment_id: payload.payment_id ?? null,
-      status: payload.status ?? null,
-      reference_number: payload.reference_number ?? null,
-      amount: payload.amount ?? null,
-    });
+    let paymentId = "";
+    let paymentRequestId = "";
+    let amountRaw = "";
+    let currency = "SGD";
+    let status = "";
+    let bookingId = "";
 
-    console.log("[HITPAY_WEBHOOK] Webhook received:", {
-      payment_request_id: payload.payment_request_id ?? null,
-      status: payload.status ?? null,
-      reference_number: payload.reference_number ?? null,
-      received_at: receivedAt,
-    });
+    if (isJsonPayload) {
+      const payload = parseJsonWebhookBody(rawBody);
 
-    if (!hmac) {
-      console.error("[HITPAY_WEBHOOK] Missing HMAC signature");
-      return NextResponse.json({ error: "Missing signature" }, { status: 401 });
-    }
-
-    if (!verifyHitPaySignature(payloadWithoutHmac, hmac)) {
-      console.error("[HITPAY_WEBHOOK] HMAC verification failed", {
-        received_hmac: hmac,
-        payload_keys: Object.keys(payloadWithoutHmac).sort(),
+      console.log("Parsed payload:", {
+        payment_request_id:
+          payload.payment_request?.id ?? payload.payment_request_id ?? null,
+        payment_id: payload.id ?? null,
+        status:
+          payload.payment_request?.current_status ??
+          payload.payment_request?.status ??
+          payload.status ??
+          null,
+        reference_number:
+          payload.payment_request?.reference_number ??
+          payload.reference_number ??
+          null,
+        amount: payload.amount ?? null,
       });
-      return NextResponse.json({ error: "Invalid signature" }, { status: 401 });
-    }
 
-    const paymentId = getRequiredField(payload, "payment_id");
-    const paymentRequestId = getRequiredField(payload, "payment_request_id");
-    const amountRaw = getRequiredField(payload, "amount");
-    const currency = getRequiredField(payload, "currency") || "SGD";
-    const status = getRequiredField(payload, "status").toLowerCase();
-    const bookingId = getRequiredField(payload, "reference_number");
+      console.log("[HITPAY_WEBHOOK] Webhook received:", {
+        payment_request_id:
+          payload.payment_request?.id ?? payload.payment_request_id ?? null,
+        status:
+          payload.payment_request?.current_status ??
+          payload.payment_request?.status ??
+          payload.status ??
+          null,
+        reference_number:
+          payload.payment_request?.reference_number ??
+          payload.reference_number ??
+          null,
+        received_at: receivedAt,
+      });
+
+      if (!signatureHeader) {
+        console.error("[HITPAY_WEBHOOK] Missing Hitpay-Signature header");
+        return NextResponse.json({ error: "Missing signature" }, { status: 401 });
+      }
+
+      if (!verifyHitPayJsonSignature(rawBody, signatureHeader)) {
+        console.error("[HITPAY_WEBHOOK] JSON signature verification failed");
+        return NextResponse.json({ error: "Invalid signature" }, { status: 401 });
+      }
+
+      ({
+        amount: amountRaw,
+        bookingId,
+        currency,
+        paymentId,
+        paymentRequestId,
+        status,
+      } = extractWebhookFieldsFromJson(payload));
+    } else {
+      const payload = parseWebhookBody(rawBody);
+      const { hmac, ...payloadWithoutHmac } = payload;
+
+      console.log("Parsed payload:", {
+        payment_request_id: payload.payment_request_id ?? null,
+        payment_id: payload.payment_id ?? null,
+        status: payload.status ?? null,
+        reference_number: payload.reference_number ?? null,
+        amount: payload.amount ?? null,
+      });
+
+      console.log("[HITPAY_WEBHOOK] Webhook received:", {
+        payment_request_id: payload.payment_request_id ?? null,
+        status: payload.status ?? null,
+        reference_number: payload.reference_number ?? null,
+        received_at: receivedAt,
+      });
+
+      if (!hmac) {
+        console.error("[HITPAY_WEBHOOK] Missing HMAC signature");
+        return NextResponse.json({ error: "Missing signature" }, { status: 401 });
+      }
+
+      if (!verifyHitPaySignature(payloadWithoutHmac, hmac)) {
+        console.error("[HITPAY_WEBHOOK] HMAC verification failed", {
+          received_hmac: hmac,
+          payload_keys: Object.keys(payloadWithoutHmac).sort(),
+        });
+        return NextResponse.json({ error: "Invalid signature" }, { status: 401 });
+      }
+
+      paymentId = getRequiredField(payload, "payment_id");
+      paymentRequestId = getRequiredField(payload, "payment_request_id");
+      amountRaw = getRequiredField(payload, "amount");
+      currency = getRequiredField(payload, "currency") || "SGD";
+      status = normalizeWebhookStatus(getRequiredField(payload, "status"));
+      bookingId = getRequiredField(payload, "reference_number");
+    }
 
     if (!bookingId || !paymentRequestId || !status) {
       console.error("[HITPAY_WEBHOOK] Missing required fields:", {
