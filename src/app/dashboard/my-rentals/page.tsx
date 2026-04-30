@@ -13,7 +13,7 @@ import { EmptyState } from "@/components/shared/empty-state";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import { createClient } from "@/lib/supabase/server";
-import { cn, formatCurrency, getInitials } from "@/lib/utils";
+import { formatCurrency, getInitials } from "@/lib/utils";
 import type { BookingWithDetails } from "@/types";
 
 type SearchParams = Record<string, string | string[] | undefined>;
@@ -37,11 +37,6 @@ const rentalTabs: Array<{ key: FilterKey; label: string }> = [
   { key: "cancelled", label: "Cancelled" },
   { key: "disputed", label: "Disputed" },
 ];
-
-const actionPanelClass =
-  "flex min-h-full flex-col justify-center gap-3 rounded-3xl border border-border/70 bg-muted/20 p-4 shadow-sm";
-const actionButtonClass =
-  "h-10 w-full justify-center rounded-xl px-4 text-sm font-medium";
 
 function getSingleValue(value: string | string[] | undefined) {
   return Array.isArray(value) ? value[0] : value;
@@ -82,55 +77,47 @@ function getRefundPreview(booking: BookingWithDetails) {
 function RentalActions({ booking }: { booking: BookingWithDetails }) {
   if (booking.status === "lister_confirmation") {
     return (
-      <div className={cn(actionPanelClass, "items-start text-left")}>
+      <div className="space-y-3 rounded-2xl border border-border/60 bg-muted/30 p-4 text-left lg:text-right">
         <p className="text-sm text-muted-foreground">Lister is confirming availability.</p>
         <p className="text-xs text-muted-foreground">
           Confirm by: {booking.lister_confirmation_deadline ? new Date(booking.lister_confirmation_deadline).toLocaleString() : "TBD"}
         </p>
-        <RenterCancelDialog
-          booking={booking}
-          refundPreview="Cancel within 12 hours of payment for a 100% refund."
-          triggerClassName={actionButtonClass}
-          triggerSize="sm"
-        />
+        <div className="flex justify-start lg:justify-end">
+          <RenterCancelDialog
+            booking={booking}
+            refundPreview="Cancel within 12 hours of payment for a 100% refund."
+          />
+        </div>
       </div>
     );
   }
 
   if (booking.status === "confirmed") {
     return (
-      <div className={cn(actionPanelClass, "items-start text-left")}>
+      <div className="space-y-3 rounded-2xl border border-border/60 bg-muted/30 p-4 text-left lg:text-right">
         <p className="text-sm text-muted-foreground">Arrange handover with the lister.</p>
-        <RenterCancelDialog
-          booking={booking}
-          refundPreview={getRefundPreview(booking)}
-          triggerClassName={actionButtonClass}
-          triggerSize="sm"
-        />
+        <div className="flex justify-start lg:justify-end">
+          <RenterCancelDialog booking={booking} refundPreview={getRefundPreview(booking)} />
+        </div>
       </div>
     );
   }
 
   if (booking.status === "active") {
     return (
-      <div className={cn(actionPanelClass, "items-start text-left")}>
-        <ReturnDialog
-          booking={booking}
-          triggerClassName={actionButtonClass}
-          triggerSize="sm"
-        />
-        <RaiseDisputeDialog
-          bookingId={booking.id}
-          buttonClassName={actionButtonClass}
-          buttonSize="sm"
-          fullWidth
-        />
+      <div className="space-y-3 rounded-2xl border border-border/60 bg-muted/30 p-4 text-left lg:text-right">
+        <div className="flex justify-start lg:justify-end">
+          <ReturnDialog booking={booking} />
+        </div>
+        <div className="flex justify-start lg:justify-end">
+          <RaiseDisputeDialog bookingId={booking.id} buttonSize="sm" />
+        </div>
       </div>
     );
   }
 
   return (
-    <p className="inline-flex min-h-10 w-full items-center rounded-3xl border border-border/70 bg-muted/20 px-4 text-sm font-medium text-muted-foreground capitalize">
+    <p className="inline-flex min-h-11 items-center rounded-2xl border border-border/60 bg-muted/30 px-4 py-2.5 text-left text-sm text-muted-foreground capitalize lg:text-right">
       {booking.status.replaceAll("_", " ")}
     </p>
   );
@@ -164,15 +151,12 @@ export default async function MyRentalsPage({
         </p>
       </div>
 
-      <div className="flex flex-wrap gap-2 rounded-3xl border border-border/70 bg-background/95 p-2 shadow-sm">
+      <div className="flex flex-wrap gap-2 rounded-2xl border border-border bg-background p-2">
         {rentalTabs.map((tab) => (
           <Button
             key={tab.key}
             asChild
-            className={cn(
-              "h-10 rounded-2xl px-4 text-sm",
-              activeFilter === tab.key ? "bg-brand-navy text-white hover:bg-brand-steel" : "",
-            )}
+            className={activeFilter === tab.key ? "bg-brand-navy text-white hover:bg-brand-steel" : ""}
             size="sm"
             variant={activeFilter === tab.key ? "default" : "ghost"}
           >
@@ -197,12 +181,12 @@ export default async function MyRentalsPage({
             return (
               <article
                 key={booking.id}
-                className="rounded-[28px] border border-border/70 bg-background p-5 shadow-sm transition-colors"
+                className="rounded-3xl border border-border/70 bg-background p-4 shadow-sm"
               >
-                <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_280px] xl:items-start">
-                  <div className="flex min-w-0 flex-col gap-4 sm:flex-row sm:items-start">
+                <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_280px] lg:items-start">
+                  <div className="flex min-w-0 items-start gap-4">
                     <Link
-                      className="block h-24 w-full shrink-0 overflow-hidden rounded-2xl bg-muted sm:size-24"
+                      className="block size-[72px] shrink-0 overflow-hidden rounded-2xl bg-muted"
                       href={`/listings/${booking.listing.id}`}
                     >
                       {booking.listing.images[0] ? (
@@ -211,14 +195,11 @@ export default async function MyRentalsPage({
                       ) : null}
                     </Link>
 
-                    <div className="min-w-0 flex-1 space-y-4">
-                      <div className="space-y-3">
-                        <div className="flex flex-wrap items-start justify-between gap-3">
-                          <p className="line-clamp-1 text-base font-semibold text-foreground">
-                            {booking.listing.title}
-                          </p>
-                          <BookingStatusBadge size="sm" status={booking.status} />
-                        </div>
+                    <div className="min-w-0 flex-1 space-y-3">
+                      <div className="space-y-2">
+                        <p className="line-clamp-1 text-base font-semibold text-foreground">
+                          {booking.listing.title}
+                        </p>
                         <div className="flex flex-wrap items-center gap-2 text-sm">
                           <Avatar size="sm">
                             <AvatarImage alt={listerName} src={booking.lister.avatar_url ?? undefined} />
@@ -232,17 +213,18 @@ export default async function MyRentalsPage({
                         </div>
                       </div>
 
-                      <div className="flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
-                        <span className="rounded-full bg-muted px-3 py-1.5">
+                      <div className="flex flex-wrap items-center gap-x-4 gap-y-2 text-sm text-muted-foreground">
+                        <span>
                           {formatDuration(booking)} x {booking.quantity} item{booking.quantity === 1 ? "" : "s"}
                         </span>
-                        <span className="rounded-full bg-brand-light px-3 py-1.5 font-semibold text-brand-navy">
+                        <span className="font-semibold text-brand-navy">
                           Paid: {formatCurrency(booking.total_price)}
                         </span>
+                        <BookingStatusBadge size="sm" status={booking.status} />
                       </div>
 
                       {booking.status === "lister_confirmation" ? (
-                        <p className="rounded-full bg-muted px-3 py-1.5 text-sm text-muted-foreground">
+                        <p className="text-sm text-muted-foreground">
                           Lister is confirming availability until{" "}
                           {booking.lister_confirmation_deadline
                             ? new Date(booking.lister_confirmation_deadline).toLocaleString()
@@ -250,9 +232,9 @@ export default async function MyRentalsPage({
                         </p>
                       ) : null}
 
-                      <div className="flex flex-wrap items-center gap-x-4 gap-y-2 text-sm">
+                      <div className="flex flex-wrap items-center gap-3">
                         <Link
-                          className="inline-flex font-medium text-brand-navy hover:underline"
+                          className="inline-flex text-sm font-medium text-brand-navy hover:underline"
                           href={`/renter/rentals/${booking.id}`}
                         >
                           View details
@@ -262,18 +244,16 @@ export default async function MyRentalsPage({
                       {booking.status === "active" &&
                       booking.rental_ends_at &&
                       booking.rental_started_at ? (
-                        <div className="rounded-2xl border border-border/60 bg-muted/20 p-3">
-                          <RentalCountdown
-                            rentalEndsAt={booking.rental_ends_at}
-                            rentalStartedAt={booking.rental_started_at}
-                            variant="compact"
-                          />
-                        </div>
+                        <RentalCountdown
+                          rentalEndsAt={booking.rental_ends_at}
+                          rentalStartedAt={booking.rental_started_at}
+                          variant="compact"
+                        />
                       ) : null}
                     </div>
                   </div>
 
-                  <div className="w-full xl:w-[280px] xl:justify-self-end">
+                  <div className="w-full lg:w-[280px] lg:justify-self-end">
                     <RentalActions booking={booking} />
                   </div>
                 </div>

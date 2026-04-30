@@ -25,30 +25,19 @@ import type { BookingWithDetails } from "@/types";
 interface ReturnDialogProps {
   booking: BookingWithDetails;
   onSuccess?: () => void;
-  triggerClassName?: string;
-  triggerSize?: "default" | "sm" | "lg" | "icon";
 }
 
-export function ReturnDialog({
-  booking,
-  onSuccess,
-  triggerClassName,
-  triggerSize = "default",
-}: ReturnDialogProps) {
+export function ReturnDialog({ booking, onSuccess }: ReturnDialogProps) {
   const [open, setOpen] = useState(false);
   const [isPending, startTransition] = useTransition();
   const [notes, setNotes] = useState("");
   const [proofFiles, setProofFiles] = useState<File[]>([]);
   const [error, setError] = useState<string | null>(null);
-  const [now, setNow] = useState(0);
+  const [now, setNow] = useState(Date.now());
 
   useEffect(() => {
-    const initialId = window.setTimeout(() => setNow(Date.now()), 0);
     const id = window.setInterval(() => setNow(Date.now()), 60_000);
-    return () => {
-      window.clearTimeout(initialId);
-      window.clearInterval(id);
-    };
+    return () => window.clearInterval(id);
   }, []);
 
   const deadline = useMemo(
@@ -95,12 +84,7 @@ export function ReturnDialog({
   return (
     <Dialog onOpenChange={setOpen} open={open}>
       <DialogTrigger asChild>
-        <Button
-          className={triggerClassName}
-          size={triggerSize}
-          type="button"
-          variant="outline"
-        >
+        <Button type="button" variant="outline">
           Confirm Return
         </Button>
       </DialogTrigger>
@@ -169,8 +153,8 @@ export function ReturnDialog({
             onClick={submit}
             type="button"
           >
-            <Loader2 className={isPending ? "size-4 animate-spin" : "size-4 opacity-0"} />
-            <span>{isPending ? "Confirming..." : "Confirm Return"}</span>
+            {isPending ? <Loader2 className="mr-2 size-4 animate-spin" /> : null}
+            Confirm Return
           </Button>
         </DialogFooter>
       </DialogContent>

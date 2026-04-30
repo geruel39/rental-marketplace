@@ -42,9 +42,9 @@ export function BookingStatusBadge({
   return (
     <Badge
       className={cn(
-        "min-h-7 gap-1.5 rounded-full border border-transparent px-2.5 align-middle font-medium capitalize shadow-none",
+        "gap-1.5 border-0 capitalize shadow-none",
         config.color,
-        size === "sm" ? "text-[11px]" : "text-xs",
+        size === "sm" ? "px-2 py-0.5 text-[11px]" : "px-2.5 py-1 text-xs",
       )}
       variant="secondary"
     >

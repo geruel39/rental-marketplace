@@ -114,14 +114,7 @@ export async function createPaymentRequest(params: {
 
 export async function getPaymentStatus(
   paymentRequestId: string,
-): Promise<{
-  amount: number | null;
-  currency: string | null;
-  paymentId: string | null;
-  paymentRequestId: string;
-  payments: Record<string, unknown>[];
-  status: string;
-}> {
+): Promise<{ status: string; payments: Record<string, unknown>[] }> {
   console.log("[HITPAY_API] Fetching payment status for request:", paymentRequestId);
 
   if (!env.HITPAY_API_KEY) {
@@ -166,73 +159,11 @@ export async function getPaymentStatus(
     }
   }
 
-  const payments = Array.isArray(data.payments)
-    ? (data.payments as Record<string, unknown>[])
-    : [];
-  const completedPayment =
-    payments.find((entry) => {
-      const paymentStatus =
-        typeof entry.status === "string"
-          ? entry.status
-          : typeof entry.payment_status === "string"
-            ? entry.payment_status
-            : typeof entry.state === "string"
-              ? entry.state
-              : typeof entry.payment_state === "string"
-                ? entry.payment_state
-                : null;
-
-      return paymentStatus?.toLowerCase() === "completed";
-    }) ?? payments[0] ?? null;
-  const nestedCompletedStatus =
-    completedPayment &&
-    (() => {
-      const nestedStatus =
-        typeof completedPayment.status === "string"
-          ? completedPayment.status
-          : typeof completedPayment.payment_status === "string"
-            ? completedPayment.payment_status
-            : typeof completedPayment.state === "string"
-              ? completedPayment.state
-              : typeof completedPayment.payment_state === "string"
-                ? completedPayment.payment_state
-                : null;
-
-      return nestedStatus?.toLowerCase() === "completed";
-    })();
-
-  const paymentId =
-    completedPayment && typeof completedPayment.id === "string"
-      ? completedPayment.id
-      : completedPayment && typeof completedPayment.payment_id === "string"
-        ? completedPayment.payment_id
-        : typeof data.payment_id === "string"
-          ? data.payment_id
-          : null;
-  const amountRaw =
-    typeof data.amount === "number"
-      ? data.amount
-      : typeof data.amount === "string"
-        ? Number(data.amount)
-        : completedPayment && typeof completedPayment.amount === "number"
-          ? completedPayment.amount
-          : completedPayment && typeof completedPayment.amount === "string"
-            ? Number(completedPayment.amount)
-            : null;
-  const currency =
-    typeof data.currency === "string"
-      ? data.currency
-      : completedPayment && typeof completedPayment.currency === "string"
-        ? completedPayment.currency
-        : null;
-
   return {
-    amount: typeof amountRaw === "number" && Number.isFinite(amountRaw) ? amountRaw : null,
-    currency,
-    paymentId,
-    paymentRequestId,
-    status: nestedCompletedStatus ? "completed" : foundStatus,
-    payments,
+    status: foundStatus,
+    payments: Array.isArray(data.payments)
+      ? (data.payments as Record<string, unknown>[])
+      : [],
   };
 }
 
