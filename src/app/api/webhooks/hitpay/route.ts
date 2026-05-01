@@ -26,6 +26,12 @@ type HitPayJsonWebhookPayload = {
   payment_request_id?: string;
   reference_number?: string;
   status?: string;
+  url?: string;
+  payments?: Array<{
+    id?: string;
+    status?: string;
+    payment_status?: string;
+  }> | null;
   payment_request?: {
     current_status?: string;
     id?: string;
@@ -193,7 +199,36 @@ function normalizeWebhookStatus(status: string | null | undefined) {
   return normalized ?? "";
 }
 
+function extractPaymentRequestIdFromUrl(url: string | null | undefined) {
+  if (!url) {
+    return "";
+  }
+
+  const match = url.match(/\/payment-request\/[^/]+\/([^/]+)\/checkout/i);
+  return match?.[1]?.trim() ?? "";
+}
+
+function getCompletedJsonPayment(payload: HitPayJsonWebhookPayload) {
+  const payments = Array.isArray(payload.payments) ? payload.payments : [];
+
+  return (
+    payments.find((payment) => {
+      const paymentStatus =
+        typeof payment.status === "string"
+          ? payment.status
+          : typeof payment.payment_status === "string"
+            ? payment.payment_status
+            : null;
+
+      return normalizeWebhookStatus(paymentStatus) === "completed";
+    }) ??
+    payments[0] ??
+    null
+  );
+}
+
 function extractWebhookFieldsFromJson(payload: HitPayJsonWebhookPayload) {
+  const completedPayment = getCompletedJsonPayment(payload);
   const bookingId =
     payload.payment_request?.reference_number?.trim() ||
     payload.reference_number?.trim() ||
@@ -201,8 +236,10 @@ function extractWebhookFieldsFromJson(payload: HitPayJsonWebhookPayload) {
   const paymentRequestId =
     payload.payment_request?.id?.trim() ||
     payload.payment_request_id?.trim() ||
+    payload.id?.trim() ||
+    extractPaymentRequestIdFromUrl(payload.url) ||
     "";
-  const paymentId = payload.id?.trim() || "";
+  const paymentId = completedPayment?.id?.trim() || "";
   const rawAmount = payload.amount;
   const amount =
     typeof rawAmount === "number"
@@ -643,8 +680,12 @@ export async function POST(request: NextRequest) {
 
       console.log("Parsed payload:", {
         payment_request_id:
-          payload.payment_request?.id ?? payload.payment_request_id ?? null,
-        payment_id: payload.id ?? null,
+          payload.payment_request?.id ??
+          payload.payment_request_id ??
+          payload.id ??
+          extractPaymentRequestIdFromUrl(payload.url) ??
+          null,
+        payment_id: getCompletedJsonPayment(payload)?.id ?? null,
         status:
           payload.payment_request?.current_status ??
           payload.payment_request?.status ??
@@ -659,7 +700,11 @@ export async function POST(request: NextRequest) {
 
       console.log("[HITPAY_WEBHOOK] Webhook received:", {
         payment_request_id:
-          payload.payment_request?.id ?? payload.payment_request_id ?? null,
+          payload.payment_request?.id ??
+          payload.payment_request_id ??
+          payload.id ??
+          extractPaymentRequestIdFromUrl(payload.url) ??
+          null,
         status:
           payload.payment_request?.current_status ??
           payload.payment_request?.status ??
