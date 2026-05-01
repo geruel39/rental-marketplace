@@ -504,7 +504,7 @@ export interface Payout {
 
 export interface Transaction {
   id: string;
-  booking_id?: string;
+  booking_id?: string | null;
   renter_id: string;
   lister_id: string;
   event_type: PaymentEventType;
@@ -1321,4 +1321,3 @@ export interface PayoutSetupStatus {
   missing_fields?: string[];
   kyc_status?: "not_submitted" | "pending" | "verified" | "rejected";
 }
-
