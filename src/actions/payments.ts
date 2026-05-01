@@ -424,6 +424,21 @@ async function getTransactionById(
   return data ?? null;
 }
 
+async function getBookingById(bookingId: string): Promise<Booking | null> {
+  const admin = createAdminClient();
+  const { data, error } = await admin
+    .from("bookings")
+    .select("*")
+    .eq("id", bookingId)
+    .maybeSingle<Booking>();
+
+  if (error) {
+    throw new Error(error.message);
+  }
+
+  return data ?? null;
+}
+
 async function checkCheckoutConflict(params: {
   listingId: string;
   renterId: string;
@@ -447,7 +462,7 @@ async function checkCheckoutConflict(params: {
       }
       return response.data;
     });
-  } catch (primaryError) {
+  } catch {
     try {
       result = await admin.rpc("check_booking_conflict", {
         listing_id: params.listingId,
@@ -551,7 +566,22 @@ async function materializeBookingFromCheckout(params: {
   const metadata = params.checkout.metadata;
   const existingBookingId = params.checkout.booking_id;
   if (existingBookingId) {
-    return existingBookingId;
+    const existingBooking = await getBookingById(existingBookingId);
+    if (existingBooking) {
+      return existingBookingId;
+    }
+
+    console.warn(
+      "[PAYMENTS] Checkout referenced a missing booking; recreating booking from checkout.",
+      {
+        checkoutId: params.checkout.id,
+        missingBookingId: existingBookingId,
+      },
+    );
+
+    await updateTransaction(params.checkout.id, {
+      booking_id: null,
+    });
   }
 
   const listingResult = await admin
@@ -717,6 +747,18 @@ export async function createCheckoutPayment(params: {
     const chargedToRenter = fees.platform_absorbs_hitpay_fee
       ? roundMoney(params.totalPrice)
       : roundMoney(params.totalPrice + hitpayFee);
+    const baseIdempotencyKey =
+      `checkout_init_${params.renterId}_${params.listingId}_${params.pricingPeriod}_${params.rentalUnits}_${params.quantity}_${params.startDate}_${params.endDate}`;
+    const existingCheckout = await getTransactionByIdempotency(baseIdempotencyKey);
+    const checkoutIdempotencyKey =
+      existingCheckout &&
+      (
+        existingCheckout.status === "completed" ||
+        Boolean(existingCheckout.booking_id) ||
+        Boolean(existingCheckout.hitpay_payment_request_id)
+      )
+        ? `${baseIdempotencyKey}_${Date.now()}`
+        : baseIdempotencyKey;
 
     const checkoutId = await createTransactionRecord({
       bookingId: null,
@@ -728,7 +770,7 @@ export async function createCheckoutPayment(params: {
       platformFee: params.serviceFeeRenter,
       netAmount: params.subtotal,
       currency: "SGD",
-      idempotencyKey: `checkout_init_${params.renterId}_${params.listingId}_${params.pricingPeriod}_${params.rentalUnits}_${params.quantity}_${params.startDate}_${params.endDate}`,
+      idempotencyKey: checkoutIdempotencyKey,
       triggeredBy: params.renterId,
       triggeredByRole: "renter",
       metadata: {
