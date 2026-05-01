@@ -1,7 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState, useTransition } from "react";
-import { formatDistanceToNowStrict } from "date-fns";
+import { useState, useTransition } from "react";
 import { Loader2 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -43,26 +42,7 @@ export function ReturnDialog({
   const [notes, setNotes] = useState("");
   const [proofFiles, setProofFiles] = useState<File[]>([]);
   const [error, setError] = useState<string | null>(null);
-  const [now, setNow] = useState(Date.now());
-
-  useEffect(() => {
-    const id = window.setInterval(() => setNow(Date.now()), 60_000);
-    return () => window.clearInterval(id);
-  }, []);
-
-  const deadline = useMemo(
-    () => (booking.rental_ends_at ? new Date(booking.rental_ends_at) : null),
-    [booking.rental_ends_at],
-  );
-  const isLate = Boolean(deadline && now > deadline.getTime());
-  const remainingText =
-    deadline && !isLate
-      ? formatDistanceToNowStrict(deadline, { addSuffix: true })
-      : null;
-  const lateText =
-    deadline && isLate
-      ? formatDistanceToNowStrict(deadline, { addSuffix: true })
-      : null;
+  const deadline = booking.rental_ends_at ? new Date(booking.rental_ends_at) : null;
 
   function submit() {
     if (proofFiles.length < 1) {
@@ -124,15 +104,11 @@ export function ReturnDialog({
             </p>
           </div>
 
-          {isLate && deadline ? (
-            <Alert variant="destructive">
-              <AlertDescription>
-                This return is LATE. The deadline was {deadline.toLocaleString()} ({lateText}).
-              </AlertDescription>
-            </Alert>
-          ) : deadline ? (
+          {deadline ? (
             <Alert>
-              <AlertDescription>Time remaining: {remainingText}</AlertDescription>
+              <AlertDescription>
+                Return deadline: {deadline.toLocaleString()}. Late returns may affect fees or deposit handling.
+              </AlertDescription>
             </Alert>
           ) : null}
 
