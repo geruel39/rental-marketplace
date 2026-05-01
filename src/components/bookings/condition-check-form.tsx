@@ -33,6 +33,9 @@ import type { BookingWithDetails } from "@/types";
 
 interface ConditionCheckFormProps {
   booking: BookingWithDetails;
+  fullWidth?: boolean;
+  triggerClassName?: string;
+  triggerSize?: "default" | "sm" | "lg" | "icon" | "xs" | "icon-xs" | "icon-sm" | "icon-lg";
 }
 
 const conditionSchema = confirmReturnSchema.refine(
@@ -56,7 +59,12 @@ const conditionDescriptions: Record<
   missing_parts: "Parts or accessories are missing",
 };
 
-export function ConditionCheckForm({ booking }: ConditionCheckFormProps) {
+export function ConditionCheckForm({
+  booking,
+  fullWidth = false,
+  triggerClassName,
+  triggerSize = "default",
+}: ConditionCheckFormProps) {
   const [isPending, startTransition] = useTransition();
   const form = useForm<z.infer<typeof conditionSchema>>({
     resolver: zodResolver(conditionSchema),
@@ -95,7 +103,11 @@ export function ConditionCheckForm({ booking }: ConditionCheckFormProps) {
   return (
     <Dialog>
       <DialogTrigger asChild>
-        <Button type="button">
+        <Button
+          className={cn(fullWidth && "w-full", triggerClassName)}
+          size={triggerSize}
+          type="button"
+        >
           <SearchCheck className="size-4" />
           Inspect & Complete
         </Button>
@@ -222,8 +234,8 @@ export function ConditionCheckForm({ booking }: ConditionCheckFormProps) {
 
           <DialogFooter>
             <Button disabled={isPending} type="submit">
-              {isPending ? <Loader2 className="size-4 animate-spin" /> : null}
-              Complete Booking
+              <Loader2 className={cn("size-4", isPending ? "animate-spin" : "opacity-0")} />
+              <span>{isPending ? "Completing..." : "Complete Booking"}</span>
             </Button>
           </DialogFooter>
         </form>

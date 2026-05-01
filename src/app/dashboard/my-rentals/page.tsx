@@ -13,7 +13,7 @@ import { EmptyState } from "@/components/shared/empty-state";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import { createClient } from "@/lib/supabase/server";
-import { formatCurrency, getInitials } from "@/lib/utils";
+import { cn, formatCurrency, getInitials } from "@/lib/utils";
 import type { BookingWithDetails } from "@/types";
 
 type SearchParams = Record<string, string | string[] | undefined>;
@@ -74,18 +74,28 @@ function getRefundPreview(booking: BookingWithDetails) {
   return "Cancel after 24 hours and only the deposit is refunded.";
 }
 
+const tabButtonClassName =
+  "h-10 rounded-xl px-4 text-sm font-medium shadow-none";
+const secondaryActionClassName =
+  "h-10 w-full justify-center rounded-xl border-border/70 bg-white px-4 text-sm font-semibold shadow-sm";
+const primaryActionClassName =
+  "h-10 w-full justify-center rounded-xl px-4 text-sm font-semibold";
+
 function RentalActions({ booking }: { booking: BookingWithDetails }) {
   if (booking.status === "lister_confirmation") {
     return (
-      <div className="space-y-3 rounded-2xl border border-border/60 bg-muted/30 p-4 text-left lg:text-right">
-        <p className="text-sm text-muted-foreground">Lister is confirming availability.</p>
-        <p className="text-xs text-muted-foreground">
+      <div className="flex h-full flex-col gap-3 rounded-3xl border border-border/70 bg-muted/20 p-4 sm:p-5">
+        <p className="text-sm leading-6 text-muted-foreground">Lister is confirming availability.</p>
+        <p className="text-xs leading-5 text-muted-foreground">
           Confirm by: {booking.lister_confirmation_deadline ? new Date(booking.lister_confirmation_deadline).toLocaleString() : "TBD"}
         </p>
-        <div className="flex justify-start lg:justify-end">
+        <div className="mt-auto">
           <RenterCancelDialog
             booking={booking}
+            fullWidth
             refundPreview="Cancel within 12 hours of payment for a 100% refund."
+            triggerClassName={secondaryActionClassName}
+            triggerSize="default"
           />
         </div>
       </div>
@@ -94,10 +104,16 @@ function RentalActions({ booking }: { booking: BookingWithDetails }) {
 
   if (booking.status === "confirmed") {
     return (
-      <div className="space-y-3 rounded-2xl border border-border/60 bg-muted/30 p-4 text-left lg:text-right">
-        <p className="text-sm text-muted-foreground">Arrange handover with the lister.</p>
-        <div className="flex justify-start lg:justify-end">
-          <RenterCancelDialog booking={booking} refundPreview={getRefundPreview(booking)} />
+      <div className="flex h-full flex-col gap-3 rounded-3xl border border-border/70 bg-muted/20 p-4 sm:p-5">
+        <p className="text-sm leading-6 text-muted-foreground">Arrange handover with the lister.</p>
+        <div className="mt-auto">
+          <RenterCancelDialog
+            booking={booking}
+            fullWidth
+            refundPreview={getRefundPreview(booking)}
+            triggerClassName={secondaryActionClassName}
+            triggerSize="default"
+          />
         </div>
       </div>
     );
@@ -105,19 +121,36 @@ function RentalActions({ booking }: { booking: BookingWithDetails }) {
 
   if (booking.status === "active") {
     return (
-      <div className="space-y-3 rounded-2xl border border-border/60 bg-muted/30 p-4 text-left lg:text-right">
-        <div className="flex justify-start lg:justify-end">
-          <ReturnDialog booking={booking} />
-        </div>
-        <div className="flex justify-start lg:justify-end">
-          <RaiseDisputeDialog bookingId={booking.id} buttonSize="sm" />
-        </div>
+      <div className="flex h-full flex-col gap-2 rounded-3xl border border-border/70 bg-muted/20 p-4 sm:p-5">
+        <ReturnDialog
+          booking={booking}
+          fullWidth
+          triggerClassName={cn(
+            primaryActionClassName,
+            "bg-brand-navy text-white hover:bg-brand-steel",
+          )}
+          triggerSize="default"
+        />
+        <RaiseDisputeDialog
+          bookingId={booking.id}
+          buttonClassName={secondaryActionClassName}
+          buttonSize="default"
+          fullWidth
+        />
+      </div>
+    );
+  }
+
+  if (booking.status === "returned") {
+    return (
+      <div className="inline-flex min-h-10 w-full items-center rounded-3xl border border-emerald-200 bg-emerald-50/80 px-4 py-3 text-sm font-medium text-emerald-700">
+        Return submitted. Waiting for lister inspection.
       </div>
     );
   }
 
   return (
-    <p className="inline-flex min-h-11 items-center rounded-2xl border border-border/60 bg-muted/30 px-4 py-2.5 text-left text-sm text-muted-foreground capitalize lg:text-right">
+    <p className="inline-flex min-h-10 w-full items-center rounded-3xl border border-border/70 bg-muted/20 px-4 py-3 text-sm text-muted-foreground capitalize">
       {booking.status.replaceAll("_", " ")}
     </p>
   );
@@ -143,21 +176,26 @@ export default async function MyRentalsPage({
   const filteredBookings = bookings.filter((booking) => matchesFilter(booking, activeFilter));
 
   return (
-    <div className="space-y-6">
-      <div className="space-y-2">
-        <h1 className="text-2xl font-semibold tracking-tight">My Rentals</h1>
-        <p className="text-sm text-muted-foreground">
+    <div className="space-y-8">
+      <div className="space-y-3">
+        <h1 className="text-2xl font-semibold tracking-tight text-foreground">My Rentals</h1>
+        <p className="max-w-2xl text-sm leading-6 text-muted-foreground">
           Track confirmation, handover, return proof, and refund status for each booking.
         </p>
       </div>
 
-      <div className="flex flex-wrap gap-2 rounded-2xl border border-border bg-background p-2">
+      <div className="flex flex-wrap gap-2 rounded-3xl border border-border/70 bg-white/90 p-2 shadow-sm">
         {rentalTabs.map((tab) => (
           <Button
             key={tab.key}
             asChild
-            className={activeFilter === tab.key ? "bg-brand-navy text-white hover:bg-brand-steel" : ""}
-            size="sm"
+            className={cn(
+              tabButtonClassName,
+              activeFilter === tab.key
+                ? "bg-brand-navy text-white hover:bg-brand-steel"
+                : "border border-transparent bg-transparent text-muted-foreground hover:border-brand-navy/15 hover:bg-brand-light hover:text-brand-navy",
+            )}
+            size="default"
             variant={activeFilter === tab.key ? "default" : "ghost"}
           >
             <Link href={`/dashboard/my-rentals?status=${tab.key}`}>{tab.label}</Link>
@@ -181,12 +219,12 @@ export default async function MyRentalsPage({
             return (
               <article
                 key={booking.id}
-                className="rounded-3xl border border-border/70 bg-background p-4 shadow-sm"
+                className="overflow-hidden rounded-[28px] border border-border/70 bg-white p-5 shadow-[0_14px_40px_-28px_rgba(15,23,42,0.45)] transition-shadow hover:shadow-[0_18px_44px_-28px_rgba(15,23,42,0.52)]"
               >
-                <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_280px] lg:items-start">
+                <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_296px] lg:items-start">
                   <div className="flex min-w-0 items-start gap-4">
                     <Link
-                      className="block size-[72px] shrink-0 overflow-hidden rounded-2xl bg-muted"
+                      className="block size-20 shrink-0 overflow-hidden rounded-2xl bg-muted ring-1 ring-border/60"
                       href={`/listings/${booking.listing.id}`}
                     >
                       {booking.listing.images[0] ? (
@@ -195,12 +233,12 @@ export default async function MyRentalsPage({
                       ) : null}
                     </Link>
 
-                    <div className="min-w-0 flex-1 space-y-3">
+                    <div className="min-w-0 flex-1 space-y-4">
                       <div className="space-y-2">
-                        <p className="line-clamp-1 text-base font-semibold text-foreground">
+                        <p className="line-clamp-1 text-lg font-semibold text-foreground">
                           {booking.listing.title}
                         </p>
-                        <div className="flex flex-wrap items-center gap-2 text-sm">
+                        <div className="flex flex-wrap items-center gap-2.5 text-sm">
                           <Avatar size="sm">
                             <AvatarImage alt={listerName} src={booking.lister.avatar_url ?? undefined} />
                             <AvatarFallback>{getInitials(listerName)}</AvatarFallback>
@@ -213,18 +251,18 @@ export default async function MyRentalsPage({
                         </div>
                       </div>
 
-                      <div className="flex flex-wrap items-center gap-x-4 gap-y-2 text-sm text-muted-foreground">
-                        <span>
+                      <div className="flex flex-wrap items-center gap-2 text-sm">
+                        <span className="rounded-full bg-muted/70 px-3 py-1.5 text-muted-foreground">
                           {formatDuration(booking)} x {booking.quantity} item{booking.quantity === 1 ? "" : "s"}
                         </span>
-                        <span className="font-semibold text-brand-navy">
+                        <span className="rounded-full bg-brand-light px-3 py-1.5 font-semibold text-brand-navy">
                           Paid: {formatCurrency(booking.total_price)}
                         </span>
                         <BookingStatusBadge size="sm" status={booking.status} />
                       </div>
 
                       {booking.status === "lister_confirmation" ? (
-                        <p className="text-sm text-muted-foreground">
+                        <p className="rounded-2xl bg-muted/40 px-3 py-2 text-sm text-muted-foreground">
                           Lister is confirming availability until{" "}
                           {booking.lister_confirmation_deadline
                             ? new Date(booking.lister_confirmation_deadline).toLocaleString()
@@ -232,7 +270,7 @@ export default async function MyRentalsPage({
                         </p>
                       ) : null}
 
-                      <div className="flex flex-wrap items-center gap-3">
+                      <div className="flex flex-wrap items-center gap-3 pt-1">
                         <Link
                           className="inline-flex text-sm font-medium text-brand-navy hover:underline"
                           href={`/renter/rentals/${booking.id}`}
@@ -253,7 +291,7 @@ export default async function MyRentalsPage({
                     </div>
                   </div>
 
-                  <div className="w-full lg:w-[280px] lg:justify-self-end">
+                  <div className="w-full lg:w-[296px] lg:justify-self-end">
                     <RentalActions booking={booking} />
                   </div>
                 </div>

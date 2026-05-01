@@ -18,18 +18,25 @@ import {
 } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import { cn } from "@/lib/utils";
 import type { BookingWithDetails } from "@/types";
 
 interface RenterCancelDialogProps {
   booking: BookingWithDetails;
+  fullWidth?: boolean;
   refundPreview: string;
+  triggerClassName?: string;
   triggerLabel?: string;
+  triggerSize?: "default" | "sm" | "lg" | "icon" | "xs" | "icon-xs" | "icon-sm" | "icon-lg";
 }
 
 export function RenterCancelDialog({
   booking,
+  fullWidth = false,
   refundPreview,
+  triggerClassName,
   triggerLabel = "Cancel Booking",
+  triggerSize = "default",
 }: RenterCancelDialogProps) {
   const [open, setOpen] = useState(false);
   const [reason, setReason] = useState("");
@@ -56,7 +63,12 @@ export function RenterCancelDialog({
   return (
     <Dialog onOpenChange={setOpen} open={open}>
       <DialogTrigger asChild>
-        <Button type="button" variant="outline">
+        <Button
+          className={cn(fullWidth && "w-full", triggerClassName)}
+          size={triggerSize}
+          type="button"
+          variant="outline"
+        >
           {triggerLabel}
         </Button>
       </DialogTrigger>
@@ -90,8 +102,8 @@ export function RenterCancelDialog({
             type="button"
             variant="destructive"
           >
-            {isPending ? <Loader2 className="size-4 animate-spin" /> : null}
-            Confirm Cancellation
+            <Loader2 className={cn("size-4", isPending ? "animate-spin" : "opacity-0")} />
+            <span>{isPending ? "Cancelling..." : "Confirm Cancellation"}</span>
           </Button>
         </DialogFooter>
       </DialogContent>

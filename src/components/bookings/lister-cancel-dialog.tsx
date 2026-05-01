@@ -18,13 +18,22 @@ import {
 } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import { cn } from "@/lib/utils";
 import type { BookingWithDetails } from "@/types";
 
 interface ListerCancelDialogProps {
   booking: BookingWithDetails;
+  fullWidth?: boolean;
+  triggerClassName?: string;
+  triggerSize?: "default" | "sm" | "lg" | "icon" | "xs" | "icon-xs" | "icon-sm" | "icon-lg";
 }
 
-export function ListerCancelDialog({ booking }: ListerCancelDialogProps) {
+export function ListerCancelDialog({
+  booking,
+  fullWidth = false,
+  triggerClassName,
+  triggerSize = "default",
+}: ListerCancelDialogProps) {
   const [open, setOpen] = useState(false);
   const [reason, setReason] = useState("");
   const [isPending, startTransition] = useTransition();
@@ -56,7 +65,12 @@ export function ListerCancelDialog({ booking }: ListerCancelDialogProps) {
   return (
     <Dialog onOpenChange={setOpen} open={open}>
       <DialogTrigger asChild>
-        <Button type="button" variant="destructive">
+        <Button
+          className={cn(fullWidth && "w-full", triggerClassName)}
+          size={triggerSize}
+          type="button"
+          variant="destructive"
+        >
           Cancel
         </Button>
       </DialogTrigger>
@@ -92,8 +106,8 @@ export function ListerCancelDialog({ booking }: ListerCancelDialogProps) {
             type="button"
             variant="destructive"
           >
-            {isPending ? <Loader2 className="size-4 animate-spin" /> : null}
-            Confirm Cancellation
+            <Loader2 className={cn("size-4", isPending ? "animate-spin" : "opacity-0")} />
+            <span>{isPending ? "Cancelling..." : "Confirm Cancellation"}</span>
           </Button>
         </DialogFooter>
       </DialogContent>

@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useTransition } from "react";
-import { ShieldAlert } from "lucide-react";
+import { Loader2, ShieldAlert } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 
@@ -18,6 +18,7 @@ import {
 } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import { cn } from "@/lib/utils";
 
 interface RaiseDisputeDialogProps {
   bookingId: string;
@@ -97,7 +98,8 @@ export function RaiseDisputeDialog({
             type="button"
             variant="outline"
           >
-            Raise Dispute
+            <Loader2 className={cn("size-4", isPending ? "animate-spin" : "opacity-0")} />
+            <span>{isPending ? "Submitting..." : "Raise Dispute"}</span>
           </Button>
         </DialogFooter>
       </DialogContent>

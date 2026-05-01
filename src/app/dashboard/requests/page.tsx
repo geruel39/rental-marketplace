@@ -8,6 +8,7 @@ import { BookingStatusBadge } from "@/components/bookings/booking-status-badge";
 import { ConditionCheckForm } from "@/components/bookings/condition-check-form";
 import { HandoverDialog } from "@/components/bookings/handover-dialog";
 import { ListerCancelDialog } from "@/components/bookings/lister-cancel-dialog";
+import { PendingSubmitButton } from "@/components/bookings/pending-submit-button";
 import { RaiseDisputeDialog } from "@/components/bookings/raise-dispute-dialog";
 import { RentalCountdown } from "@/components/bookings/rental-countdown";
 import { EmptyState } from "@/components/shared/empty-state";
@@ -70,29 +71,45 @@ function getConfirmationCountdown(deadline?: string | null) {
   return `Confirm in ${hours} hr${hours === 1 ? "" : "s"} or auto-cancels`;
 }
 
+const tabButtonClassName =
+  "h-10 rounded-xl px-4 text-sm font-medium shadow-none";
+const secondaryActionClassName =
+  "h-10 w-full justify-center rounded-xl border-border/70 bg-white px-4 text-sm font-semibold shadow-sm";
+const primaryActionClassName =
+  "h-10 w-full justify-center rounded-xl px-4 text-sm font-semibold";
+
 function RequestActions({ booking }: { booking: BookingWithDetails }) {
   if (booking.status === "lister_confirmation") {
     return (
-      <div className="space-y-4 rounded-2xl border border-red-200 bg-red-50/70 p-4">
-        <p className="text-sm font-semibold text-red-700">
+      <div className="flex h-full flex-col gap-4 rounded-3xl border border-red-200 bg-red-50/80 p-4 sm:p-5">
+        <p className="text-sm font-semibold leading-6 text-red-700">
           {getConfirmationCountdown(booking.lister_confirmation_deadline)}
         </p>
-        <div className="flex flex-col gap-2 sm:flex-row sm:justify-end">
+        <div className="mt-auto flex flex-col gap-2">
           <form
             action={
               listerConfirmBooking.bind(null, booking.id) as unknown as (formData: FormData) => Promise<void>
             }
-            className="sm:flex-1 sm:max-w-[140px]"
+            className="w-full"
           >
-            <Button
-              className="w-full bg-emerald-600 text-white hover:bg-emerald-700"
-              size="sm"
-              type="submit"
+            <PendingSubmitButton
+              className={cn(
+                primaryActionClassName,
+                "bg-emerald-600 text-white hover:bg-emerald-700",
+              )}
+              pendingLabel="Confirming..."
+              size="default"
+              variant="default"
             >
               Confirm
-            </Button>
+            </PendingSubmitButton>
           </form>
-          <ListerCancelDialog booking={booking} />
+          <ListerCancelDialog
+            booking={booking}
+            fullWidth
+            triggerClassName={secondaryActionClassName}
+            triggerSize="default"
+          />
         </div>
       </div>
     );
@@ -100,34 +117,62 @@ function RequestActions({ booking }: { booking: BookingWithDetails }) {
 
   if (booking.status === "confirmed") {
     return (
-      <div className="space-y-3 rounded-2xl border border-border/60 bg-muted/30 p-4">
-        <div className="flex justify-start lg:justify-end">
-          <HandoverDialog booking={booking} />
-        </div>
-        <Button asChild className="w-full lg:w-auto" size="sm" variant="outline">
+      <div className="flex h-full flex-col gap-3 rounded-3xl border border-border/70 bg-muted/20 p-4 sm:p-5">
+        <p className="text-sm leading-6 text-muted-foreground">
+          Confirm handover once the item is with the renter.
+        </p>
+        <div className="mt-auto flex flex-col gap-2">
+          <HandoverDialog
+            booking={booking}
+            fullWidth
+            triggerClassName={cn(
+              primaryActionClassName,
+              "bg-brand-navy text-white hover:bg-brand-steel",
+            )}
+            triggerSize="default"
+          />
+        <Button asChild className={secondaryActionClassName} size="default" variant="outline">
           <Link href="/dashboard/messages">Message renter</Link>
         </Button>
+        </div>
       </div>
     );
   }
 
   if (booking.status === "active") {
     return (
-      <div className="space-y-3 rounded-2xl border border-border/60 bg-muted/30 p-4 text-left lg:text-right">
-        <p className="text-sm text-muted-foreground">Waiting for renter to mark return.</p>
-        <div className="flex justify-start lg:justify-end">
-          <RaiseDisputeDialog bookingId={booking.id} buttonSize="sm" />
+      <div className="flex h-full flex-col gap-3 rounded-3xl border border-border/70 bg-muted/20 p-4 sm:p-5">
+        <p className="text-sm leading-6 text-muted-foreground">
+          Waiting for the renter to confirm return.
+        </p>
+        <div className="mt-auto">
+          <RaiseDisputeDialog
+            bookingId={booking.id}
+            buttonClassName={secondaryActionClassName}
+            buttonSize="default"
+            fullWidth
+          />
         </div>
       </div>
     );
   }
 
   if (booking.status === "returned") {
-    return <ConditionCheckForm booking={booking} />;
+    return (
+      <ConditionCheckForm
+        booking={booking}
+        fullWidth
+        triggerClassName={cn(
+          primaryActionClassName,
+          "bg-brand-navy text-white hover:bg-brand-steel",
+        )}
+        triggerSize="default"
+      />
+    );
   }
 
   return (
-    <p className="inline-flex min-h-11 items-center rounded-2xl border border-border/60 bg-muted/30 px-4 py-2.5 text-left text-sm text-muted-foreground capitalize lg:text-right">
+    <p className="inline-flex min-h-10 w-full items-center rounded-3xl border border-border/70 bg-muted/20 px-4 py-3 text-sm text-muted-foreground capitalize">
       {booking.status.replaceAll("_", " ")}
     </p>
   );
@@ -153,21 +198,26 @@ export default async function RequestsPage({
   const filteredBookings = bookings.filter((booking) => matchesFilter(booking, activeFilter));
 
   return (
-    <div className="space-y-6">
-      <div className="space-y-2">
-        <h1 className="text-2xl font-semibold tracking-tight">Incoming Bookings</h1>
-        <p className="text-sm text-muted-foreground">
+    <div className="space-y-8">
+      <div className="space-y-3">
+        <h1 className="text-2xl font-semibold tracking-tight text-foreground">Incoming Bookings</h1>
+        <p className="max-w-2xl text-sm leading-6 text-muted-foreground">
           Confirm paid bookings, handle handover proof, and complete inspections after return.
         </p>
       </div>
 
-      <div className="flex flex-wrap gap-2 rounded-2xl border border-border bg-background p-2">
+      <div className="flex flex-wrap gap-2 rounded-3xl border border-border/70 bg-white/90 p-2 shadow-sm">
         {requestTabs.map((tab) => (
           <Button
             key={tab.key}
             asChild
-            className={activeFilter === tab.key ? "bg-brand-navy text-white hover:bg-brand-steel" : ""}
-            size="sm"
+            className={cn(
+              tabButtonClassName,
+              activeFilter === tab.key
+                ? "bg-brand-navy text-white hover:bg-brand-steel"
+                : "border border-transparent bg-transparent text-muted-foreground hover:border-brand-navy/15 hover:bg-brand-light hover:text-brand-navy",
+            )}
+            size="default"
             variant={activeFilter === tab.key ? "default" : "ghost"}
           >
             <Link href={`/dashboard/requests?status=${tab.key}`}>{tab.label}</Link>
@@ -193,14 +243,14 @@ export default async function RequestsPage({
               <article
                 key={booking.id}
                 className={cn(
-                  "rounded-3xl border border-border/70 bg-background p-4 shadow-sm",
-                  urgent && "border-l-4 border-l-red-600",
+                  "overflow-hidden rounded-[28px] border border-border/70 bg-white p-5 shadow-[0_14px_40px_-28px_rgba(15,23,42,0.45)] transition-shadow hover:shadow-[0_18px_44px_-28px_rgba(15,23,42,0.52)]",
+                  urgent && "border-red-200 ring-1 ring-red-100",
                 )}
               >
-                <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_280px] lg:items-start">
+                <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_296px] lg:items-start">
                   <div className="flex min-w-0 items-start gap-4">
                     <Link
-                      className="block size-[72px] shrink-0 overflow-hidden rounded-2xl bg-muted"
+                      className="block size-20 shrink-0 overflow-hidden rounded-2xl bg-muted ring-1 ring-border/60"
                       href={`/listings/${booking.listing.id}`}
                     >
                       {booking.listing.images[0] ? (
@@ -209,12 +259,12 @@ export default async function RequestsPage({
                       ) : null}
                     </Link>
 
-                    <div className="min-w-0 flex-1 space-y-3">
+                    <div className="min-w-0 flex-1 space-y-4">
                       <div className="space-y-2">
-                        <p className="line-clamp-1 text-base font-semibold text-foreground">
+                        <p className="line-clamp-1 text-lg font-semibold text-foreground">
                           {booking.listing.title}
                         </p>
-                        <div className="flex flex-wrap items-center gap-2 text-sm">
+                        <div className="flex flex-wrap items-center gap-2.5 text-sm">
                           <Avatar size="sm">
                             <AvatarImage alt={renterName} src={booking.renter.avatar_url ?? undefined} />
                             <AvatarFallback>{getInitials(renterName)}</AvatarFallback>
@@ -227,24 +277,24 @@ export default async function RequestsPage({
                         </div>
                       </div>
 
-                      <div className="flex flex-wrap items-center gap-x-4 gap-y-2 text-sm text-muted-foreground">
-                        <span>
+                      <div className="flex flex-wrap items-center gap-2 text-sm">
+                        <span className="rounded-full bg-muted/70 px-3 py-1.5 text-muted-foreground">
                           {formatDuration(booking)} x {booking.quantity} item{booking.quantity === 1 ? "" : "s"}
                         </span>
-                        <span className="font-semibold text-brand-navy">
+                        <span className="rounded-full bg-brand-light px-3 py-1.5 font-semibold text-brand-navy">
                           Paid: {formatCurrency(booking.total_price)}
                         </span>
                         <BookingStatusBadge size="sm" status={booking.status} />
                       </div>
 
                       {urgent ? (
-                        <p className="inline-flex items-center gap-2 text-sm font-medium text-red-700">
+                        <p className="inline-flex items-center gap-2 rounded-full bg-red-100 px-3 py-1.5 text-sm font-medium text-red-700">
                           <AlertTriangle className="size-4" />
                           Priority confirmation required
                         </p>
                       ) : null}
 
-                      <div className="flex flex-wrap items-center gap-3">
+                      <div className="flex flex-wrap items-center gap-3 pt-1">
                         <Link
                           className="inline-flex text-sm font-medium text-brand-navy hover:underline"
                           href={`/lister/bookings/${booking.id}`}
@@ -274,7 +324,7 @@ export default async function RequestsPage({
                     </div>
                   </div>
 
-                  <div className="w-full lg:w-[280px] lg:justify-self-end">
+                  <div className="w-full lg:w-[296px] lg:justify-self-end">
                     <RequestActions booking={booking} />
                   </div>
                 </div>

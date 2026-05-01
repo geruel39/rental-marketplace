@@ -19,14 +19,24 @@ import {
 } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import { cn } from "@/lib/utils";
 import type { BookingWithDetails } from "@/types";
 
 interface HandoverDialogProps {
   booking: BookingWithDetails;
   onSuccess?: () => void;
+  fullWidth?: boolean;
+  triggerClassName?: string;
+  triggerSize?: "default" | "sm" | "lg" | "icon" | "xs" | "icon-xs" | "icon-sm" | "icon-lg";
 }
 
-export function HandoverDialog({ booking, onSuccess }: HandoverDialogProps) {
+export function HandoverDialog({
+  booking,
+  onSuccess,
+  fullWidth = false,
+  triggerClassName,
+  triggerSize = "default",
+}: HandoverDialogProps) {
   const [open, setOpen] = useState(false);
   const [isPending, startTransition] = useTransition();
   const [notes, setNotes] = useState("");
@@ -63,7 +73,15 @@ export function HandoverDialog({ booking, onSuccess }: HandoverDialogProps) {
   return (
     <Dialog onOpenChange={setOpen} open={open}>
       <DialogTrigger asChild>
-        <Button className="bg-brand-navy text-white hover:bg-brand-steel" type="button">
+        <Button
+          className={cn(
+            "bg-brand-navy text-white hover:bg-brand-steel",
+            fullWidth && "w-full",
+            triggerClassName,
+          )}
+          size={triggerSize}
+          type="button"
+        >
           Confirm Handover
         </Button>
       </DialogTrigger>
@@ -131,8 +149,8 @@ export function HandoverDialog({ booking, onSuccess }: HandoverDialogProps) {
             onClick={submit}
             type="button"
           >
-            {isPending ? <Loader2 className="mr-2 size-4 animate-spin" /> : null}
-            Confirm Handover
+            <Loader2 className={cn("size-4", isPending ? "animate-spin" : "opacity-0")} />
+            <span>{isPending ? "Confirming..." : "Confirm Handover"}</span>
           </Button>
         </DialogFooter>
       </DialogContent>
