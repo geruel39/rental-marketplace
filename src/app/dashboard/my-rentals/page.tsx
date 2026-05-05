@@ -82,17 +82,20 @@ const secondaryActionClassName =
 const primaryActionClassName =
   "h-10 w-full justify-center rounded-xl px-4 text-sm font-semibold [&_svg]:text-current";
 
-function getRentalActionPriority(booking: BookingWithDetails, currentUserId: string) {
-  const canLeaveReview =
+function hasRentalAction(booking: BookingWithDetails, currentUserId: string) {
+  if (
     booking.status === "completed" &&
     booking.renter_id === currentUserId &&
-    !booking.renter_reviewed;
+    !booking.renter_reviewed
+  ) {
+    return true;
+  }
 
-  if (canLeaveReview) return 0;
-  if (booking.status === "active") return 1;
-  if (booking.status === "confirmed") return 2;
-  if (booking.status === "lister_confirmation") return 3;
-  return 4;
+  return (
+    booking.status === "active" ||
+    booking.status === "confirmed" ||
+    booking.status === "lister_confirmation"
+  );
 }
 
 function sortRentalBookings(bookings: BookingWithDetails[], currentUserId: string, filter: FilterKey) {
@@ -103,12 +106,11 @@ function sortRentalBookings(bookings: BookingWithDetails[], currentUserId: strin
   }
 
   return items.sort((left, right) => {
-    const priorityDiff =
-      getRentalActionPriority(left, currentUserId) -
-      getRentalActionPriority(right, currentUserId);
+    const leftHasAction = hasRentalAction(left, currentUserId);
+    const rightHasAction = hasRentalAction(right, currentUserId);
 
-    if (priorityDiff !== 0) {
-      return priorityDiff;
+    if (leftHasAction !== rightHasAction) {
+      return leftHasAction ? -1 : 1;
     }
 
     return new Date(right.updated_at).getTime() - new Date(left.updated_at).getTime();
