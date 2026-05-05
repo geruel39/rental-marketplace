@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { AlertTriangle, CheckCircle2, Download } from "lucide-react";
+import { AlertTriangle, Download } from "lucide-react";
 
 import { AdminPageHeader } from "@/components/admin/admin-page-header";
 import { PayoutFailDialog } from "@/components/admin/payout-fail-dialog";
@@ -31,9 +31,17 @@ function unwrapRelation<T>(value: T | T[] | null | undefined): T | null {
   return value ?? null;
 }
 
+function normalizePayoutMethod(
+  method: string | null | undefined,
+): "bank" | "gcash" | "maya" | null {
+  return method === "bank" || method === "gcash" || method === "maya"
+    ? method
+    : null;
+}
+
 export default async function AdminPayoutsPage() {
   const admin = createAdminClient();
-  const { data } = await admin
+  const { data, error } = await admin
     .from("payouts")
     .select(
       `
@@ -43,6 +51,20 @@ export default async function AdminPayoutsPage() {
       `,
     )
     .order("created_at", { ascending: false });
+
+  if (error) {
+    return (
+      <div className="space-y-6">
+        <AdminPageHeader
+          title="Payouts"
+          description="Review failed releases first, then process the next batch of lister payouts."
+        />
+        <div className="rounded-3xl border border-rose-200 bg-rose-50 p-6 text-sm text-rose-800">
+          Could not load payouts: {error.message}
+        </div>
+      </div>
+    );
+  }
 
   const payouts = ((data ?? []) as AdminPayoutRowRaw[])
     .map((payout) => {
@@ -60,6 +82,7 @@ export default async function AdminPayoutsPage() {
       } satisfies AdminPayoutRow;
     })
     .filter((payout): payout is AdminPayoutRow => payout !== null);
+
   const failedPayouts = payouts.filter((payout) => payout.status === "failed");
   const pendingPayouts = payouts.filter(
     (payout) => payout.status === "pending" || payout.status === "processing",
@@ -108,14 +131,13 @@ export default async function AdminPayoutsPage() {
           <div className="flex items-center gap-2 text-rose-700">
             <AlertTriangle className="size-4" />
             <h2 className="text-lg font-semibold">Failed Payouts</h2>
-            <Badge className="bg-rose-600 text-white hover:bg-rose-600">
-              Urgent
-            </Badge>
+            <Badge className="bg-rose-600 text-white hover:bg-rose-600">Urgent</Badge>
           </div>
           <div className="grid gap-4">
             {failedPayouts.map((payout) => {
               const listerName =
                 payout.lister.display_name || payout.lister.full_name || payout.lister.email;
+              const payoutMethod = normalizePayoutMethod(payout.payout_method);
 
               return (
                 <div
@@ -127,17 +149,18 @@ export default async function AdminPayoutsPage() {
                       <div>
                         <p className="text-lg font-semibold text-foreground">{listerName}</p>
                         <p className="text-sm text-muted-foreground">
-                          {formatCurrency(payout.amount, payout.currency)} via {payout.payout_method ?? "manual"} · {formatDate(payout.updated_at)}
+                          {formatCurrency(payout.amount, payout.currency)} via {payoutMethod ?? "manual"} ·{" "}
+                          {formatDate(payout.updated_at)}
                         </p>
                       </div>
                       <p className="text-sm text-rose-700">
                         Reason: {payout.failure_reason ?? "No failure reason recorded."}
                       </p>
-                      {payout.payout_method ? (
+                      {payoutMethod ? (
                         <PayoutDetailsDisplay
                           masked={false}
                           payoutDetails={{
-                            method: payout.payout_method as "bank" | "gcash" | "maya",
+                            method: payoutMethod,
                             bank_name: payout.lister.bank_name ?? undefined,
                             bank_account_name: payout.lister.bank_account_name ?? undefined,
                             bank_account_number: payout.lister.bank_account_number ?? undefined,
@@ -193,6 +216,8 @@ export default async function AdminPayoutsPage() {
             pendingPayouts.map((payout) => {
               const listerName =
                 payout.lister.display_name || payout.lister.full_name || payout.lister.email;
+              const payoutMethod = normalizePayoutMethod(payout.payout_method);
+
               return (
                 <div
                   className="rounded-3xl border border-border/70 bg-white p-5 shadow-sm"
@@ -203,18 +228,16 @@ export default async function AdminPayoutsPage() {
                       <div>
                         <p className="text-lg font-semibold text-foreground">{listerName}</p>
                         <p className="text-sm text-muted-foreground">
-                          Booking {payout.booking_id?.slice(0, 8) ?? "-"} · Created {formatDate(payout.created_at)}
+                          Booking {payout.booking_id?.slice(0, 8) ?? "-"} · Created{" "}
+                          {formatDate(payout.created_at)}
                         </p>
                       </div>
                       <div className="flex flex-wrap items-center gap-3">
                         <p className="text-xl font-semibold text-brand-navy">
                           {formatCurrency(payout.amount, payout.currency)}
                         </p>
-                        {payout.payout_method ? (
-                          <PayoutMethodBadge
-                            method={payout.payout_method as "bank" | "gcash" | "maya"}
-                            size="sm"
-                          />
+                        {payoutMethod ? (
+                          <PayoutMethodBadge method={payoutMethod} size="sm" />
                         ) : null}
                       </div>
                     </div>
@@ -222,7 +245,7 @@ export default async function AdminPayoutsPage() {
                     <PayoutDetailsDisplay
                       masked={false}
                       payoutDetails={{
-                        method: (payout.payout_method ?? "bank") as "bank" | "gcash" | "maya",
+                        method: payoutMethod ?? "bank",
                         bank_name: payout.lister.bank_name ?? undefined,
                         bank_account_name: payout.lister.bank_account_name ?? undefined,
                         bank_account_number: payout.lister.bank_account_number ?? undefined,
