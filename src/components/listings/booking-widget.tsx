@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { startTransition, useActionState, useEffect, useMemo } from "react";
+import { startTransition, useActionState, useEffect, useMemo, useRef } from "react";
 import { useForm } from "react-hook-form";
 import { Loader2, Minus, Plus } from "lucide-react";
 import { toast } from "sonner";
@@ -75,6 +75,7 @@ export function BookingWidget({ listing, isOwner, isLoggedIn }: BookingWidgetPro
     createAndPayBooking,
     initialState,
   );
+  const submissionLockRef = useRef(false);
   const pricingOptions = useMemo(() => getPricingOptions(listing), [listing]);
   const minRentalUnits = Math.max(1, listing.minimum_rental_period || 1);
   const isOutOfStock = listing.track_inventory && listing.quantity_available <= 0;
@@ -113,6 +114,8 @@ export function BookingWidget({ listing, isOwner, isLoggedIn }: BookingWidgetPro
       return;
     }
 
+    submissionLockRef.current = false;
+
     if (state.error) {
       return;
     }
@@ -124,6 +127,7 @@ export function BookingWidget({ listing, isOwner, isLoggedIn }: BookingWidgetPro
     if (!state?.error) {
       return;
     }
+    submissionLockRef.current = false;
     toast.error(state.error);
   }, [state?.error]);
 
@@ -152,6 +156,10 @@ export function BookingWidget({ listing, isOwner, isLoggedIn }: BookingWidgetPro
   }
 
   function onSubmit(values: BookingFormValues) {
+    if (submissionLockRef.current || isPending) {
+      return;
+    }
+
     if (!pricingOptions.length) {
       toast.error("This listing has no pricing configured.");
       return;
@@ -172,6 +180,8 @@ export function BookingWidget({ listing, isOwner, isLoggedIn }: BookingWidgetPro
     formData.set("quantity", String(finalQuantity));
     formData.set("pricing_period", values.pricing_period);
     formData.set("message", trimmedMessage);
+    formData.set("submission_token", crypto.randomUUID());
+    submissionLockRef.current = true;
 
     startTransition(() => {
       formAction(formData);

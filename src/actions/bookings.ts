@@ -749,6 +749,12 @@ export async function createAndPayBooking(
       return { error: "Missing booking form data." };
     }
 
+    const submissionTokenRaw = formData.get("submission_token");
+    const submissionToken =
+      typeof submissionTokenRaw === "string" && submissionTokenRaw.trim().length > 0
+        ? submissionTokenRaw.trim()
+        : null;
+
     const parsed = bookingSchema.safeParse({
       listing_id: formData.get("listing_id"),
       rental_units: formData.get("rental_units"),
@@ -829,6 +835,7 @@ export async function createAndPayBooking(
       startDate: bookingDates.startDateIso,
       endDate: bookingDates.endDateIso,
       message: parsed.data.message ?? null,
+      submissionToken,
     });
 
     if (!paymentResult || "error" in paymentResult || !paymentResult.paymentUrl) {

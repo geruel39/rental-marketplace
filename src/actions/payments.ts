@@ -75,6 +75,7 @@ type CheckoutBookingMetadata = {
   start_date: string;
   end_date: string;
   message: string | null;
+  submission_token?: string | null;
 };
 
 type CheckoutTransaction = Transaction & {
@@ -770,6 +771,7 @@ export async function createCheckoutPayment(params: {
   startDate: string;
   endDate: string;
   message?: string | null;
+  submissionToken?: string | null;
 }): Promise<
   | { paymentUrl: string; checkoutId: string; paymentRequestId: string }
   | { error: string }
@@ -780,8 +782,9 @@ export async function createCheckoutPayment(params: {
     const chargedToRenter = fees.platform_absorbs_hitpay_fee
       ? roundMoney(params.totalPrice)
       : roundMoney(params.totalPrice + hitpayFee);
-    const checkoutIdempotencyKey =
-      `checkout_init_${params.renterId}_${params.listingId}_${params.pricingPeriod}_${params.rentalUnits}_${params.quantity}_${params.startDate}_${params.endDate}_${Date.now()}`;
+    const checkoutIdempotencyKey = params.submissionToken
+      ? `checkout_init_${params.submissionToken}`
+      : `checkout_init_${params.renterId}_${params.listingId}_${params.pricingPeriod}_${params.rentalUnits}_${params.quantity}_${params.startDate}_${params.endDate}_${Date.now()}`;
 
     const checkoutId = await createTransactionRecord({
       bookingId: null,
@@ -816,6 +819,7 @@ export async function createCheckoutPayment(params: {
         start_date: params.startDate,
         end_date: params.endDate,
         message: params.message ?? null,
+        submission_token: params.submissionToken ?? null,
       } satisfies CheckoutBookingMetadata,
     });
 
