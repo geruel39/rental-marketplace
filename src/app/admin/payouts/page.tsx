@@ -13,10 +13,23 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { formatCurrency, formatDate } from "@/lib/utils";
 import type { Booking, Payout, Profile } from "@/types";
 
+type AdminPayoutRowRaw = Payout & {
+  lister: Profile | Profile[] | null;
+  booking: Booking | Booking[] | null;
+};
+
 type AdminPayoutRow = Payout & {
   lister: Profile;
   booking: Booking | null;
 };
+
+function unwrapRelation<T>(value: T | T[] | null | undefined): T | null {
+  if (Array.isArray(value)) {
+    return value[0] ?? null;
+  }
+
+  return value ?? null;
+}
 
 export default async function AdminPayoutsPage() {
   const admin = createAdminClient();
@@ -31,7 +44,22 @@ export default async function AdminPayoutsPage() {
     )
     .order("created_at", { ascending: false });
 
-  const payouts = ((data ?? []) as AdminPayoutRow[]) ?? [];
+  const payouts = ((data ?? []) as AdminPayoutRowRaw[])
+    .map((payout) => {
+      const lister = unwrapRelation(payout.lister);
+      const booking = unwrapRelation(payout.booking);
+
+      if (!lister) {
+        return null;
+      }
+
+      return {
+        ...payout,
+        lister,
+        booking,
+      } satisfies AdminPayoutRow;
+    })
+    .filter((payout): payout is AdminPayoutRow => payout !== null);
   const failedPayouts = payouts.filter((payout) => payout.status === "failed");
   const pendingPayouts = payouts.filter(
     (payout) => payout.status === "pending" || payout.status === "processing",
