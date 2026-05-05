@@ -11,6 +11,7 @@ import { ListerCancelDialog } from "@/components/bookings/lister-cancel-dialog";
 import { PendingSubmitButton } from "@/components/bookings/pending-submit-button";
 import { RaiseDisputeDialog } from "@/components/bookings/raise-dispute-dialog";
 import { RentalCountdown } from "@/components/bookings/rental-countdown";
+import { ReviewActionButton } from "@/components/reviews/review-action-button";
 import { EmptyState } from "@/components/shared/empty-state";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
@@ -78,7 +79,18 @@ const secondaryActionClassName =
 const primaryActionClassName =
   "h-10 w-full justify-center rounded-xl px-4 text-sm font-semibold";
 
-function RequestActions({ booking }: { booking: BookingWithDetails }) {
+function RequestActions({
+  booking,
+  currentUserId,
+}: {
+  booking: BookingWithDetails;
+  currentUserId: string;
+}) {
+  const canLeaveReview =
+    booking.status === "completed" &&
+    booking.lister_id === currentUserId &&
+    !booking.lister_reviewed;
+
   if (booking.status === "lister_confirmation") {
     return (
       <div className="flex h-full flex-col gap-4 rounded-3xl border border-red-200 bg-red-50/80 p-4 sm:p-5">
@@ -168,6 +180,25 @@ function RequestActions({ booking }: { booking: BookingWithDetails }) {
         )}
         triggerSize="default"
       />
+    );
+  }
+
+  if (canLeaveReview) {
+    return (
+      <ReviewActionButton
+        booking={booking}
+        currentUserId={currentUserId}
+        fullWidth
+        size="default"
+      />
+    );
+  }
+
+  if (booking.status === "completed" && booking.lister_reviewed) {
+    return (
+      <p className="inline-flex min-h-10 w-full items-center rounded-3xl border border-emerald-200 bg-emerald-50/80 px-4 py-3 text-sm font-medium text-emerald-700">
+        Review submitted.
+      </p>
     );
   }
 
@@ -325,7 +356,7 @@ export default async function RequestsPage({
                   </div>
 
                   <div className="w-full lg:w-[296px] lg:justify-self-end">
-                    <RequestActions booking={booking} />
+                    <RequestActions booking={booking} currentUserId={user.id} />
                   </div>
                 </div>
               </article>

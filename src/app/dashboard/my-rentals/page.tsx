@@ -9,6 +9,7 @@ import { RaiseDisputeDialog } from "@/components/bookings/raise-dispute-dialog";
 import { RentalCountdown } from "@/components/bookings/rental-countdown";
 import { RenterCancelDialog } from "@/components/bookings/renter-cancel-dialog";
 import { ReturnDialog } from "@/components/bookings/return-dialog";
+import { ReviewActionButton } from "@/components/reviews/review-action-button";
 import { EmptyState } from "@/components/shared/empty-state";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
@@ -81,7 +82,18 @@ const secondaryActionClassName =
 const primaryActionClassName =
   "h-10 w-full justify-center rounded-xl px-4 text-sm font-semibold";
 
-function RentalActions({ booking }: { booking: BookingWithDetails }) {
+function RentalActions({
+  booking,
+  currentUserId,
+}: {
+  booking: BookingWithDetails;
+  currentUserId: string;
+}) {
+  const canLeaveReview =
+    booking.status === "completed" &&
+    booking.renter_id === currentUserId &&
+    !booking.renter_reviewed;
+
   if (booking.status === "lister_confirmation") {
     return (
       <div className="flex h-full flex-col gap-3 rounded-3xl border border-border/70 bg-muted/20 p-4 sm:p-5">
@@ -145,6 +157,25 @@ function RentalActions({ booking }: { booking: BookingWithDetails }) {
     return (
       <div className="inline-flex min-h-10 w-full items-center rounded-3xl border border-emerald-200 bg-emerald-50/80 px-4 py-3 text-sm font-medium text-emerald-700">
         Return submitted. Waiting for lister inspection.
+      </div>
+    );
+  }
+
+  if (canLeaveReview) {
+    return (
+      <ReviewActionButton
+        booking={booking}
+        currentUserId={currentUserId}
+        fullWidth
+        size="default"
+      />
+    );
+  }
+
+  if (booking.status === "completed" && booking.renter_reviewed) {
+    return (
+      <div className="inline-flex min-h-10 w-full items-center rounded-3xl border border-emerald-200 bg-emerald-50/80 px-4 py-3 text-sm font-medium text-emerald-700">
+        Review submitted.
       </div>
     );
   }
@@ -292,7 +323,7 @@ export default async function MyRentalsPage({
                   </div>
 
                   <div className="w-full lg:w-[296px] lg:justify-self-end">
-                    <RentalActions booking={booking} />
+                    <RentalActions booking={booking} currentUserId={user.id} />
                   </div>
                 </div>
               </article>
