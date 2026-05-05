@@ -88,6 +88,26 @@ type PayoutWithRelations = Payout & {
   booking: Booking;
 };
 
+type HitPaySchemaOption = {
+  label?: string;
+  value?: string;
+};
+
+type HitPaySchemaField = {
+  key?: string;
+  options?: HitPaySchemaOption[];
+  required?: boolean;
+  type?: string;
+};
+
+type HitPayTransferState = {
+  id: string;
+  rawStatus: string;
+  payoutStatus: Payout["status"];
+  reference: string | null;
+  failureReason: string | null;
+};
+
 type CreateTransactionParams = {
   bookingId?: string | null;
   renterId: string;
@@ -1255,6 +1275,576 @@ async function createHitPayRefund(params: {
   };
 }
 
+function normalizeForMatching(value: string) {
+  return value.trim().toLowerCase().replace(/[^a-z0-9]/g, "");
+}
+
+function inferCountryCode(profile: Pick<Profile, "country">, payoutCurrency: string) {
+  const normalizedCountry = (profile.country ?? "").trim().toLowerCase();
+
+  if (normalizedCountry.includes("phil")) return "ph";
+  if (normalizedCountry.includes("sing")) return "sg";
+  if (normalizedCountry.includes("malay")) return "my";
+  if (normalizedCountry.includes("bangla")) return "bd";
+  if (normalizedCountry.includes("viet")) return "vn";
+  if (normalizedCountry.includes("austr")) return "au";
+
+  if (payoutCurrency.trim().toLowerCase() === "sgd") {
+    return "sg";
+  }
+
+  throw new Error("Unsupported payout destination country for HitPay transfer.");
+}
+
+function getLocalCurrencyForCountry(countryCode: string) {
+  switch (countryCode) {
+    case "sg":
+      return "sgd";
+    case "ph":
+      return "php";
+    case "my":
+      return "myr";
+    case "bd":
+      return "bdt";
+    case "vn":
+      return "vnd";
+    case "au":
+      return "aud";
+    default:
+      throw new Error("Unsupported beneficiary country for HitPay payout.");
+  }
+}
+
+async function getHitPayBeneficiarySchema(params: {
+  country: string;
+  currency: string;
+  holderType: "individual" | "company";
+}) {
+  const apiKey = process.env.HITPAY_API_KEY;
+  if (!apiKey) {
+    throw new Error("Missing required environment variable: HITPAY_API_KEY");
+  }
+
+  const response = await fetch(`${getHitPayApiUrl()}/beneficiaries/schema`, {
+    method: "POST",
+    headers: {
+      "X-BUSINESS-API-KEY": apiKey,
+      "X-Requested-With": "XMLHttpRequest",
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      country: params.country,
+      transfer_method: "bank_transfer",
+      transfer_type: "local",
+      currency: params.currency,
+      holder_type: params.holderType,
+    }),
+    cache: "no-store",
+  });
+
+  const rawText = await response.text();
+  if (!response.ok) {
+    throw new Error(rawText || "Failed to fetch HitPay beneficiary schema");
+  }
+
+  return (rawText ? JSON.parse(rawText) : []) as HitPaySchemaField[];
+}
+
+function resolveBankOption(
+  schema: HitPaySchemaField[],
+  bankName: string,
+): { fieldKey: string; optionValue: string } {
+  const normalizedBankName = normalizeForMatching(bankName);
+  const selectorField = schema.find(
+    (field) =>
+      typeof field.key === "string" &&
+      Array.isArray(field.options) &&
+      field.options.length > 0 &&
+      /bank_(id|swift_code|code|branch_code)$/i.test(field.key),
+  );
+
+  if (!selectorField?.key || !selectorField.options?.length) {
+    throw new Error("HitPay beneficiary schema did not return a supported bank selector.");
+  }
+
+  const directMatch =
+    selectorField.options.find((option) => {
+      const label = option.label ?? "";
+      const value = option.value ?? "";
+      return (
+        normalizeForMatching(label) === normalizedBankName ||
+        normalizeForMatching(value) === normalizedBankName
+      );
+    }) ??
+    selectorField.options.find((option) => {
+      const label = normalizeForMatching(option.label ?? "");
+      const value = normalizeForMatching(option.value ?? "");
+      return (
+        label.includes(normalizedBankName) ||
+        normalizedBankName.includes(label) ||
+        value.includes(normalizedBankName) ||
+        normalizedBankName.includes(value)
+      );
+    });
+
+  if (!directMatch?.value) {
+    throw new Error(
+      `Saved bank "${bankName}" does not match any HitPay-supported payout bank option.`,
+    );
+  }
+
+  return {
+    fieldKey: selectorField.key,
+    optionValue: directMatch.value,
+  };
+}
+
+async function buildHitPayBankBeneficiary(
+  lister: Pick<
+    Profile,
+    "account_type" | "bank_account_name" | "bank_account_number" | "bank_name" | "country"
+  >,
+  payoutCurrency: string,
+) {
+  if (!lister.bank_name || !lister.bank_account_name || !lister.bank_account_number) {
+    throw new Error("Bank payout details are incomplete.");
+  }
+
+  const countryCode = inferCountryCode(lister, payoutCurrency);
+  const beneficiaryCurrency = getLocalCurrencyForCountry(countryCode);
+  const normalizedPayoutCurrency = payoutCurrency.trim().toLowerCase();
+
+  if (beneficiaryCurrency !== normalizedPayoutCurrency) {
+    throw new Error(
+      `HitPay bank payouts for ${countryCode.toUpperCase()} require ${beneficiaryCurrency.toUpperCase()} payouts, but this payout is ${payoutCurrency.toUpperCase()}.`,
+    );
+  }
+
+  const holderType = lister.account_type === "business" ? "company" : "individual";
+  const schema = await getHitPayBeneficiarySchema({
+    country: countryCode,
+    currency: beneficiaryCurrency,
+    holderType,
+  });
+  const bankOption = resolveBankOption(schema, lister.bank_name);
+
+  return {
+    country: countryCode,
+    transfer_method: "bank_transfer",
+    transfer_type: "local",
+    currency: beneficiaryCurrency,
+    holder_type: holderType,
+    holder_name: lister.bank_account_name,
+    account_number: lister.bank_account_number,
+    [bankOption.fieldKey]: bankOption.optionValue,
+  };
+}
+
+async function createHitPayTransferForPayout(payout: PayoutWithRelations) {
+  const apiKey = process.env.HITPAY_API_KEY;
+  if (!apiKey) {
+    throw new Error("Missing required environment variable: HITPAY_API_KEY");
+  }
+
+  const beneficiary = await buildHitPayBankBeneficiary(payout.lister, payout.currency);
+  const response = await fetch(`${getHitPayApiUrl()}/transfers`, {
+    method: "POST",
+    headers: {
+      "X-BUSINESS-API-KEY": apiKey,
+      "X-Requested-With": "XMLHttpRequest",
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      source_currency: payout.currency.trim().toLowerCase(),
+      payment_amount: roundMoney(payout.amount),
+      beneficiary,
+      remark: payout.booking_id ?? payout.id,
+    }),
+    cache: "no-store",
+  });
+
+  const rawText = await response.text();
+  if (!response.ok) {
+    throw new Error(rawText || "Failed to create HitPay transfer");
+  }
+
+  const parsed = (rawText ? JSON.parse(rawText) : {}) as Record<string, unknown>;
+  const transferId = typeof parsed.id === "string" ? parsed.id : "";
+  const status = typeof parsed.status === "string" ? parsed.status : "scheduled";
+  const reference =
+    typeof parsed.reference === "string"
+      ? parsed.reference
+      : typeof parsed.remark === "string"
+        ? parsed.remark
+        : null;
+
+  if (!transferId) {
+    throw new Error("HitPay transfer response did not include a transfer ID.");
+  }
+
+  return {
+    id: transferId,
+    status,
+    reference,
+  };
+}
+
+async function getHitPayTransfer(transferId: string) {
+  const apiKey = process.env.HITPAY_API_KEY;
+  if (!apiKey) {
+    throw new Error("Missing required environment variable: HITPAY_API_KEY");
+  }
+
+  const response = await fetch(`${getHitPayApiUrl()}/transfers/${transferId}`, {
+    method: "GET",
+    headers: {
+      "X-BUSINESS-API-KEY": apiKey,
+      "X-Requested-With": "XMLHttpRequest",
+    },
+    cache: "no-store",
+  });
+
+  const rawText = await response.text();
+  if (!response.ok) {
+    throw new Error(rawText || "Failed to fetch HitPay transfer");
+  }
+
+  return (rawText ? JSON.parse(rawText) : {}) as Record<string, unknown>;
+}
+
+function mapHitPayTransferState(payload: {
+  id: string;
+  status: string;
+  reference?: string | null;
+  remark?: string | null;
+  failureReason?: string | null;
+  failureCode?: string | null;
+}) {
+  const rawStatus = payload.status.trim().toLowerCase();
+  const payoutStatus: Payout["status"] =
+    rawStatus === "paid"
+      ? "completed"
+      : rawStatus === "failed" || rawStatus === "canceled"
+        ? "failed"
+        : "processing";
+  const failureReason =
+    payoutStatus === "failed"
+      ? payload.failureReason ??
+        payload.failureCode ??
+        `HitPay transfer status: ${payload.status}`
+      : null;
+
+  return {
+    id: payload.id,
+    rawStatus,
+    payoutStatus,
+    reference: payload.reference ?? payload.remark ?? null,
+    failureReason,
+  } satisfies HitPayTransferState;
+}
+
+async function finalizePayoutAsCompleted(params: {
+  payout: PayoutWithRelations;
+  adminId?: string;
+  reference: string;
+  triggerType: PayoutTrigger;
+}) {
+  const admin = createAdminClient();
+  const now = new Date().toISOString();
+  const currentPayoutMethod = params.payout.lister.payout_method ?? null;
+  const netAmount = params.payout.net_amount || params.payout.amount;
+
+  const { error: updateError } = await admin
+    .from("payouts")
+    .update({
+      status: "completed",
+      processed_at: now,
+      processed_by: params.adminId ?? null,
+      trigger_type: params.triggerType,
+      net_amount: netAmount,
+      payout_method: currentPayoutMethod,
+      reference_number: params.reference,
+      failure_reason: null,
+      can_retry: false,
+    })
+    .eq("id", params.payout.id);
+
+  if (updateError) {
+    throw new Error(updateError.message);
+  }
+
+  const transactionId = await createTransactionRecord({
+    bookingId: params.payout.booking_id,
+    renterId: params.payout.booking.renter_id,
+    listerId: params.payout.lister_id,
+    eventType: "payout_completed",
+    grossAmount: params.payout.amount,
+    hitpayFee: params.payout.hitpay_fee,
+    platformFee: params.payout.platform_fee,
+    netAmount,
+    currency: params.payout.currency,
+    externalReference: params.reference,
+    idempotencyKey: `payout_completed_${params.payout.id}`,
+    triggeredBy: params.adminId ?? null,
+    triggeredByRole: params.adminId ? "admin" : "system",
+    status: "completed",
+    processedAt: now,
+    metadata: {
+      payout_id: params.payout.id,
+      payout_method: currentPayoutMethod,
+    },
+  });
+
+  await admin
+    .from("payouts")
+    .update({
+      transaction_id: transactionId,
+    })
+    .eq("id", params.payout.id);
+
+  await admin
+    .from("bookings")
+    .update({
+      payout_at: now,
+      payout_id: params.payout.id,
+    })
+    .eq("id", params.payout.booking_id ?? params.payout.booking.id);
+
+  await addBookingTimeline({
+    bookingId: params.payout.booking_id ?? params.payout.booking.id,
+    status: params.payout.booking.status,
+    previousStatus: params.payout.booking.status,
+    actorRole: "system",
+    title: "Payment sent to lister",
+    description: `Payout of ${formatMoney(params.payout.amount, params.payout.currency)} processed via ${currentPayoutMethod ?? "configured method"}.`,
+    metadata: {
+      payout_id: params.payout.id,
+      amount: params.payout.amount,
+      reference: params.reference,
+      payout_method: currentPayoutMethod,
+    },
+  });
+
+  void notifyPayoutCompleted({
+    listerId: params.payout.lister_id,
+    listerName: getDisplayName(params.payout.lister),
+    amount: params.payout.amount,
+    method: currentPayoutMethod ?? "configured method",
+    reference: params.reference,
+    bookingId: params.payout.booking_id ?? params.payout.booking.id,
+  }).catch((error) => {
+    console.error("finalizePayoutAsCompleted notification failed:", error);
+  });
+}
+
+async function applyHitPayTransferState(params: {
+  payout: PayoutWithRelations;
+  transfer: HitPayTransferState;
+  adminId?: string;
+  payoutInitiatedTransactionId?: string;
+  triggerType: PayoutTrigger;
+}) {
+  const admin = createAdminClient();
+  const currentPayoutMethod = params.payout.lister.payout_method ?? "bank";
+
+  if (params.payoutInitiatedTransactionId) {
+    await updateTransaction(params.payoutInitiatedTransactionId, {
+      status: params.transfer.payoutStatus === "failed" ? "failed" : "processing",
+      hitpay_transfer_id: params.transfer.id,
+      external_reference: params.transfer.reference ?? undefined,
+      failure_reason: params.transfer.failureReason ?? undefined,
+      processed_at: new Date().toISOString(),
+    });
+  }
+
+  if (params.transfer.payoutStatus === "processing") {
+    const { error } = await admin
+      .from("payouts")
+      .update({
+        status: "processing",
+        payout_method: currentPayoutMethod,
+        hitpay_transfer_id: params.transfer.id,
+        reference_number:
+          params.transfer.reference ?? params.payout.reference_number ?? params.payout.id,
+        processed_by: params.adminId ?? null,
+        trigger_type: params.triggerType,
+        failure_reason: null,
+        can_retry: false,
+      })
+      .eq("id", params.payout.id);
+
+    if (error) {
+      throw new Error(error.message);
+    }
+
+    return;
+  }
+
+  if (params.transfer.payoutStatus === "failed") {
+    await admin
+      .from("payouts")
+      .update({
+        hitpay_transfer_id: params.transfer.id,
+        reference_number:
+          params.transfer.reference ?? params.payout.reference_number ?? params.payout.id,
+      })
+      .eq("id", params.payout.id);
+
+    await handleFailedPayout(
+      params.payout.id,
+      params.transfer.failureReason ?? "HitPay transfer failed.",
+    );
+    return;
+  }
+
+  if (params.payout.status === "completed" && params.payout.transaction_id) {
+    return;
+  }
+
+  await admin
+    .from("payouts")
+    .update({
+      hitpay_transfer_id: params.transfer.id,
+    })
+    .eq("id", params.payout.id);
+
+  await finalizePayoutAsCompleted({
+    payout: params.payout,
+    adminId: params.adminId,
+    reference:
+      params.transfer.reference ??
+      params.payout.reference_number ??
+      params.transfer.id,
+    triggerType: params.triggerType,
+  });
+}
+
+async function getPayoutByTransferId(
+  client: AnyClient,
+  transferId: string,
+): Promise<PayoutWithRelations | null> {
+  const { data, error } = await client
+    .from("payouts")
+    .select(
+      `
+        *,
+        lister:profiles!payouts_lister_id_fkey(*),
+        booking:bookings!payouts_booking_id_fkey(*)
+      `,
+    )
+    .eq("hitpay_transfer_id", transferId)
+    .maybeSingle<PayoutWithRelations>();
+
+  if (error) {
+    throw new Error(error.message);
+  }
+
+  if (!data) {
+    return null;
+  }
+
+  const lister = unwrapRelation(data.lister);
+  const booking = unwrapRelation(data.booking);
+
+  if (!lister || !booking) {
+    throw new Error("Payout relations are incomplete");
+  }
+
+  return {
+    ...data,
+    lister,
+    booking,
+  };
+}
+
+export async function syncHitPayTransferForPayout(
+  transferId: string,
+): Promise<{ success: boolean; status?: Payout["status"]; error?: string; payoutId?: string }> {
+  const admin = createAdminClient();
+
+  try {
+    const payout = await getPayoutByTransferId(admin, transferId);
+    if (!payout) {
+      return { success: false, error: "Payout not found for transfer." };
+    }
+
+    const payload = await getHitPayTransfer(transferId);
+    const transfer = mapHitPayTransferState({
+      id: transferId,
+      status: typeof payload.status === "string" ? payload.status : "scheduled",
+      reference:
+        typeof payload.reference === "string"
+          ? payload.reference
+          : typeof payload.remark === "string"
+            ? payload.remark
+            : null,
+      failureReason:
+        typeof payload.failure_message === "string"
+          ? payload.failure_message
+          : typeof payload.message === "string"
+            ? payload.message
+            : null,
+      failureCode:
+        typeof payload.failure_code === "string"
+          ? payload.failure_code
+          : typeof payload.code === "string"
+            ? payload.code
+            : null,
+    });
+
+    await applyHitPayTransferState({
+      payout,
+      transfer,
+      triggerType: payout.trigger_type,
+    });
+
+    revalidatePaymentViews();
+    return {
+      success: true,
+      status: transfer.payoutStatus,
+      payoutId: payout.id,
+    };
+  } catch (error) {
+    console.error("syncHitPayTransferForPayout failed:", error);
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : "Could not sync payout transfer.",
+    };
+  }
+}
+
+export async function applyHitPayTransferWebhookUpdate(params: {
+  transferId: string;
+  status: string;
+  reference?: string | null;
+  failureReason?: string | null;
+  failureCode?: string | null;
+}) {
+  const admin = createAdminClient();
+  const payout = await getPayoutByTransferId(admin, params.transferId);
+
+  if (!payout) {
+    return { success: false as const, reason: "payout_not_found" };
+  }
+
+  const transfer = mapHitPayTransferState({
+    id: params.transferId,
+    status: params.status,
+    reference: params.reference,
+    failureReason: params.failureReason,
+    failureCode: params.failureCode,
+  });
+
+  await applyHitPayTransferState({
+    payout,
+    transfer,
+    triggerType: payout.trigger_type,
+  });
+
+  revalidatePaymentViews();
+  return { success: true as const, payoutId: payout.id, status: transfer.payoutStatus };
+}
+
 function validatePayoutDetails(lister: Profile) {
   if (!lister.payout_setup_completed || !lister.payout_method) {
     return false;
@@ -2408,92 +2998,57 @@ export async function processPayoutToLister(
       : payout.retry_count > 0
         ? "retry_after_failure"
         : "auto_after_completion";
-    const netAmount = payout.net_amount || payout.amount;
+    if (currentPayoutMethod === "bank") {
+      try {
+        const transferResponse = await createHitPayTransferForPayout(payout);
+        const transfer = mapHitPayTransferState({
+          id: transferResponse.id,
+          status: transferResponse.status,
+          reference: transferResponse.reference,
+        });
 
-    const { error: updateError } = await admin
-      .from("payouts")
-      .update({
-        status: "completed",
-        processed_at: now,
-        processed_by: adminId ?? null,
-        trigger_type: triggerType,
-        net_amount: netAmount,
-        payout_method: currentPayoutMethod,
-        reference_number: reference,
-        failure_reason: null,
-        can_retry: false,
-      })
-      .eq("id", payout.id);
+        await applyHitPayTransferState({
+          payout,
+          transfer,
+          adminId,
+          payoutInitiatedTransactionId: payoutInitiatedId,
+          triggerType,
+        });
 
-    if (updateError) {
-      await updateTransaction(payoutInitiatedId, {
-        status: "failed",
-        failure_reason: updateError.message,
-      });
-      return { error: updateError.message };
+        revalidatePaymentViews();
+
+        return {
+          success: true,
+          message:
+            transfer.payoutStatus === "completed"
+              ? `Payout of ${formatMoney(payout.amount, payout.currency)} was sent through HitPay.`
+              : `Payout of ${formatMoney(payout.amount, payout.currency)} was submitted to HitPay and is now ${transfer.rawStatus}.`,
+        };
+      } catch (error) {
+        const message =
+          error instanceof Error ? error.message : "Could not create HitPay transfer.";
+
+        await updateTransaction(payoutInitiatedId, {
+          status: "failed",
+          failure_reason: message,
+          processed_at: now,
+        });
+        await handleFailedPayout(payout.id, message);
+        return { error: message };
+      }
     }
 
-    const transactionId = await createTransactionRecord({
-      bookingId: payout.booking_id,
-      renterId: payout.booking.renter_id,
-      listerId: payout.lister_id,
-      eventType: "payout_completed",
-      grossAmount: payout.amount,
-      hitpayFee: payout.hitpay_fee,
-      platformFee: payout.platform_fee,
-      netAmount,
-      currency: payout.currency,
-      externalReference: reference,
-      idempotencyKey: `payout_completed_${payout.id}`,
-      triggeredBy: adminId ?? null,
-      triggeredByRole: adminId ? "admin" : "system",
+    await updateTransaction(payoutInitiatedId, {
       status: "completed",
-      processedAt: now,
-      metadata: {
-        payout_id: payout.id,
-        payout_method: currentPayoutMethod,
-      },
+      external_reference: reference,
+      processed_at: now,
     });
 
-    await admin
-      .from("payouts")
-      .update({
-        transaction_id: transactionId,
-      })
-      .eq("id", payout.id);
-
-    await admin
-      .from("bookings")
-      .update({
-        payout_at: now,
-        payout_id: payout.id,
-      })
-      .eq("id", payout.booking_id ?? payout.booking.id);
-
-    await addBookingTimeline({
-      bookingId: payout.booking_id ?? payout.booking.id,
-      status: payout.booking.status,
-      previousStatus: payout.booking.status,
-      actorRole: "system",
-      title: "Payment sent to lister",
-      description: `Payout of ${formatMoney(payout.amount, payout.currency)} processed via ${currentPayoutMethod ?? "configured method"}.`,
-      metadata: {
-        payout_id: payout.id,
-        amount: payout.amount,
-        reference,
-        payout_method: currentPayoutMethod,
-      },
-    });
-
-    void notifyPayoutCompleted({
-      listerId: payout.lister_id,
-      listerName: getDisplayName(payout.lister),
-      amount: payout.amount,
-      method: currentPayoutMethod ?? "configured method",
+    await finalizePayoutAsCompleted({
+      payout,
+      adminId,
       reference,
-      bookingId: payout.booking_id ?? payout.booking.id,
-    }).catch((error) => {
-      console.error("processPayoutToLister completion notification failed:", error);
+      triggerType,
     });
 
     revalidatePaymentViews();

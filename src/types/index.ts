@@ -490,6 +490,7 @@ export interface Payout {
   currency: string;
   status: PayoutStatus;
   payout_method: string | null;
+  hitpay_transfer_id?: string | null;
   reference_number: string | null;
   notes: string | null;
   failure_reason?: string | null;
@@ -497,6 +498,7 @@ export interface Payout {
   last_retry_at?: string | null;
   can_retry: boolean;
   transaction_id?: string | null;
+  processed_by?: string | null;
   processed_at: string | null;
   created_at: string;
   updated_at: string;

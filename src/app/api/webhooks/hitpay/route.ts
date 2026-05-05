@@ -2,7 +2,11 @@ import crypto from "node:crypto";
 
 import { NextRequest, NextResponse } from "next/server";
 
-import { handleCompletedCheckoutPayment, handlePaymentConfirmed } from "@/actions/payments";
+import {
+  applyHitPayTransferWebhookUpdate,
+  handleCompletedCheckoutPayment,
+  handlePaymentConfirmed,
+} from "@/actions/payments";
 import { getHitPayApiUrl } from "@/lib/env";
 import { getAdminIds, sendNotification } from "@/lib/notifications";
 import { createAdminClient } from "@/lib/supabase/admin";
@@ -38,6 +42,17 @@ type HitPayJsonWebhookPayload = {
     reference_number?: string;
     status?: string;
   } | null;
+};
+
+type HitPayTransferWebhookPayload = {
+  id?: string;
+  status?: string;
+  reference?: string | null;
+  remark?: string | null;
+  failure_code?: string | number | null;
+  failure_message?: string | null;
+  code?: string | number | null;
+  message?: string | null;
 };
 
 type BookingSnapshot = {
@@ -666,7 +681,68 @@ export async function POST(request: NextRequest) {
     console.log("Raw body:", rawBody);
     const trimmedBody = rawBody.trim();
     const signatureHeader = request.headers.get("Hitpay-Signature");
+    const eventObject = request.headers.get("Hitpay-Event-Object")?.trim().toLowerCase() ?? "";
     const isJsonPayload = trimmedBody.startsWith("{");
+
+    if (isJsonPayload && eventObject === "transfer") {
+      if (!signatureHeader) {
+        console.error("[HITPAY_WEBHOOK] Missing Hitpay-Signature header for transfer event");
+        return NextResponse.json({ error: "Missing signature" }, { status: 401 });
+      }
+
+      if (!verifyHitPayJsonSignature(rawBody, signatureHeader)) {
+        console.error("[HITPAY_WEBHOOK] Transfer JSON signature verification failed");
+        return NextResponse.json({ error: "Invalid signature" }, { status: 401 });
+      }
+
+      const payload = parseJsonWebhookBody(rawBody) as HitPayTransferWebhookPayload;
+      const transferId = payload.id?.trim() ?? "";
+      const transferStatus = payload.status?.trim() ?? "";
+
+      if (!transferId || !transferStatus) {
+        console.error("[HITPAY_WEBHOOK] Missing transfer webhook fields:", {
+          transferId,
+          transferStatus,
+        });
+        return NextResponse.json(
+          { error: "Missing required transfer fields" },
+          { status: 400 },
+        );
+      }
+
+      const result = await applyHitPayTransferWebhookUpdate({
+        transferId,
+        status: transferStatus,
+        reference: payload.reference ?? payload.remark ?? null,
+        failureReason:
+          payload.failure_message ??
+          payload.message ??
+          null,
+        failureCode:
+          typeof payload.failure_code === "number"
+            ? String(payload.failure_code)
+            : payload.failure_code ??
+              (typeof payload.code === "number" ? String(payload.code) : payload.code) ??
+              null,
+      });
+
+      if (!result.success) {
+        console.warn("[HITPAY_WEBHOOK] Transfer webhook did not map to a payout:", {
+          transferId,
+          status: transferStatus,
+          reason: result.reason,
+        });
+        return NextResponse.json(
+          { received: true, note: result.reason },
+          { status: 200 },
+        );
+      }
+
+      return NextResponse.json(
+        { received: true, payoutId: result.payoutId, status: result.status },
+        { status: 200 },
+      );
+    }
 
     let paymentId = "";
     let paymentRequestId = "";
