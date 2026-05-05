@@ -17,7 +17,7 @@ interface PaymentButtonProps {
 
 export function PaymentButton({
   bookingId,
-  paymentUrl,
+  paymentUrl: _paymentUrl,
   className,
   variant = "default",
 }: PaymentButtonProps) {
@@ -29,11 +29,6 @@ export function PaymentButton({
   }
 
   function handleClick() {
-    if (paymentUrl) {
-      redirectToPayment(paymentUrl);
-      return;
-    }
-
     startTransition(async () => {
       const result = await createPaymentForBooking(bookingId);
 

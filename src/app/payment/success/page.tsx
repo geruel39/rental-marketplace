@@ -41,6 +41,15 @@ export default async function PaymentSuccessPage({
   const checkout = checkoutId ? await getCheckoutStatusForSuccessPage(checkoutId) : null;
   const resolvedBookingId = bookingId ?? checkout?.bookingId ?? undefined;
   const booking = resolvedBookingId ? await getBookingDetails(resolvedBookingId) : null;
+  const currentCheckoutMatchesBooking =
+    !checkout ||
+    !booking ||
+    !checkout.paymentRequestId ||
+    booking.hitpay_payment_request_id === checkout.paymentRequestId;
+  const isCurrentPaymentCompleted =
+    Boolean(booking?.paid_at) &&
+    booking?.hitpay_payment_status === "completed" &&
+    currentCheckoutMatchesBooking;
 
   if (!resolvedBookingId && !checkout) {
     return (
@@ -98,12 +107,12 @@ export default async function PaymentSuccessPage({
     fees,
   });
 
-  if (!booking.paid_at || booking.hitpay_payment_status !== "completed") {
+  if (!isCurrentPaymentCompleted) {
     return (
       <main className="mx-auto flex min-h-[70vh] max-w-5xl items-center px-4 py-12 sm:px-6 lg:px-8">
         <PaymentStatusPoller
           enabled
-          fallbackMessage="Payment is being verified. You can check your rentals page for updates."
+          fallbackMessage="Payment is being verified for this booking attempt. You can check your rentals page for updates."
         />
         <Card className="w-full border-border/70">
           <CardHeader className="text-center">

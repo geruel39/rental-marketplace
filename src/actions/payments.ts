@@ -747,18 +747,8 @@ export async function createCheckoutPayment(params: {
     const chargedToRenter = fees.platform_absorbs_hitpay_fee
       ? roundMoney(params.totalPrice)
       : roundMoney(params.totalPrice + hitpayFee);
-    const baseIdempotencyKey =
-      `checkout_init_${params.renterId}_${params.listingId}_${params.pricingPeriod}_${params.rentalUnits}_${params.quantity}_${params.startDate}_${params.endDate}`;
-    const existingCheckout = await getTransactionByIdempotency(baseIdempotencyKey);
     const checkoutIdempotencyKey =
-      existingCheckout &&
-      (
-        existingCheckout.status === "completed" ||
-        Boolean(existingCheckout.booking_id) ||
-        Boolean(existingCheckout.hitpay_payment_request_id)
-      )
-        ? `${baseIdempotencyKey}_${Date.now()}`
-        : baseIdempotencyKey;
+      `checkout_init_${params.renterId}_${params.listingId}_${params.pricingPeriod}_${params.rentalUnits}_${params.quantity}_${params.startDate}_${params.endDate}_${Date.now()}`;
 
     const checkoutId = await createTransactionRecord({
       bookingId: null,
@@ -1660,10 +1650,8 @@ export async function createPaymentForBooking(
       return { error: "Booking is not awaiting payment." };
     }
 
-    if (booking.hitpay_payment_request_id && booking.hitpay_payment_url) {
-      return {
-        error: "Payment request already exists for this booking.",
-      };
+    if (booking.paid_at || booking.hitpay_payment_status === "completed") {
+      return { error: "Payment has already been completed for this booking." };
     }
 
     const fees = await getFeeConfig();
@@ -1681,7 +1669,7 @@ export async function createPaymentForBooking(
       platformFee: booking.service_fee_renter,
       netAmount: booking.subtotal,
       currency: "SGD",
-      idempotencyKey: `payment_init_${booking.id}`,
+      idempotencyKey: `payment_init_${booking.id}_${Date.now()}`,
       triggeredBy: booking.renter_id,
       triggeredByRole: "renter",
       metadata: {
@@ -1751,6 +1739,9 @@ export async function createPaymentForBooking(
       .update({
         hitpay_payment_request_id: paymentRequestId,
         hitpay_payment_url: paymentUrl,
+        hitpay_payment_status: "pending",
+        hitpay_payment_id: null,
+        paid_at: null,
         hitpay_fee: roundMoney(hitpayFee),
         net_collected: roundMoney(chargedToRenter),
       })
