@@ -78,9 +78,42 @@ function getRefundPreview(booking: BookingWithDetails) {
 const tabButtonClassName =
   "h-10 rounded-xl px-4 text-sm font-medium shadow-none";
 const secondaryActionClassName =
-  "h-10 w-full justify-center rounded-xl border-border/70 bg-white px-4 text-sm font-semibold shadow-sm";
+  "h-10 w-full justify-center rounded-xl border-border/70 bg-white px-4 text-sm font-semibold text-slate-900 shadow-sm hover:text-brand-navy [&_svg]:text-current";
 const primaryActionClassName =
-  "h-10 w-full justify-center rounded-xl px-4 text-sm font-semibold";
+  "h-10 w-full justify-center rounded-xl px-4 text-sm font-semibold [&_svg]:text-current";
+
+function getRentalActionPriority(booking: BookingWithDetails, currentUserId: string) {
+  const canLeaveReview =
+    booking.status === "completed" &&
+    booking.renter_id === currentUserId &&
+    !booking.renter_reviewed;
+
+  if (canLeaveReview) return 0;
+  if (booking.status === "active") return 1;
+  if (booking.status === "confirmed") return 2;
+  if (booking.status === "lister_confirmation") return 3;
+  return 4;
+}
+
+function sortRentalBookings(bookings: BookingWithDetails[], currentUserId: string, filter: FilterKey) {
+  const items = [...bookings];
+
+  if (filter !== "all") {
+    return items;
+  }
+
+  return items.sort((left, right) => {
+    const priorityDiff =
+      getRentalActionPriority(left, currentUserId) -
+      getRentalActionPriority(right, currentUserId);
+
+    if (priorityDiff !== 0) {
+      return priorityDiff;
+    }
+
+    return new Date(right.updated_at).getTime() - new Date(left.updated_at).getTime();
+  });
+}
 
 function RentalActions({
   booking,
@@ -165,6 +198,7 @@ function RentalActions({
     return (
       <ReviewActionButton
         booking={booking}
+        buttonClassName="shadow-sm"
         currentUserId={currentUserId}
         fullWidth
         size="default"
@@ -204,7 +238,11 @@ export default async function MyRentalsPage({
   const resolvedSearchParams = await searchParams;
   const activeFilter = getFilter(getSingleValue(resolvedSearchParams.status));
   const bookings = await getMyRentals(user.id);
-  const filteredBookings = bookings.filter((booking) => matchesFilter(booking, activeFilter));
+  const filteredBookings = sortRentalBookings(
+    bookings.filter((booking) => matchesFilter(booking, activeFilter)),
+    user.id,
+    activeFilter,
+  );
 
   return (
     <div className="space-y-8">

@@ -9,6 +9,7 @@ import type { BookingWithDetails } from "@/types";
 interface ReviewActionButtonProps {
   booking: BookingWithDetails;
   currentUserId: string;
+  buttonClassName?: string;
   fullWidth?: boolean;
   showIcon?: boolean;
   size?: "default" | "sm" | "lg";
@@ -16,9 +17,10 @@ interface ReviewActionButtonProps {
 
 export function ReviewActionButton({
   booking,
+  buttonClassName,
   currentUserId,
   fullWidth = false,
-  showIcon = false,
+  showIcon = true,
   size = "sm",
 }: ReviewActionButtonProps) {
   return (
@@ -26,7 +28,15 @@ export function ReviewActionButton({
       booking={booking}
       currentUserId={currentUserId}
       trigger={
-        <Button className={fullWidth ? "w-full" : undefined} size={size} type="button" variant="outline">
+        <Button
+          className={[
+            "bg-amber-500 text-slate-950 hover:bg-amber-400 [&_svg]:text-slate-950",
+            fullWidth ? "w-full" : "",
+            buttonClassName ?? "",
+          ].filter(Boolean).join(" ")}
+          size={size}
+          type="button"
+        >
           {showIcon ? <Star className="size-4" /> : null}
           Leave Review
         </Button>
