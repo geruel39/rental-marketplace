@@ -563,8 +563,21 @@ async function materializeBookingFromCheckout(params: {
   currency: string;
 }) {
   const admin = createAdminClient();
-  const metadata = params.checkout.metadata;
-  const existingBookingId = params.checkout.booking_id;
+  const latestCheckout = await getCheckoutTransaction(params.checkout.id);
+  if (!latestCheckout) {
+    throw new Error("Checkout transaction not found.");
+  }
+
+  if (latestCheckout.booking_id) {
+    const existingBooking = await getBookingById(latestCheckout.booking_id);
+    if (existingBooking) {
+      return latestCheckout.booking_id;
+    }
+  }
+
+  const checkoutBookingId = latestCheckout.booking_id ?? latestCheckout.id;
+  const metadata = latestCheckout.metadata;
+  const existingBookingId = latestCheckout.booking_id;
   if (existingBookingId) {
     const existingBooking = await getBookingById(existingBookingId);
     if (existingBooking) {
@@ -617,6 +630,7 @@ async function materializeBookingFromCheckout(params: {
   const { data: insertedBooking, error: insertError } = await admin
     .from("bookings")
     .insert({
+      id: checkoutBookingId,
       listing_id: metadata.listing_id,
       renter_id: metadata.renter_id,
       lister_id: metadata.lister_id,
@@ -660,8 +674,27 @@ async function materializeBookingFromCheckout(params: {
     .select("id")
     .maybeSingle<{ id: string }>();
 
-  if (insertError || !insertedBooking?.id) {
-    throw new Error(insertError?.message ?? "Could not create booking after payment.");
+  if (insertError) {
+    if (insertError.code === "23505") {
+      const duplicatedBooking = await getBookingById(checkoutBookingId);
+      if (duplicatedBooking) {
+        await updateTransaction(params.checkout.id, {
+          booking_id: duplicatedBooking.id,
+          hitpay_payment_request_id: params.hitpayPaymentRequestId,
+          hitpay_payment_id: params.hitpayPaymentId,
+          status: "completed",
+          processed_at: now,
+        });
+
+        return duplicatedBooking.id;
+      }
+    }
+
+    throw new Error(insertError.message);
+  }
+
+  if (!insertedBooking?.id) {
+    throw new Error("Could not create booking after payment.");
   }
 
   try {
