@@ -173,7 +173,6 @@ export default async function AdminPayoutsPage() {
                     </div>
                     <div className="flex flex-wrap gap-3">
                       <PayoutProcessDialog
-                        onComplete={() => {}}
                         payout={payout}
                         trigger={
                           <Button className="bg-brand-navy text-white hover:bg-brand-steel">
@@ -257,7 +256,6 @@ export default async function AdminPayoutsPage() {
 
                     <div className="flex flex-col gap-3">
                       <PayoutProcessDialog
-                        onComplete={() => {}}
                         payout={payout}
                         trigger={
                           <Button className="bg-brand-navy text-white hover:bg-brand-steel">
@@ -266,7 +264,6 @@ export default async function AdminPayoutsPage() {
                         }
                       />
                       <PayoutFailDialog
-                        onComplete={() => {}}
                         payout={payout}
                         trigger={<Button variant="outline">Reject</Button>}
                       />
