@@ -1,11 +1,6 @@
 "use client";
 
-import {
-  Building,
-  CheckCircle2,
-  CreditCard,
-  Smartphone,
-} from "lucide-react";
+import { Building, CheckCircle2 } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
@@ -26,23 +21,9 @@ const payoutOptions: Array<{
   {
     method: "bank",
     title: "Bank Account",
-    description: "Direct bank transfer",
+    description: "Automated HitPay bank transfer",
     badge: "KYC Required",
     Icon: Building,
-  },
-  {
-    method: "gcash",
-    title: "GCash",
-    description: "Mobile wallet",
-    badge: "Instant Setup",
-    Icon: Smartphone,
-  },
-  {
-    method: "maya",
-    title: "Maya",
-    description: "Mobile wallet",
-    badge: "Instant Setup",
-    Icon: CreditCard,
   },
 ];
 
@@ -51,7 +32,7 @@ export function PayoutMethodSelector({
   onSelect,
 }: PayoutMethodSelectorProps) {
   return (
-    <div className="grid gap-4 md:grid-cols-3">
+    <div className="grid gap-4 md:grid-cols-2">
       {payoutOptions.map(({ method, title, description, badge, Icon }) => {
         const isSelected = currentMethod === method;
 

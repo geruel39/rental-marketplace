@@ -11,6 +11,9 @@ import { payoutMethodSchema, type PayoutMethodInput } from "@/lib/validations";
 
 type BankAccountFormProps = {
   defaultValues?: Partial<PayoutMethodInput>;
+  bankOptions?: string[];
+  bankOptionsError?: string | null;
+  isLoadingBankOptions?: boolean;
   onSubmit: (data: PayoutMethodInput) => void | Promise<void>;
   isPending?: boolean;
 };
@@ -39,9 +42,13 @@ function getRawAccountNumber(value: string) {
 
 export function BankAccountForm({
   defaultValues,
+  bankOptions = [],
+  bankOptionsError,
+  isLoadingBankOptions = false,
   onSubmit,
   isPending = false,
 }: BankAccountFormProps) {
+  const suggestions = bankOptions.length > 0 ? bankOptions : commonBanks;
   const form = useForm<PayoutMethodInput>({
     resolver: zodResolver(payoutMethodSchema),
     defaultValues: {
@@ -71,14 +78,25 @@ export function BankAccountForm({
         <Input
           id="bank_name"
           list="bank-name-suggestions"
-          placeholder="Select or type your bank"
+          placeholder={
+            isLoadingBankOptions ? "Loading supported banks..." : "Select your bank"
+          }
           {...form.register("bank_name")}
         />
         <datalist id="bank-name-suggestions">
-          {commonBanks.map((bank) => (
+          {suggestions.map((bank) => (
             <option key={bank} value={bank} />
           ))}
         </datalist>
+        {bankOptions.length > 0 ? (
+          <p className="text-xs text-muted-foreground">
+            Choose the bank name exactly as it appears in HitPay&apos;s supported
+            payout bank list.
+          </p>
+        ) : null}
+        {bankOptionsError ? (
+          <p className="text-sm text-amber-700">{bankOptionsError}</p>
+        ) : null}
         {form.formState.errors.bank_name ? (
           <p className="text-sm text-destructive">
             {form.formState.errors.bank_name.message}

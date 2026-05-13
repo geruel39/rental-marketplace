@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useEffect, useState, useTransition } from "react";
 import {
   Building,
   CreditCard,
@@ -10,7 +10,7 @@ import {
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 
-import { setupPayoutMethod } from "@/actions/payout";
+import { getSupportedBankOptions, setupPayoutMethod } from "@/actions/payout";
 import { BankAccountForm } from "@/components/payout/bank-account-form";
 import { GCashForm } from "@/components/payout/gcash-form";
 import { KYCUpload } from "@/components/payout/kyc-upload";
@@ -71,6 +71,9 @@ export function PayoutSettingsClient({
     profile.payout_method,
   );
   const [showSelector, setShowSelector] = useState(!profile.payout_method);
+  const [bankOptions, setBankOptions] = useState<string[]>([]);
+  const [bankOptionsError, setBankOptionsError] = useState<string | null>(null);
+  const [isLoadingBankOptions, setIsLoadingBankOptions] = useState(false);
 
   const activeMethod = showSelector ? selectedMethod : profile.payout_method ?? undefined;
   const shouldShowBankForm =
@@ -80,6 +83,43 @@ export function PayoutSettingsClient({
     selectedMethod === "gcash" && (showSelector || !profile.payout_method);
   const shouldShowMayaForm =
     selectedMethod === "maya" && (showSelector || !profile.payout_method);
+
+  useEffect(() => {
+    if (selectedMethod !== "bank") {
+      return;
+    }
+
+    let isActive = true;
+    setIsLoadingBankOptions(true);
+    setBankOptionsError(null);
+
+    getSupportedBankOptions()
+      .then((options) => {
+        if (!isActive) {
+          return;
+        }
+        setBankOptions(options.map((option) => option.label));
+      })
+      .catch((error) => {
+        if (!isActive) {
+          return;
+        }
+        setBankOptionsError(
+          error instanceof Error
+            ? error.message
+            : "Could not load supported banks from HitPay.",
+        );
+      })
+      .finally(() => {
+        if (isActive) {
+          setIsLoadingBankOptions(false);
+        }
+      });
+
+    return () => {
+      isActive = false;
+    };
+  }, [selectedMethod]);
 
   async function handleMethodSubmit(data: PayoutMethodInput) {
     startTransition(async () => {
@@ -188,12 +228,15 @@ export function PayoutSettingsClient({
             </p>
           </div>
           <BankAccountForm
+            bankOptions={bankOptions}
+            bankOptionsError={bankOptionsError}
             defaultValues={{
               method: "bank",
               bank_name: profile.bank_name ?? "",
               bank_account_number: profile.bank_account_number ?? "",
               bank_account_name: profile.bank_account_name ?? "",
             }}
+            isLoadingBankOptions={isLoadingBankOptions}
             isPending={isPending}
             onSubmit={handleMethodSubmit}
           />

@@ -146,8 +146,7 @@ export default async function PaymentsSettingsPage({
             </p>
             <ul className="mt-2 space-y-2 text-sm text-muted-foreground">
               <li>Bank: setup 1-3 business days after KYC approval</li>
-              <li>GCash: instant setup, instant payouts</li>
-              <li>Maya: instant setup, instant payouts</li>
+              <li>Wallet payouts are disabled until automated HitPay wallet transfers are supported.</li>
             </ul>
           </div>
         </div>

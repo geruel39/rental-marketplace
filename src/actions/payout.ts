@@ -10,6 +10,7 @@ import {
   notifyKYCSubmitted,
   notifyKYCVerified,
 } from "@/lib/notifications";
+import { getHitPayApiUrl } from "@/lib/env";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
 import { kycUploadSchema, payoutMethodSchema } from "@/lib/validations";
@@ -32,6 +33,21 @@ const ALLOWED_KYC_MIME_TYPES = new Set([
 ]);
 const ACTIVE_BOOKING_STATUSES: BookingStatus[] = ["confirmed", "active", "returned"];
 const FUTURE_PAYOUT_STATUSES = ["pending", "processing"] as const;
+
+type HitPaySchemaOption = {
+  label?: string;
+  value?: string;
+};
+
+type HitPaySchemaField = {
+  key?: string;
+  options?: HitPaySchemaOption[];
+};
+
+type SupportedBankOption = {
+  label: string;
+  value: string;
+};
 
 function sanitizeFilename(filename: string) {
   return filename.replace(/[^a-zA-Z0-9._-]/g, "-");
@@ -385,6 +401,108 @@ function revalidatePayoutViews() {
   revalidatePath("/admin/users");
 }
 
+function normalizeForMatching(value: string) {
+  return value.trim().toLowerCase().replace(/[^a-z0-9]/g, "");
+}
+
+function inferPayoutCountryCode(profile: Pick<Profile, "country">) {
+  const country = (profile.country ?? "").trim().toLowerCase();
+
+  if (country.includes("phil")) return "ph";
+  if (country.includes("sing")) return "sg";
+  if (country.includes("malay")) return "my";
+  if (country.includes("bangla")) return "bd";
+  if (country.includes("viet")) return "vn";
+  if (country.includes("austr")) return "au";
+
+  return "sg";
+}
+
+function getLocalCurrencyForCountry(countryCode: string) {
+  switch (countryCode) {
+    case "ph":
+      return "php";
+    case "my":
+      return "myr";
+    case "bd":
+      return "bdt";
+    case "vn":
+      return "vnd";
+    case "au":
+      return "aud";
+    case "sg":
+    default:
+      return "sgd";
+  }
+}
+
+async function fetchHitPayBankOptions(profile: Pick<Profile, "account_type" | "country">) {
+  const apiKey = process.env.HITPAY_API_KEY;
+  if (!apiKey) {
+    return [];
+  }
+
+  const country = inferPayoutCountryCode(profile);
+  const currency = getLocalCurrencyForCountry(country);
+  const holderType = profile.account_type === "business" ? "company" : "individual";
+  const response = await fetch(`${getHitPayApiUrl()}/beneficiaries/schema`, {
+    method: "POST",
+    headers: {
+      "X-BUSINESS-API-KEY": apiKey,
+      "X-Requested-With": "XMLHttpRequest",
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      country,
+      transfer_method: "bank_transfer",
+      transfer_type: "local",
+      currency,
+      holder_type: holderType,
+    }),
+    cache: "no-store",
+  });
+
+  const rawText = await response.text();
+  if (!response.ok) {
+    throw new Error(rawText || "Could not load HitPay-supported banks.");
+  }
+
+  const schema = (rawText ? JSON.parse(rawText) : []) as HitPaySchemaField[];
+  const bankField = schema.find(
+    (field) =>
+      typeof field.key === "string" &&
+      Array.isArray(field.options) &&
+      field.options.length > 0 &&
+      /bank_(id|swift_code|code|branch_code)$/i.test(field.key),
+  );
+
+  return (bankField?.options ?? [])
+    .map((option) => ({
+      label: option.label?.trim() || option.value?.trim() || "",
+      value: option.value?.trim() || option.label?.trim() || "",
+    }))
+    .filter((option) => option.label && option.value);
+}
+
+function resolveSupportedBankName(
+  bankName: string,
+  options: SupportedBankOption[],
+) {
+  const normalizedBankName = normalizeForMatching(bankName);
+  const directMatch = options.find(
+    (option) =>
+      normalizeForMatching(option.label) === normalizedBankName ||
+      normalizeForMatching(option.value) === normalizedBankName,
+  );
+
+  return directMatch?.label ?? null;
+}
+
+export async function getSupportedBankOptions(): Promise<SupportedBankOption[]> {
+  const { profile } = await requireAuthenticatedProfile();
+  return fetchHitPayBankOptions(profile);
+}
+
 export async function getPayoutSetupStatus(
   userId: string,
 ): Promise<PayoutSetupStatus> {
@@ -484,6 +602,34 @@ export async function setupPayoutMethod(
       }
 
       parsed.data.maya_phone_number = normalizedPhone;
+    }
+
+    if (parsed.data.method === "bank" && process.env.HITPAY_API_KEY) {
+      let supportedBanks: SupportedBankOption[];
+      try {
+        supportedBanks = await fetchHitPayBankOptions(profile);
+      } catch (error) {
+        return {
+          error:
+            error instanceof Error
+              ? error.message
+              : "Could not verify supported banks with HitPay.",
+        };
+      }
+
+      const supportedBankName = resolveSupportedBankName(
+        parsed.data.bank_name ?? "",
+        supportedBanks,
+      );
+
+      if (!supportedBankName) {
+        return {
+          error:
+            "Select a bank from the supported HitPay bank list so payouts can be sent automatically.",
+        };
+      }
+
+      parsed.data.bank_name = supportedBankName;
     }
 
     if (isMethodChange) {

@@ -1315,6 +1315,10 @@ function getLocalCurrencyForCountry(countryCode: string) {
   }
 }
 
+function getPayoutCurrencyForProfile(profile: Pick<Profile, "country">) {
+  return getLocalCurrencyForCountry(inferCountryCode(profile, "sgd")).toUpperCase();
+}
+
 async function getHitPayBeneficiarySchema(params: {
   country: string;
   currency: string;
@@ -2052,6 +2056,7 @@ async function createAutomaticPayoutRecord(
   }
 
   const payoutAmount = roundMoney(booking.lister_payout);
+  const payoutCurrency = getPayoutCurrencyForProfile(booking.lister);
   const payoutId = await insertPayoutRecord(client, {
     lister_id: booking.lister_id,
     booking_id: booking.id,
@@ -2060,7 +2065,7 @@ async function createAutomaticPayoutRecord(
     platform_fee: roundMoney(booking.service_fee_lister),
     hitpay_fee: roundMoney(booking.hitpay_fee ?? 0),
     net_amount: payoutAmount,
-    currency: "SGD",
+    currency: payoutCurrency,
     status: "pending",
     payout_method: booking.lister.payout_method ?? null,
     trigger_type: "auto_after_completion",
@@ -2078,7 +2083,7 @@ async function createAutomaticPayoutRecord(
     actorRole: "system",
     title: "Payout initiated",
     description:
-      `Payout of ${formatMoney(payoutAmount, "SGD")} to lister has been queued. ` +
+      `Payout of ${formatMoney(payoutAmount, payoutCurrency)} to lister has been queued. ` +
       `Processing via ${booking.lister.payout_method ?? "configured method"}.`,
     metadata: {
       payout_id: payoutId,
@@ -2091,7 +2096,7 @@ async function createAutomaticPayoutRecord(
     userId: booking.lister_id,
     type: "payout_initiated",
     title: "Payout is being processed",
-    body: `Your payout of ${formatMoney(payoutAmount, "SGD")} is being processed.`,
+    body: `Your payout of ${formatMoney(payoutAmount, payoutCurrency)} is being processed.`,
     bookingId: booking.id,
     actionUrl: "/dashboard/earnings",
   });
@@ -2951,13 +2956,28 @@ export async function processPayoutToLister(
   const admin = createAdminClient();
 
   try {
-    const payout = await getPayoutWithRelations(admin, payoutId);
+    let payout = await getPayoutWithRelations(admin, payoutId);
 
     if (payout.status !== "pending" && payout.status !== "failed") {
       return { error: "Only pending or failed payouts can be processed." };
     }
 
     const currentPayoutMethod = payout.lister.payout_method ?? null;
+    if (currentPayoutMethod === "bank") {
+      const expectedCurrency = getPayoutCurrencyForProfile(payout.lister);
+      if (payout.currency !== expectedCurrency) {
+        const { error: payoutCurrencyError } = await admin
+          .from("payouts")
+          .update({ currency: expectedCurrency })
+          .eq("id", payout.id);
+
+        if (payoutCurrencyError) {
+          throw new Error(payoutCurrencyError.message);
+        }
+
+        payout = { ...payout, currency: expectedCurrency };
+      }
+    }
 
     const payoutInitiatedId = await createTransactionRecord({
       bookingId: payout.booking_id,
@@ -3077,6 +3097,7 @@ export async function autoTriggerPayout(
 
     if (!validatePayoutDetails(booking.lister)) {
       let failedPayoutId = booking.payout_id;
+      const payoutCurrency = getPayoutCurrencyForProfile(booking.lister);
 
       if (failedPayoutId) {
         const { error: failedUpdateError } = await admin
@@ -3087,6 +3108,7 @@ export async function autoTriggerPayout(
             platform_fee: roundMoney(booking.service_fee_lister),
             hitpay_fee: roundMoney(booking.hitpay_fee ?? 0),
             net_amount: roundMoney(booking.lister_payout),
+            currency: payoutCurrency,
             payout_method: booking.lister.payout_method ?? null,
             status: "failed",
             trigger_type: "auto_after_completion",
@@ -3108,7 +3130,7 @@ export async function autoTriggerPayout(
           platform_fee: roundMoney(booking.service_fee_lister),
           hitpay_fee: roundMoney(booking.hitpay_fee ?? 0),
           net_amount: roundMoney(booking.lister_payout),
-          currency: "SGD",
+          currency: payoutCurrency,
           status: "failed",
           payout_method: booking.lister.payout_method ?? null,
           trigger_type: "auto_after_completion",
@@ -3150,6 +3172,16 @@ export async function autoTriggerPayout(
 
       if (!payoutId) {
         throw new Error("Payout trigger returned without creating a payout record.");
+      }
+
+      const payoutCurrency = getPayoutCurrencyForProfile(booking.lister);
+      const { error: currencyUpdateError } = await admin
+        .from("payouts")
+        .update({ currency: payoutCurrency })
+        .eq("id", payoutId);
+
+      if (currencyUpdateError) {
+        throw new Error(currencyUpdateError.message);
       }
     } catch (rpcError) {
       console.error("autoTriggerPayout RPC failed, falling back to app insert:", rpcError);
