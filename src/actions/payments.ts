@@ -2113,8 +2113,8 @@ async function createAutomaticPayoutRecord(
   await createNotification({
     userId: booking.lister_id,
     type: "payout_initiated",
-    title: "Payout is being processed",
-    body: `Your payout of ${formatMoney(payoutAmount, payoutCurrency)} is being processed.`,
+    title: "Payout queued",
+    body: `Your payout of ${formatMoney(payoutAmount, payoutCurrency)} has been queued and will be processed after the payout delay.`,
     bookingId: booking.id,
     actionUrl: "/dashboard/earnings",
   });
