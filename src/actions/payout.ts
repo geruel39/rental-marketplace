@@ -1005,6 +1005,29 @@ export async function verifyKYC(
       await removeStoredKycDocument(previousDocumentUrl);
     }
 
+    if (approved && targetProfile.payout_method === "bank") {
+      const payoutCurrency = getLocalCurrencyForCountry(
+        inferPayoutCountryCode(targetProfile),
+      ).toUpperCase();
+      const { error: revivePayoutError } = await admin
+        .from("payouts")
+        .update({
+          status: "pending",
+          failure_reason: null,
+          can_retry: false,
+          currency: payoutCurrency,
+          notes: "Bank KYC approved. Payout is ready to process.",
+        })
+        .eq("lister_id", userId)
+        .eq("status", "failed")
+        .eq("payout_method", "bank")
+        .eq("failure_reason", "Invalid payout details");
+
+      if (revivePayoutError) {
+        console.error("verifyKYC revive payouts failed:", revivePayoutError);
+      }
+    }
+
     if (approved) {
       void notifyKYCVerified({ userId }).catch((notificationError) => {
         console.error("verifyKYC approval notification failed:", notificationError);

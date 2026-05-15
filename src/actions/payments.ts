@@ -1348,6 +1348,15 @@ async function getHitPayBeneficiarySchema(params: {
 
   const rawText = await response.text();
   if (!response.ok) {
+    if (
+      response.status === 403 &&
+      /feature access denied|access denied/i.test(rawText)
+    ) {
+      throw new Error(
+        "HitPay payout API access is not enabled for this account. Ask HitPay to enable Transfers/Payouts for your business API key before processing automated bank payouts.",
+      );
+    }
+
     throw new Error(rawText || "Failed to fetch HitPay beneficiary schema");
   }
 
@@ -1469,6 +1478,15 @@ async function createHitPayTransferForPayout(payout: PayoutWithRelations) {
 
   const rawText = await response.text();
   if (!response.ok) {
+    if (
+      response.status === 403 &&
+      /feature access denied|access denied/i.test(rawText)
+    ) {
+      throw new Error(
+        "HitPay payout API access is not enabled for this account. Ask HitPay to enable Transfers/Payouts for your business API key before processing automated bank payouts.",
+      );
+    }
+
     throw new Error(rawText || "Failed to create HitPay transfer");
   }
 
