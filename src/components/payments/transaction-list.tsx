@@ -24,24 +24,60 @@ const PAGE_SIZE = 8;
 function getTransactionTone(eventType: Transaction["event_type"]) {
   if (eventType === "payment_completed") return "bg-sky-100 text-sky-900";
   if (eventType === "payout_completed") return "bg-emerald-100 text-emerald-900";
+  if (eventType.endsWith("_failed") || eventType === "payment_expired") {
+    return "bg-rose-100 text-rose-900";
+  }
   if (eventType === "refund_completed") return "bg-orange-100 text-orange-900";
   if (eventType.startsWith("dispute_")) return "bg-rose-100 text-rose-900";
   return "bg-slate-100 text-slate-800";
+}
+
+function isNoFundsMovedEvent(transaction: Transaction) {
+  return (
+    transaction.status === "failed" ||
+    transaction.event_type === "payment_initiated" ||
+    transaction.event_type === "payment_failed" ||
+    transaction.event_type === "payment_expired" ||
+    transaction.event_type === "refund_failed" ||
+    transaction.event_type === "payout_failed" ||
+    transaction.event_type === "payout_retry_requested"
+  );
 }
 
 function getSignedAmount(transaction: Transaction) {
   switch (transaction.event_type) {
     case "refund_initiated":
     case "refund_completed":
-    case "refund_failed":
-    case "payment_failed":
-    case "payment_expired":
-    case "payout_failed":
     case "dispute_hold":
       return -Math.abs(transaction.gross_amount);
     default:
       return Math.abs(transaction.net_amount || transaction.gross_amount);
   }
+}
+
+function getDisplayStatus(transaction: Transaction) {
+  if (transaction.event_type.endsWith("_failed")) {
+    return {
+      label: "Failed",
+      color: "bg-red-100 text-red-800",
+    };
+  }
+
+  if (transaction.event_type === "payment_expired") {
+    return {
+      label: "Expired",
+      color: "bg-slate-100 text-slate-700",
+    };
+  }
+
+  if (transaction.event_type === "payment_initiated" && transaction.status === "completed") {
+    return {
+      label: "Created",
+      color: "bg-slate-100 text-slate-700",
+    };
+  }
+
+  return formatTransactionStatus(transaction.status);
 }
 
 function getReference(transaction: Transaction) {
@@ -94,7 +130,9 @@ export function TransactionList({
           <TableBody>
             {pageTransactions.map((transaction) => {
               const amount = getSignedAmount(transaction);
-              const status = formatTransactionStatus(transaction.status);
+              const status = getDisplayStatus(transaction);
+              const noFundsMoved = isNoFundsMovedEvent(transaction);
+              const reference = getReference(transaction);
 
               return (
                 <TableRow key={transaction.id}>
@@ -104,14 +142,22 @@ export function TransactionList({
                       {formatTransactionType(transaction.event_type)}
                     </Badge>
                   </TableCell>
-                  <TableCell
-                    className={cn(
-                      "font-semibold",
-                      amount >= 0 ? "text-emerald-600" : "text-rose-600",
+                  <TableCell>
+                    {noFundsMoved ? (
+                      <span className="whitespace-nowrap text-sm text-muted-foreground">
+                        No funds moved
+                      </span>
+                    ) : (
+                      <span
+                        className={cn(
+                          "whitespace-nowrap font-semibold",
+                          amount >= 0 ? "text-emerald-600" : "text-rose-600",
+                        )}
+                      >
+                        {amount >= 0 ? "+" : "-"}
+                        {formatCurrency(Math.abs(amount), transaction.currency)}
+                      </span>
                     )}
-                  >
-                    {amount >= 0 ? "+" : "-"}
-                    {formatCurrency(Math.abs(amount), transaction.currency)}
                   </TableCell>
                   <TableCell>
                     <Badge className={status.color}>{status.label}</Badge>
@@ -119,7 +165,12 @@ export function TransactionList({
                   {showBookingRef ? (
                     <TableCell>{transaction.booking_id?.slice(0, 8) ?? "-"}</TableCell>
                   ) : null}
-                  <TableCell className="text-muted-foreground">{getReference(transaction)}</TableCell>
+                  <TableCell
+                    className="max-w-64 truncate text-muted-foreground"
+                    title={reference}
+                  >
+                    {reference}
+                  </TableCell>
                 </TableRow>
               );
             })}
