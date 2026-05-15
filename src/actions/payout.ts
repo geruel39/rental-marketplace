@@ -464,6 +464,14 @@ async function fetchHitPayBankOptions(profile: Pick<Profile, "account_type" | "c
 
   const rawText = await response.text();
   if (!response.ok) {
+    if (
+      response.status === 403 &&
+      /feature access denied|access denied/i.test(rawText)
+    ) {
+      console.warn("HitPay bank schema access denied; using local bank validation only.");
+      return [];
+    }
+
     throw new Error(rawText || "Could not load HitPay-supported banks.");
   }
 
@@ -501,6 +509,26 @@ function resolveSupportedBankName(
 export async function getSupportedBankOptions(): Promise<SupportedBankOption[]> {
   const { profile } = await requireAuthenticatedProfile();
   return fetchHitPayBankOptions(profile);
+}
+
+async function ensureKycBucketExists(admin: ReturnType<typeof createAdminClient>) {
+  const { error: getBucketError } = await admin.storage.getBucket(KYC_BUCKET);
+
+  if (!getBucketError) {
+    return null;
+  }
+
+  if (!/not found|does not exist/i.test(getBucketError.message)) {
+    return getBucketError.message;
+  }
+
+  const { error: createBucketError } = await admin.storage.createBucket(KYC_BUCKET, {
+    public: true,
+    allowedMimeTypes: [...ALLOWED_KYC_MIME_TYPES],
+    fileSizeLimit: MAX_KYC_FILE_SIZE,
+  });
+
+  return createBucketError?.message ?? null;
 }
 
 export async function getPayoutSetupStatus(
@@ -617,19 +645,21 @@ export async function setupPayoutMethod(
         };
       }
 
-      const supportedBankName = resolveSupportedBankName(
-        parsed.data.bank_name ?? "",
-        supportedBanks,
-      );
+      if (supportedBanks.length > 0) {
+        const supportedBankName = resolveSupportedBankName(
+          parsed.data.bank_name ?? "",
+          supportedBanks,
+        );
 
-      if (!supportedBankName) {
-        return {
-          error:
-            "Select a bank from the supported HitPay bank list so payouts can be sent automatically.",
-        };
+        if (!supportedBankName) {
+          return {
+            error:
+              "Select a bank from the supported HitPay bank list so payouts can be sent automatically.",
+          };
+        }
+
+        parsed.data.bank_name = supportedBankName;
       }
-
-      parsed.data.bank_name = supportedBankName;
     }
 
     if (isMethodChange) {
@@ -854,9 +884,15 @@ export async function uploadKYCDocument(
 
     const extension = getFileExtension(documentFile);
     const filePath = `${user.id}/kyc-${parsed.data.document_type}-${crypto.randomUUID()}.${extension}`;
-    const fileBuffer = await documentFile.arrayBuffer();
+    const fileBuffer = Buffer.from(await documentFile.arrayBuffer());
     const admin = createAdminClient();
     const previousDocumentUrl = profile.bank_kyc_document_url ?? null;
+    const bucketError = await ensureKycBucketExists(admin);
+
+    if (bucketError) {
+      console.error("uploadKYCDocument bucket check failed:", bucketError);
+      return { error: `Could not prepare KYC storage: ${bucketError}` };
+    }
 
     const { error: uploadError } = await admin.storage
       .from(KYC_BUCKET)
@@ -867,7 +903,14 @@ export async function uploadKYCDocument(
 
     if (uploadError) {
       console.error("uploadKYCDocument upload failed:", uploadError);
-      return { error: "Could not upload your KYC document. Please try again." };
+      if (/fetch failed/i.test(uploadError.message)) {
+        return {
+          error:
+            "Could not reach Supabase Storage from the app server. Please retry now that the dev server has restarted; if it persists, check the Supabase URL/network connection.",
+        };
+      }
+
+      return { error: `Could not upload your KYC document: ${uploadError.message}` };
     }
 
     const {
@@ -887,6 +930,7 @@ export async function uploadKYCDocument(
 
     if (updateError) {
       console.error("uploadKYCDocument profile update failed:", updateError);
+      await admin.storage.from(KYC_BUCKET).remove([filePath]);
       return { error: "Could not save your KYC document. Please try again." };
     }
 

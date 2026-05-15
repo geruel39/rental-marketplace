@@ -132,7 +132,9 @@ export async function checkFavorites(
   userId: string,
 ): Promise<Set<string>> {
   try {
-    if (listingIds.length === 0) {
+    const validListingIds = Array.from(new Set(listingIds.filter(Boolean)));
+
+    if (validListingIds.length === 0 || !userId) {
       return new Set<string>();
     }
 
@@ -141,15 +143,14 @@ export async function checkFavorites(
       .from("favorites")
       .select("listing_id")
       .eq("user_id", userId)
-      .in("listing_id", listingIds);
+      .in("listing_id", validListingIds);
 
     if (error) {
-      throw error;
+      return new Set<string>();
     }
 
     return new Set((data ?? []).map((favorite) => favorite.listing_id));
-  } catch (error) {
-    console.error("checkFavorites failed:", error);
+  } catch {
     return new Set<string>();
   }
 }

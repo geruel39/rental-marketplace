@@ -103,6 +103,8 @@ export function KYCUpload({
   const [uploadProgress, setUploadProgress] = useState(0);
   const [isCompressing, setIsCompressing] = useState(false);
   const formRef = useRef<HTMLFormElement | null>(null);
+  const lastHandledSuccessRef = useRef<string | null>(null);
+  const lastHandledErrorRef = useRef<string | null>(null);
 
   const previewUrl = useMemo(() => {
     if (!selectedFile || selectedFile.type === "application/pdf") {
@@ -125,6 +127,12 @@ export function KYCUpload({
       return;
     }
 
+    if (lastHandledSuccessRef.current === state.success) {
+      return;
+    }
+
+    lastHandledSuccessRef.current = state.success;
+    lastHandledErrorRef.current = null;
     toast.success(state.success);
     setSelectedFile(null);
     setUploadProgress(100);
@@ -136,6 +144,12 @@ export function KYCUpload({
       return;
     }
 
+    if (lastHandledErrorRef.current === state.error) {
+      return;
+    }
+
+    lastHandledErrorRef.current = state.error;
+    lastHandledSuccessRef.current = null;
     toast.error(state.error);
     setUploadProgress(0);
   }, [state?.error]);
