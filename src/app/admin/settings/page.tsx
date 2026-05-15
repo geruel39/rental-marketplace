@@ -26,8 +26,9 @@ export default async function AdminSettingsPage() {
   await verifyAdminAccess();
   const admin = createAdminClient();
 
-  const [settingsResult, settingAuditResult] = await Promise.all([
+  const [settingsResult, feeConfigResult, settingAuditResult] = await Promise.all([
     admin.from("platform_settings").select("key, value"),
+    admin.from("fee_config").select("key, value"),
     admin
       .from("admin_audit_log")
       .select(
@@ -38,13 +39,17 @@ export default async function AdminSettingsPage() {
         `,
       )
       .eq("target_type", "settings")
-      .eq("action", "update_platform_setting")
+      .in("action", ["update_platform_setting", "update_fee_config"])
       .order("created_at", { ascending: false })
       .limit(100),
   ]);
 
   const initialSettings = (settingsResult.data ?? []).reduce<Record<string, JsonValue>>((acc, row) => {
     acc[row.key] = row.value as JsonValue;
+    return acc;
+  }, {});
+  const initialFeeConfig = (feeConfigResult.data ?? []).reduce<Record<string, number>>((acc, row) => {
+    acc[row.key] = Number(row.value);
     return acc;
   }, {});
 
@@ -78,7 +83,11 @@ export default async function AdminSettingsPage() {
         </AlertDescription>
       </Alert>
 
-      <PlatformSettingsForm initialSettings={initialSettings} metadata={metadata} />
+      <PlatformSettingsForm
+        initialFeeConfig={initialFeeConfig}
+        initialSettings={initialSettings}
+        metadata={metadata}
+      />
     </div>
   );
 }

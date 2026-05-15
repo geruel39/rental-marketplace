@@ -4,7 +4,7 @@ import { useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { AlertTriangle } from "lucide-react";
 
-import { updatePlatformSetting } from "@/actions/admin";
+import { updateFeeConfigSetting, updatePlatformSetting } from "@/actions/admin";
 import { HydratedRelativeTime } from "@/components/shared/hydrated-relative-time";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -26,6 +26,7 @@ type SettingMeta = {
 };
 
 type PlatformSettingsFormProps = {
+  initialFeeConfig: Record<string, number>;
   initialSettings: Record<string, JsonValue>;
   metadata: Record<string, SettingMeta | undefined>;
 };
@@ -41,6 +42,10 @@ type SettingsState = {
   platform_name: string;
   platform_currency: string;
   maintenance_mode: boolean;
+};
+
+type FeeConfigState = {
+  payout_delay_days: number;
 };
 
 function toNumber(value: JsonValue | undefined, fallback: number) {
@@ -109,19 +114,37 @@ function SettingHint({
 }
 
 export function PlatformSettingsForm({
+  initialFeeConfig,
   initialSettings,
   metadata,
 }: PlatformSettingsFormProps) {
   const router = useRouter();
   const initialState = useMemo(() => buildInitialState(initialSettings), [initialSettings]);
+  const initialFeeState = useMemo<FeeConfigState>(
+    () => ({
+      payout_delay_days: toNumber(initialFeeConfig.payout_delay_days, 1),
+    }),
+    [initialFeeConfig],
+  );
   const [savedState, setSavedState] = useState<SettingsState>(initialState);
   const [state, setState] = useState<SettingsState>(initialState);
+  const [savedFeeState, setSavedFeeState] = useState<FeeConfigState>(initialFeeState);
+  const [feeState, setFeeState] = useState<FeeConfigState>(initialFeeState);
   const [isPending, startTransition] = useTransition();
 
-  const hasChanges = JSON.stringify(state) !== JSON.stringify(savedState);
+  const hasChanges =
+    JSON.stringify(state) !== JSON.stringify(savedState) ||
+    JSON.stringify(feeState) !== JSON.stringify(savedFeeState);
 
   function updateField<Key extends keyof SettingsState>(key: Key, value: SettingsState[Key]) {
     setState((current) => ({ ...current, [key]: value }));
+  }
+
+  function updateFeeField<Key extends keyof FeeConfigState>(
+    key: Key,
+    value: FeeConfigState[Key],
+  ) {
+    setFeeState((current) => ({ ...current, [key]: value }));
   }
 
   function handleSave() {
@@ -134,7 +157,16 @@ export function PlatformSettingsForm({
         await updatePlatformSetting(key, state[key]);
       }
 
+      const changedFeeEntries = (Object.keys(feeState) as Array<keyof FeeConfigState>).filter(
+        (key) => feeState[key] !== savedFeeState[key],
+      );
+
+      for (const key of changedFeeEntries) {
+        await updateFeeConfigSetting(key, feeState[key]);
+      }
+
       setSavedState(state);
+      setSavedFeeState(feeState);
       router.refresh();
     });
   }
@@ -171,6 +203,22 @@ export function PlatformSettingsForm({
               onChange={(event) => updateField("minimum_payout_amount", Number(event.target.value) || 0)}
               type="number"
               value={state.minimum_payout_amount}
+            />
+          </div>
+          <div className="space-y-2">
+            <div className="space-y-1">
+              <p className="text-sm font-medium text-foreground">Payout delay days</p>
+              <p className="text-xs text-muted-foreground">
+                Set to 0 to process payouts immediately after completion.
+              </p>
+            </div>
+            <Input
+              min={0}
+              onChange={(event) =>
+                updateFeeField("payout_delay_days", Number(event.target.value) || 0)
+              }
+              type="number"
+              value={feeState.payout_delay_days}
             />
           </div>
         </CardContent>

@@ -1885,6 +1885,50 @@ export async function updatePlatformSetting(
   }
 }
 
+export async function updateFeeConfigSetting(
+  key: string,
+  value: number,
+): Promise<ActionResponse> {
+  try {
+    const { adminId } = await verifyAdmin();
+    const admin = createAdminClient();
+    const trimmedKey = key.trim();
+
+    if (!Number.isFinite(value) || value < 0) {
+      return { error: "Fee setting must be a non-negative number" };
+    }
+
+    const { error } = await admin.from("fee_config").upsert(
+      {
+        key: trimmedKey,
+        value,
+      },
+      { onConflict: "key" },
+    );
+
+    if (error) {
+      throw error;
+    }
+
+    await logAdminAction({
+      adminId,
+      action: "update_fee_config",
+      targetType: "settings",
+      targetId: trimmedKey,
+      details: { value },
+    });
+
+    revalidateAdminViews();
+    revalidatePath("/admin/settings");
+    return { success: "Fee setting updated" };
+  } catch (error) {
+    console.error("updateFeeConfigSetting failed:", error);
+    return {
+      error: error instanceof Error ? error.message : "Failed to update fee setting",
+    };
+  }
+}
+
 export async function getAuditLog(params: {
   adminId?: string;
   targetType?: AdminTargetType | "all";
