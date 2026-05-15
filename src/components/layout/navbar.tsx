@@ -65,7 +65,7 @@ export async function Navbar() {
   const headerStore = await headers();
   const pathname = headerStore.get("x-pathname") ?? "";
 
-  if (pathname === "/maintenance") {
+  if (pathname === "/maintenance" || pathname.startsWith("/admin")) {
     return null;
   }
 

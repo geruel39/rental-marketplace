@@ -177,7 +177,7 @@ export async function loginWithEmail(
       return { error: "Email and password are required" };
     }
 
-    const { error } = await supabase.auth.signInWithPassword({
+    const { data, error } = await supabase.auth.signInWithPassword({
       email,
       password,
     });
@@ -186,7 +186,13 @@ export async function loginWithEmail(
       return { error: error.message };
     }
 
-    redirect("/listings");
+    const { data: profile } = await supabase
+      .from("profiles")
+      .select("is_admin")
+      .eq("id", data.user.id)
+      .maybeSingle<{ is_admin: boolean }>();
+
+    redirect(profile?.is_admin ? "/admin" : "/listings");
   } catch (error) {
     console.error("loginWithEmail failed:", error);
     return { error: getErrorMessage(error, "Something went wrong. Please try again.") };

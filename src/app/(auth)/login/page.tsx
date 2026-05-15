@@ -15,7 +15,13 @@ export default async function LoginPage() {
   } = await supabase.auth.getUser();
 
   if (user) {
-    redirect("/listings");
+    const { data: profile } = await supabase
+      .from("profiles")
+      .select("is_admin")
+      .eq("id", user.id)
+      .maybeSingle<{ is_admin: boolean }>();
+
+    redirect(profile?.is_admin ? "/admin" : "/listings");
   }
 
   return (

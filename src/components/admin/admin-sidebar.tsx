@@ -89,16 +89,6 @@ export function AdminSidebar({
   return (
     <aside className="hidden w-72 shrink-0 border-r border-border/70 bg-white text-brand-dark lg:fixed lg:top-16 lg:bottom-0 lg:left-0 lg:block">
       <div className="flex h-full flex-col overflow-y-auto px-4 py-5">
-        <div className="mb-6 rounded-2xl border border-border/70 bg-brand-light p-4 shadow-sm">
-          <Badge className="bg-brand-sky px-3 text-brand-dark hover:bg-brand-sky">
-            ADMIN
-          </Badge>
-          <p className="mt-3 text-base font-semibold text-brand-dark">Super Admin Panel</p>
-          <p className="mt-2 text-sm leading-6 text-muted-foreground">
-            Moderate the marketplace, review reports, and manage platform operations.
-          </p>
-        </div>
-
         <nav className="space-y-6">
           {adminSections.map((section) => (
             <div key={section.title} className="space-y-2">
