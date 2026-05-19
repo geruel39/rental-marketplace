@@ -49,7 +49,7 @@ export default async function AdminLayout({
   ]);
 
   return (
-    <div className="min-h-[calc(100vh-4rem)] bg-brand-light">
+    <div className="min-h-screen bg-brand-light">
       <AdminSidebar
         failedPayoutCount={failedPayoutsResult.count ?? 0}
         pendingVerificationCount={pendingVerificationCount}

@@ -87,7 +87,7 @@ export function AdminSidebar({
   ] as const;
 
   return (
-    <aside className="hidden w-72 shrink-0 border-r border-border/70 bg-white text-brand-dark lg:fixed lg:top-16 lg:bottom-0 lg:left-0 lg:block">
+    <aside className="hidden w-72 shrink-0 border-r border-border/70 bg-white text-brand-dark lg:fixed lg:top-0 lg:bottom-0 lg:left-0 lg:block">
       <div className="flex h-full flex-col overflow-y-auto px-4 py-5">
         <nav className="space-y-6">
           {adminSections.map((section) => (
