@@ -2219,6 +2219,31 @@ async function createDisputeRefund(params: {
       processed_at: new Date().toISOString(),
     });
 
+    await createTransactionRecord({
+      bookingId: params.booking.id,
+      renterId: params.booking.renter_id,
+      listerId: params.booking.lister_id,
+      eventType: "refund_completed",
+      grossAmount: params.refundAmount,
+      hitpayFee: 0,
+      platformFee: 0,
+      netAmount: -params.refundAmount,
+      currency: "SGD",
+      hitpayPaymentRequestId: params.booking.hitpay_payment_request_id,
+      hitpayPaymentId: params.booking.hitpay_payment_id,
+      hitpayRefundId: hitpayRefund.id || undefined,
+      idempotencyKey: `dispute_refund_completed_${params.booking.id}_${params.refundReason}`,
+      triggeredBy: params.adminId,
+      triggeredByRole: "admin",
+      metadata: {
+        dispute: true,
+        refund_id: refundRow.id,
+        note: params.note,
+      },
+      status: "completed",
+      processedAt: new Date().toISOString(),
+    });
+
     return { refundId: refundRow.id, transactionId };
   } catch (error) {
     const message =
@@ -2602,6 +2627,7 @@ export async function processCancellationRefund(
     let depositRefund = 0;
     let reason = options?.reasonOverride ?? "Refund processed";
     let policyApplied = options?.policyAppliedOverride ?? "manual_override";
+    let hoursSincePayment: number | null = null;
 
     if (typeof options?.refundAmountOverride === "number") {
       refundAmount = roundMoney(options.refundAmountOverride);
@@ -2635,6 +2661,10 @@ export async function processCancellationRefund(
       reason = options?.reasonOverride ?? String(result.reason ?? "Refund processed");
       policyApplied =
         options?.policyAppliedOverride ?? String(result.policy_applied ?? "unknown");
+      hoursSincePayment =
+        typeof result.hours_since_payment === "number"
+          ? Math.floor(result.hours_since_payment)
+          : null;
     }
 
     if (refundAmount <= 0) {
@@ -2703,6 +2733,7 @@ export async function processCancellationRefund(
         deposit_refund: depositRefund,
         cancellation_fee: cancellationFee,
         cancellation_policy: policyApplied,
+        hours_before_start: hoursSincePayment,
         currency: "SGD",
         hitpay_payment_id: booking.hitpay_payment_id,
         note: reason,
@@ -2743,6 +2774,32 @@ export async function processCancellationRefund(
         status: "completed",
         hitpay_refund_id: hitpayRefund.id || undefined,
         processed_at: now,
+      });
+
+      await createTransactionRecord({
+        bookingId: booking.id,
+        renterId: booking.renter_id,
+        listerId: booking.lister_id,
+        eventType: "refund_completed",
+        grossAmount: refundAmount,
+        hitpayFee: 0,
+        platformFee: platformFeeRetained,
+        netAmount: -refundAmount,
+        currency: "SGD",
+        hitpayPaymentRequestId: booking.hitpay_payment_request_id,
+        hitpayPaymentId: booking.hitpay_payment_id,
+        hitpayRefundId: hitpayRefund.id || undefined,
+        idempotencyKey: `refund_completed_${booking.id}`,
+        triggeredBy: booking.cancelled_by,
+        triggeredByRole: cancelledBy,
+        metadata: {
+          refund_id: refundRow.id,
+          reason,
+          policy_applied: policyApplied,
+          cancellation_fee: cancellationFee,
+        },
+        status: "completed",
+        processedAt: now,
       });
 
       await admin

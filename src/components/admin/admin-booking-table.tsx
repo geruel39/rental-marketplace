@@ -4,7 +4,7 @@ import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 
 import { BookingStatusBadge } from "@/components/bookings/booking-status-badge";
-import { DisputeResolveDialog } from "@/components/admin/dispute-resolve-dialog";
+import { DisputeResolutionForm } from "@/components/payments/dispute-resolution-form";
 import { Pagination } from "@/components/shared/pagination";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -146,14 +146,9 @@ export function AdminBookingTable({
                         <Link href={`/admin/bookings/${booking.id}`}>View Details</Link>
                       </Button>
                       {booking.status === "disputed" ? (
-                        <DisputeResolveDialog
+                        <DisputeResolutionForm
                           booking={booking}
-                          onComplete={() => router.refresh()}
-                          trigger={
-                            <Button className="bg-brand-navy text-white hover:bg-brand-steel" size="sm">
-                              Resolve Dispute
-                            </Button>
-                          }
+                          onSuccess={() => router.refresh()}
                         />
                       ) : null}
                     </div>

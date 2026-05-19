@@ -120,28 +120,30 @@ export default function PoliciesPage() {
                   <table className="w-full border-collapse text-sm">
                     <thead className="bg-brand-light text-left text-brand-dark">
                       <tr>
-                        <th className="px-4 py-3 font-semibold">Time Since Payment</th>
+                        <th className="px-4 py-3 font-semibold">Renter Cancellation Timing</th>
                         <th className="px-4 py-3 font-semibold">Refund Amount</th>
                       </tr>
                     </thead>
                     <tbody>
                       <tr className="border-t border-border/70">
-                        <td className="px-4 py-3">Within 12 hours</td>
-                        <td className="px-4 py-3">100% full refund</td>
+                        <td className="px-4 py-3">
+                          Within the listing policy window: flexible 24h, moderate 72h, strict 168h
+                        </td>
+                        <td className="px-4 py-3">Rental subtotal plus security deposit</td>
                       </tr>
                       <tr className="border-t border-border/70">
-                        <td className="px-4 py-3">12 to 24 hours</td>
-                        <td className="px-4 py-3">50% refund</td>
+                        <td className="px-4 py-3">After the flexible or moderate policy window</td>
+                        <td className="px-4 py-3">50% of rental subtotal plus security deposit</td>
                       </tr>
                       <tr className="border-t border-border/70">
-                        <td className="px-4 py-3">After 24 hours</td>
-                        <td className="px-4 py-3">No refund</td>
+                        <td className="px-4 py-3">After the strict policy window</td>
+                        <td className="px-4 py-3">Security deposit only</td>
                       </tr>
                     </tbody>
                   </table>
                 </div>
                 <ul className="list-disc space-y-2 pl-5">
-                  <li>Security deposits are always returned in full regardless of timing</li>
+                  <li>Security deposits are returned unless damage or loss is confirmed through the dispute process</li>
                   <li>
                     Refunds are processed within 5-10 business days via the original payment
                     method

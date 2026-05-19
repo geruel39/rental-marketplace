@@ -1,9 +1,9 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 
-import { DisputeResolveDialog } from "@/components/admin/dispute-resolve-dialog";
 import { BookingAdminNotes } from "@/components/admin/booking-admin-notes";
 import { AdminPageHeader } from "@/components/admin/admin-page-header";
+import { DisputeResolutionForm } from "@/components/payments/dispute-resolution-form";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -141,14 +141,7 @@ export default async function AdminBookingDetailPage({
             <p className="text-sm text-red-900">
               {booking.dispute_resolution || "No dispute resolution has been recorded yet."}
             </p>
-            <DisputeResolveDialog
-              booking={booking}
-              trigger={
-                <Button className="bg-red-600 text-white hover:bg-red-700">
-                  Resolve Dispute
-                </Button>
-              }
-            />
+            <DisputeResolutionForm booking={booking} />
           </CardContent>
         </Card>
       ) : null}

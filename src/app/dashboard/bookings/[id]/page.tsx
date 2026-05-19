@@ -35,6 +35,7 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
+import { describeRenterCancellationRefund } from "@/lib/refund-policy";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
 import { calculatePaymentBreakdown, cn, formatCurrency, getInitials } from "@/lib/utils";
@@ -466,7 +467,11 @@ export default async function BookingDetailPage({ params }: BookingDetailPagePro
                 ) : (
                   <RenterCancelDialog
                     booking={booking}
-                    refundPreview="Cancel within 12 hours for a full refund, within 24 hours for 50% of rental charges plus deposit, and after 24 hours for deposit only."
+                    refundPreview={describeRenterCancellationRefund({
+                      paidAt: booking.paid_at,
+                      policy: booking.listing.cancellation_policy,
+                      fees,
+                    })}
                   />
                 )
               ) : null}

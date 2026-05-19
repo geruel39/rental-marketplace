@@ -6,7 +6,6 @@ import {
   addHours,
   addMonths,
   addWeeks,
-  differenceInHours,
   format,
   startOfDay,
 } from "date-fns";
@@ -1473,26 +1472,6 @@ export async function cancelBookingAsRenter(
       return { error: "This booking can no longer be cancelled." };
     }
 
-    const hoursSincePaid = booking.paid_at
-      ? differenceInHours(new Date(), new Date(booking.paid_at))
-      : 0;
-
-    let refundAmount = booking.total_price;
-    let refundPercent = 100;
-    let policyLabel = "100% refund";
-
-    if (hoursSincePaid <= 12) {
-      refundAmount = booking.total_price;
-    } else if (hoursSincePaid <= 24) {
-      refundAmount = roundMoney(booking.subtotal * 0.5 + booking.deposit_amount);
-      refundPercent = 50;
-      policyLabel = "50% rental refund + full deposit";
-    } else {
-      refundAmount = roundMoney(booking.deposit_amount);
-      refundPercent = 0;
-      policyLabel = "Deposit only";
-    }
-
     if (booking.stock_reserved && !booking.stock_restored) {
       await releaseStock(auth.supabase, booking, auth.user.id);
     }
@@ -1506,6 +1485,24 @@ export async function cancelBookingAsRenter(
       stockRestored: true,
     });
 
+    const refundResult = await processCancellationRefund(booking.id, {
+      cancelledBy: "renter",
+      refundReason: "booking_cancelled_by_renter",
+    });
+    if ("error" in refundResult) {
+      console.error("cancelBookingAsRenter refund failed:", refundResult.error);
+    }
+
+    const refundAmount = "error" in refundResult ? 0 : refundResult.refundAmount;
+    const refundPercent =
+      booking.total_price > 0
+        ? Math.round((refundAmount / booking.total_price) * 100)
+        : 0;
+    const refundSummary =
+      "error" in refundResult
+        ? "Refund could not be completed automatically. Admins have been notified."
+        : refundResult.message;
+
     await addTimeline({
       bookingId: booking.id,
       status: "cancelled_by_renter",
@@ -1513,29 +1510,12 @@ export async function cancelBookingAsRenter(
       actorId: auth.user.id,
       actorRole: "renter",
       title: "Renter cancelled booking",
-      description: `${reason}. Refund policy applied: ${policyLabel}. Refund amount: ${formatMoney(refundAmount)}.`,
+      description: `${reason}. ${refundSummary}`,
       metadata: {
         refund_amount: refundAmount,
         refund_percent: refundPercent,
-        hours_since_paid: hoursSincePaid,
       },
     });
-
-    const refundResult = await processCancellationRefund(booking.id, {
-      cancelledBy: "renter",
-      refundReason: "booking_cancelled_by_renter",
-      refundAmountOverride: refundAmount,
-      policyAppliedOverride:
-        refundPercent === 100
-          ? "renter_cancel_0_12_hours"
-          : refundPercent === 50
-            ? "renter_cancel_12_24_hours"
-            : "renter_cancel_over_24_hours",
-      reasonOverride: `Renter cancellation policy applied: ${policyLabel}.`,
-    });
-    if ("error" in refundResult) {
-      console.error("cancelBookingAsRenter refund failed:", refundResult.error);
-    }
 
     const renterName = getActorDisplayName(auth.profile, auth.user.email);
     void notifyBookingCancelled({
@@ -1549,7 +1529,7 @@ export async function cancelBookingAsRenter(
       totalPrice: booking.total_price,
       refundAmount,
       refundPercent,
-      reason: `Renter cancellation policy applied: ${policyLabel}.`,
+      reason: refundSummary,
       bookingId: booking.id,
       recipientRole: "lister",
     }).catch((notificationError) => {
@@ -1557,9 +1537,7 @@ export async function cancelBookingAsRenter(
     });
 
     revalidateBookingViews();
-    return {
-      success: `Booking cancelled. Refund of $${refundAmount.toFixed(2)} (${refundPercent}%) will be processed in 5-10 business days.`,
-    };
+    return { success: `Booking cancelled. ${refundSummary}` };
   } catch (error) {
     console.error("cancelBookingAsRenter failed:", error);
     return { error: "Something went wrong. Please try again." };

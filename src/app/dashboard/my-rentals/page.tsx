@@ -1,9 +1,9 @@
-import { differenceInHours } from "date-fns";
 import { PackageSearch, Star } from "lucide-react";
 import Link from "next/link";
 import { redirect } from "next/navigation";
 
 import { getMyRentals } from "@/actions/bookings";
+import { getFeeConfig } from "@/actions/payments";
 import { BookingStatusBadge } from "@/components/bookings/booking-status-badge";
 import { RaiseDisputeDialog } from "@/components/bookings/raise-dispute-dialog";
 import { RentalCountdown } from "@/components/bookings/rental-countdown";
@@ -13,9 +13,10 @@ import { ReviewActionButton } from "@/components/reviews/review-action-button";
 import { EmptyState } from "@/components/shared/empty-state";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
+import { describeRenterCancellationRefund } from "@/lib/refund-policy";
 import { createClient } from "@/lib/supabase/server";
 import { cn, formatCurrency, getInitials } from "@/lib/utils";
-import type { BookingWithDetails } from "@/types";
+import type { BookingWithDetails, PlatformFees } from "@/types";
 
 type SearchParams = Record<string, string | string[] | undefined>;
 type FilterKey =
@@ -60,19 +61,12 @@ function formatDuration(booking: BookingWithDetails) {
   return `${units} ${booking.pricing_period}${units === 1 ? "" : "s"}`;
 }
 
-function getRefundPreview(booking: BookingWithDetails) {
-  if (!booking.paid_at) {
-    return "No payment captured yet. If you cancel now, nothing will be charged.";
-  }
-
-  const hoursSincePaid = differenceInHours(new Date(), new Date(booking.paid_at));
-  if (hoursSincePaid <= 12) {
-    return "Cancel within 12 hours of payment for a 100% refund.";
-  }
-  if (hoursSincePaid <= 24) {
-    return "Cancel between 12 and 24 hours after payment for 50% of rental charges plus full deposit.";
-  }
-  return "Cancel after 24 hours and only the deposit is refunded.";
+function getRefundPreview(booking: BookingWithDetails, fees: PlatformFees) {
+  return describeRenterCancellationRefund({
+    paidAt: booking.paid_at,
+    policy: booking.listing.cancellation_policy,
+    fees,
+  });
 }
 
 const tabButtonClassName =
@@ -120,9 +114,11 @@ function sortRentalBookings(bookings: BookingWithDetails[], currentUserId: strin
 function RentalActions({
   booking,
   currentUserId,
+  fees,
 }: {
   booking: BookingWithDetails;
   currentUserId: string;
+  fees: PlatformFees;
 }) {
   const canLeaveReview =
     booking.status === "completed" &&
@@ -140,7 +136,7 @@ function RentalActions({
           <RenterCancelDialog
             booking={booking}
             fullWidth
-            refundPreview="Cancel within 12 hours of payment for a 100% refund."
+            refundPreview={getRefundPreview(booking, fees)}
             triggerClassName={secondaryActionClassName}
             triggerSize="default"
           />
@@ -157,7 +153,7 @@ function RentalActions({
           <RenterCancelDialog
             booking={booking}
             fullWidth
-            refundPreview={getRefundPreview(booking)}
+            refundPreview={getRefundPreview(booking, fees)}
             triggerClassName={secondaryActionClassName}
             triggerSize="default"
           />
@@ -239,7 +235,7 @@ export default async function MyRentalsPage({
 
   const resolvedSearchParams = await searchParams;
   const activeFilter = getFilter(getSingleValue(resolvedSearchParams.status));
-  const bookings = await getMyRentals(user.id);
+  const [bookings, fees] = await Promise.all([getMyRentals(user.id), getFeeConfig()]);
   const filteredBookings = sortRentalBookings(
     bookings.filter((booking) => matchesFilter(booking, activeFilter)),
     user.id,
@@ -363,7 +359,7 @@ export default async function MyRentalsPage({
                   </div>
 
                   <div className="w-full lg:w-[296px] lg:justify-self-end">
-                    <RentalActions booking={booking} currentUserId={user.id} />
+                    <RentalActions booking={booking} currentUserId={user.id} fees={fees} />
                   </div>
                 </div>
               </article>

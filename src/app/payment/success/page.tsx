@@ -7,6 +7,7 @@ import { PaymentBreakdownCard } from "@/components/payments/payment-breakdown-ca
 import { PaymentStatusPoller } from "@/components/payments/payment-status-poller";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { describeRefundPolicy } from "@/lib/refund-policy";
 import { calculatePaymentBreakdown } from "@/lib/utils";
 
 type SearchParams = Record<string, string | string[] | undefined>;
@@ -17,19 +18,6 @@ interface PaymentSuccessPageProps {
 
 function getSingleValue(value: string | string[] | undefined) {
   return Array.isArray(value) ? value[0] : value;
-}
-
-function getRefundPolicyMessage(policy?: string | null) {
-  switch (policy) {
-    case "flexible":
-      return "You can cancel for a full refund within 24 hours.";
-    case "moderate":
-      return "You can cancel for a full refund within 72 hours.";
-    case "strict":
-      return "You can cancel for a full refund within 168 hours.";
-    default:
-      return "You can cancel for a full refund within the applicable listing policy window.";
-  }
 }
 
 export default async function PaymentSuccessPage({
@@ -175,7 +163,9 @@ export default async function PaymentSuccessPage({
 
           <div className="rounded-2xl border border-sky-200 bg-sky-50 p-5 text-sm text-sky-950">
             <p className="font-medium">Refund policy</p>
-            <p className="mt-2">{getRefundPolicyMessage(booking.listing.cancellation_policy)}</p>
+            <p className="mt-2">
+              {describeRefundPolicy(booking.listing.cancellation_policy, fees)}
+            </p>
           </div>
 
           <div className="flex flex-wrap justify-center gap-3">

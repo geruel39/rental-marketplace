@@ -372,7 +372,7 @@ export function BookingWidget({ listing, isOwner, isLoggedIn }: BookingWidgetPro
             <Link className="font-medium text-brand-navy underline underline-offset-4" href="/policies">
               Marketplace Policies
             </Link>
-            . Cancellation: 100% within 12hrs · 50% within 24hrs · No refund after
+            . Cancellation terms follow the listing policy and payment timing.
           </p>
         </section>
 
