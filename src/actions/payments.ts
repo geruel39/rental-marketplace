@@ -1075,7 +1075,7 @@ function calculateHitPayFee(amount: number, fees: PlatformFees) {
 
 async function updateTransaction(
   transactionId: string,
-  updates: Partial<Transaction>,
+  updates: Record<string, unknown>,
 ) {
   const admin = createAdminClient();
   const { error } = await admin
@@ -1273,6 +1273,150 @@ async function createHitPayRefund(params: {
     id: refundId,
     raw: parsed,
   };
+}
+
+async function getRefundWithBooking(refundId: string) {
+  const admin = createAdminClient();
+  const { data, error } = await admin
+    .from("refunds")
+    .select("*")
+    .eq("id", refundId)
+    .maybeSingle<Refund>();
+
+  if (error || !data) {
+    throw new Error(error?.message ?? "Refund not found");
+  }
+
+  const booking = await getBookingWithRelations(admin, data.booking_id);
+  return { refund: data, booking };
+}
+
+async function completeRefundRecord(params: {
+  refund: Refund;
+  booking: BookingWithRelations;
+  adminId: string;
+  note: string;
+  hitpayRefundId?: string | null;
+  manualReference?: string | null;
+  idempotencyKey: string;
+  auditAction: string;
+}) {
+  const admin = createAdminClient();
+  const now = new Date().toISOString();
+  const note = params.note.trim();
+  const existingNote = params.refund.note?.trim();
+  const nextNote = [existingNote, note].filter(Boolean).join("\n\n");
+
+  const { error: refundError } = await admin
+    .from("refunds")
+    .update({
+      status: "completed",
+      failure_reason: null,
+      hitpay_refund_id: params.hitpayRefundId ?? params.refund.hitpay_refund_id ?? null,
+      hitpay_payment_id: params.booking.hitpay_payment_id,
+      processed_by: params.adminId,
+      processed_at: now,
+      note: nextNote || params.refund.note || null,
+    })
+    .eq("id", params.refund.id);
+
+  if (refundError) {
+    throw new Error(refundError.message);
+  }
+
+  await admin
+    .from("bookings")
+    .update({
+      refund_id: params.refund.id,
+      refunded_at: now,
+      refund_amount: params.refund.refund_amount,
+    })
+    .eq("id", params.booking.id);
+
+  if (params.refund.transaction_id) {
+    await updateTransaction(params.refund.transaction_id, {
+      status: "completed",
+      failure_reason: null,
+      hitpay_refund_id: params.hitpayRefundId ?? params.refund.hitpay_refund_id ?? undefined,
+      external_reference: params.manualReference ?? undefined,
+      external_notes: note || undefined,
+      processed_at: now,
+    });
+  }
+
+  await createTransactionRecord({
+    bookingId: params.booking.id,
+    renterId: params.booking.renter_id,
+    listerId: params.booking.lister_id,
+    eventType: "refund_completed",
+    grossAmount: params.refund.refund_amount,
+    hitpayFee: 0,
+    platformFee: params.refund.platform_fee_retained,
+    netAmount: -params.refund.refund_amount,
+    currency: params.refund.currency,
+    hitpayPaymentRequestId: params.booking.hitpay_payment_request_id,
+    hitpayPaymentId: params.booking.hitpay_payment_id,
+    hitpayRefundId: params.hitpayRefundId ?? params.refund.hitpay_refund_id ?? undefined,
+    externalReference: params.manualReference ?? undefined,
+    externalNotes: note || undefined,
+    idempotencyKey: params.idempotencyKey,
+    triggeredBy: params.adminId,
+    triggeredByRole: "admin",
+    metadata: {
+      refund_id: params.refund.id,
+      manual_reference: params.manualReference ?? null,
+      note,
+    },
+    status: "completed",
+    processedAt: now,
+  });
+
+  await addBookingTimeline({
+    bookingId: params.booking.id,
+    status: params.booking.status,
+    previousStatus: params.booking.status,
+    actorId: params.adminId,
+    actorRole: "admin",
+    title: "Refund completed",
+    description: note || `Refund of ${formatMoney(params.refund.refund_amount)} marked completed.`,
+    metadata: {
+      refund_id: params.refund.id,
+      refund_amount: params.refund.refund_amount,
+      hitpay_refund_id: params.hitpayRefundId ?? params.refund.hitpay_refund_id ?? null,
+      manual_reference: params.manualReference ?? null,
+    },
+  });
+
+  await createNotification({
+    userId: params.booking.renter_id,
+    type: "refund_completed",
+    title: "Refund completed",
+    body: `Refund of ${formatMoney(params.refund.refund_amount, params.refund.currency)} has been marked completed.`,
+    bookingId: params.booking.id,
+    actionUrl: `/dashboard/bookings/${params.booking.id}`,
+  });
+
+  await logAdminAction({
+    adminId: params.adminId,
+    action: params.auditAction,
+    targetType: "booking",
+    targetId: params.booking.id,
+    details: {
+      refund_id: params.refund.id,
+      refund_amount: params.refund.refund_amount,
+      hitpay_refund_id: params.hitpayRefundId ?? params.refund.hitpay_refund_id ?? null,
+      manual_reference: params.manualReference ?? null,
+    },
+  });
+}
+
+function revalidateRefundAdminViews(bookingId?: string | null) {
+  revalidatePath("/admin/refunds");
+  revalidatePath("/admin/transactions");
+  if (bookingId) {
+    revalidatePath(`/admin/bookings/${bookingId}`);
+    revalidatePath(`/dashboard/bookings/${bookingId}`);
+  }
 }
 
 function normalizeForMatching(value: string) {
@@ -2937,6 +3081,271 @@ export async function processCancellationRefund(
     return {
       error:
         error instanceof Error ? error.message : "Could not process refund.",
+    };
+  }
+}
+
+export async function retryRefund(refundId: string): Promise<ActionResponse> {
+  try {
+    const auth = await requireAdminUser();
+    const { refund, booking } = await getRefundWithBooking(refundId);
+
+    if (refund.status === "completed") {
+      return { error: "Refund is already completed." };
+    }
+
+    if (!booking.hitpay_payment_request_id || !booking.hitpay_payment_id) {
+      return { error: "Original HitPay payment references are missing." };
+    }
+
+    await adminMarkRefundProcessing(refund, booking, auth.user.id, "Retrying HitPay refund.");
+
+    try {
+      const hitpayRefund = await createHitPayRefund({
+        paymentRequestId: booking.hitpay_payment_request_id,
+        paymentId: booking.hitpay_payment_id,
+        amount: refund.refund_amount,
+      });
+
+      await completeRefundRecord({
+        refund,
+        booking,
+        adminId: auth.user.id,
+        note: "Refund retried through HitPay and completed.",
+        hitpayRefundId: hitpayRefund.id || null,
+        idempotencyKey: `admin_refund_retry_completed_${refund.id}`,
+        auditAction: "refund_retry_completed",
+      });
+
+      revalidateRefundAdminViews(booking.id);
+      return { success: "Refund retried and marked completed." };
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : "HitPay refund retry failed";
+      const nextStatus = isHitPayExpiredRequestError(error) ? "processing" : "failed";
+
+      await markRefundOperationalState({
+        refund,
+        booking,
+        adminId: auth.user.id,
+        status: nextStatus,
+        failureReason: message,
+        note:
+          nextStatus === "processing"
+            ? "HitPay request is expired or unavailable. Manual refund processing is required."
+            : "HitPay retry failed. Review and process manually if needed.",
+        auditAction: nextStatus === "processing" ? "refund_retry_needs_manual" : "refund_retry_failed",
+      });
+
+      revalidateRefundAdminViews(booking.id);
+      return {
+        error:
+          nextStatus === "processing"
+            ? "HitPay cannot process this refund automatically. It remains in processing for manual handling."
+            : `Refund retry failed: ${message}`,
+      };
+    }
+  } catch (error) {
+    console.error("retryRefund failed:", error);
+    return {
+      error: error instanceof Error ? error.message : "Could not retry refund.",
+    };
+  }
+}
+
+async function adminMarkRefundProcessing(
+  refund: Refund,
+  booking: BookingWithRelations,
+  adminId: string,
+  note: string,
+) {
+  await markRefundOperationalState({
+    refund,
+    booking,
+    adminId,
+    status: "processing",
+    failureReason: null,
+    note,
+    auditAction: "refund_retry_started",
+  });
+}
+
+async function markRefundOperationalState(params: {
+  refund: Refund;
+  booking: BookingWithRelations;
+  adminId: string;
+  status: "processing" | "failed";
+  failureReason: string | null;
+  note: string;
+  auditAction: string;
+}) {
+  const admin = createAdminClient();
+  const existingNote = params.refund.note?.trim();
+  const nextNote = [existingNote, params.note.trim()].filter(Boolean).join("\n\n");
+
+  const { error } = await admin
+    .from("refunds")
+    .update({
+      status: params.status,
+      failure_reason: params.failureReason,
+      processed_by: params.adminId,
+      note: nextNote || params.refund.note || null,
+    })
+    .eq("id", params.refund.id);
+
+  if (error) {
+    throw new Error(error.message);
+  }
+
+  if (params.refund.transaction_id) {
+    await updateTransaction(params.refund.transaction_id, {
+      status: params.status,
+      failure_reason: params.failureReason ?? undefined,
+    });
+  }
+
+  await addBookingTimeline({
+    bookingId: params.booking.id,
+    status: params.booking.status,
+    previousStatus: params.booking.status,
+    actorId: params.adminId,
+    actorRole: "admin",
+    title: params.status === "failed" ? "Refund retry failed" : "Refund processing",
+    description: params.failureReason
+      ? `${params.note} ${params.failureReason}`
+      : params.note,
+    metadata: {
+      refund_id: params.refund.id,
+      status: params.status,
+      failure_reason: params.failureReason,
+    },
+  });
+
+  await logAdminAction({
+    adminId: params.adminId,
+    action: params.auditAction,
+    targetType: "booking",
+    targetId: params.booking.id,
+    details: {
+      refund_id: params.refund.id,
+      status: params.status,
+      failure_reason: params.failureReason,
+    },
+  });
+}
+
+export async function markRefundManuallyProcessed(
+  prevState: ActionResponse | FormData | null,
+  formDataArg?: FormData,
+): Promise<ActionResponse> {
+  void prevState;
+
+  try {
+    const auth = await requireAdminUser();
+    const formData = formDataArg ?? (prevState instanceof FormData ? prevState : null);
+    const refundId = formData?.get("refund_id")?.toString().trim();
+    const reference = formData?.get("reference")?.toString().trim() || null;
+    const note =
+      formData?.get("note")?.toString().trim() ||
+      "Refund manually processed by admin.";
+
+    if (!refundId) {
+      return { error: "refund_id is required." };
+    }
+
+    const { refund, booking } = await getRefundWithBooking(refundId);
+    if (refund.status === "completed") {
+      return { error: "Refund is already completed." };
+    }
+
+    await completeRefundRecord({
+      refund,
+      booking,
+      adminId: auth.user.id,
+      note,
+      manualReference: reference,
+      idempotencyKey: `manual_refund_completed_${refund.id}`,
+      auditAction: "refund_manually_completed",
+    });
+
+    revalidateRefundAdminViews(booking.id);
+    return { success: "Refund marked manually processed." };
+  } catch (error) {
+    console.error("markRefundManuallyProcessed failed:", error);
+    return {
+      error:
+        error instanceof Error ? error.message : "Could not update refund status.",
+    };
+  }
+}
+
+export async function markRefundFailed(
+  prevState: ActionResponse | FormData | null,
+  formDataArg?: FormData,
+): Promise<ActionResponse> {
+  void prevState;
+
+  try {
+    const auth = await requireAdminUser();
+    const formData = formDataArg ?? (prevState instanceof FormData ? prevState : null);
+    const refundId = formData?.get("refund_id")?.toString().trim();
+    const reason = formData?.get("reason")?.toString().trim();
+
+    if (!refundId) {
+      return { error: "refund_id is required." };
+    }
+
+    if (!reason || reason.length < 5) {
+      return { error: "Failure reason must be at least 5 characters." };
+    }
+
+    const { refund, booking } = await getRefundWithBooking(refundId);
+    if (refund.status === "completed") {
+      return { error: "Completed refunds cannot be marked failed." };
+    }
+
+    await markRefundOperationalState({
+      refund,
+      booking,
+      adminId: auth.user.id,
+      status: "failed",
+      failureReason: reason,
+      note: reason,
+      auditAction: "refund_marked_failed",
+    });
+
+    await createTransactionRecord({
+      bookingId: booking.id,
+      renterId: booking.renter_id,
+      listerId: booking.lister_id,
+      eventType: "refund_failed",
+      grossAmount: refund.refund_amount,
+      hitpayFee: 0,
+      platformFee: refund.platform_fee_retained,
+      netAmount: 0,
+      currency: refund.currency,
+      hitpayPaymentRequestId: booking.hitpay_payment_request_id,
+      hitpayPaymentId: booking.hitpay_payment_id,
+      hitpayRefundId: refund.hitpay_refund_id ?? undefined,
+      idempotencyKey: `admin_refund_failed_${refund.id}`,
+      triggeredBy: auth.user.id,
+      triggeredByRole: "admin",
+      metadata: {
+        refund_id: refund.id,
+        reason,
+      },
+      status: "failed",
+      failureReason: reason,
+      processedAt: new Date().toISOString(),
+    });
+
+    revalidateRefundAdminViews(booking.id);
+    return { success: "Refund marked failed." };
+  } catch (error) {
+    console.error("markRefundFailed failed:", error);
+    return {
+      error:
+        error instanceof Error ? error.message : "Could not mark refund failed.",
     };
   }
 }

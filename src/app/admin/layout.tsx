@@ -39,18 +39,28 @@ export default async function AdminLayout({
 
   const displayName =
     profile.display_name || profile.full_name || profile.email || user.email || "Admin";
-  const [{ count: pendingVerificationCount }, { count: pendingKycCount }, failedPayoutsResult] = await Promise.all([
+  const [
+    { count: pendingVerificationCount },
+    { count: pendingKycCount },
+    failedPayoutsResult,
+    actionableRefundsResult,
+  ] = await Promise.all([
     getVerificationQueue(),
     getPendingKYCVerifications(),
     supabase
       .from("payouts")
       .select("id", { count: "exact", head: true })
       .eq("status", "failed"),
+    supabase
+      .from("refunds")
+      .select("id", { count: "exact", head: true })
+      .in("status", ["processing", "failed"]),
   ]);
 
   return (
     <div className="min-h-screen bg-brand-light">
       <AdminSidebar
+        actionableRefundCount={actionableRefundsResult.count ?? 0}
         failedPayoutCount={failedPayoutsResult.count ?? 0}
         pendingVerificationCount={pendingVerificationCount}
         pendingKycCount={pendingKycCount}

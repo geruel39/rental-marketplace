@@ -12,6 +12,7 @@ import {
   ListChecks,
   Package,
   ReceiptText,
+  RotateCcw,
   ScrollText,
   Settings,
   ShieldAlert,
@@ -27,10 +28,12 @@ export function AdminSidebar({
   pendingVerificationCount = 0,
   pendingKycCount = 0,
   failedPayoutCount = 0,
+  actionableRefundCount = 0,
 }: {
   pendingVerificationCount?: number;
   pendingKycCount?: number;
   failedPayoutCount?: number;
+  actionableRefundCount?: number;
 }) {
   const pathname = usePathname();
   const adminSections = [
@@ -65,6 +68,12 @@ export function AdminSidebar({
           label: "Payouts",
           icon: CircleDollarSign,
           count: failedPayoutCount,
+        },
+        {
+          href: "/admin/refunds",
+          label: "Refunds",
+          icon: RotateCcw,
+          count: actionableRefundCount,
         },
         { href: "/admin/transactions", label: "Transactions", icon: WalletCards },
         {
@@ -127,10 +136,11 @@ export function AdminSidebar({
                             className={cn(
                               item.href === "/admin/kyc-verification"
                                 || item.href === "/admin/payouts"
+                                || item.href === "/admin/refunds"
                                 ? "bg-red-600 text-white hover:bg-red-600"
                                 : "bg-brand-sky text-brand-dark hover:bg-brand-sky",
                               isActive &&
-                                (item.href === "/admin/kyc-verification" || item.href === "/admin/payouts"
+                                (item.href === "/admin/kyc-verification" || item.href === "/admin/payouts" || item.href === "/admin/refunds"
                                   ? "bg-white/20 text-white hover:bg-white/20"
                                   : "bg-white/15 text-white hover:bg-white/15"),
                             )}
