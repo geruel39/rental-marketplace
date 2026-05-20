@@ -528,7 +528,7 @@ Purpose: refund records and HitPay refund tracking.
 | `deposit_refund` | `decimal(10,2)` | Yes | `0` | Deposit portion refunded. |
 | `cancellation_fee` | `decimal(10,2)` | Yes | `0` | Cancellation fee withheld. |
 | `cancellation_policy` | `text` | Yes | `null` | Applied policy label. |
-| `hours_before_start` | `integer` | Yes | `null` | Recorded timing. |
+| `hours_before_start` | `integer` | Yes | `null` | Legacy column name; stores elapsed hours since payment for current refund policy. |
 | `currency` | `text` | Yes | `'SGD'` | Currency. |
 | `hitpay_refund_id` | `text` | Yes | `null` | HitPay refund ref. |
 | `hitpay_payment_id` | `text` | Yes | `null` | Original payment id. |
@@ -790,9 +790,9 @@ Seeded keys:
 - `platform_service_fee_renter`
 - `platform_service_fee_lister`
 - `platform_absorbs_hitpay_fee`
-- `cancellation_flexible_full_refund_hours`
-- `cancellation_moderate_full_refund_hours`
-- `cancellation_strict_full_refund_hours`
+- `cancellation_flexible_full_refund_hours` (hours after payment for full flexible-policy renter refund)
+- `cancellation_moderate_full_refund_hours` (hours after payment for full moderate-policy renter refund)
+- `cancellation_strict_full_refund_hours` (hours after payment for full strict-policy renter refund)
 - `payout_delay_days`
 - `max_payout_retry_count`
 
@@ -900,7 +900,7 @@ RLS:
 | `get_available_stock` | Computes remaining stock for a date range. | `p_listing_id`, `p_start_date`, `p_end_date` | `integer` | available for RPC use; not directly used in current app | reads `bookings`, `listings` |
 | `can_user_create_listing` | Returns true if account-specific verification overall status is approved. | `p_user_id uuid default null`, `user_id uuid default null` | `boolean` | verification/payout actions | reads `profiles`, `individual_verifications`, `business_verifications` |
 | `calculate_hitpay_fee` | Calculates fee from `fee_config`. | `p_amount decimal` | `decimal` | available to SQL; app also calculates in TS | reads `fee_config` |
-| `calculate_cancellation_refund` | Computes refund breakdown from booking/listing policy. | `p_booking_id uuid`, `p_cancelled_by text` | `jsonb` | payments refund action | reads `bookings`, `listings`, `fee_config` |
+| `calculate_cancellation_refund` | Computes refund breakdown from booking/listing policy and elapsed hours since payment. | `p_booking_id uuid`, `p_cancelled_by text` | `jsonb` | payments refund action | reads `bookings`, `listings`, `fee_config` |
 | `trigger_auto_payout` | Inserts payout record for completed booking and notifies lister. | `p_booking_id uuid` | `jsonb` | payments `autoTriggerPayout` RPC | inserts `payouts`, updates `bookings.payout_id`, inserts `booking_timeline`, inserts `notifications` |
 | `mark_item_returned_by_renter` | Marks active booking as returned and writes timeline entry. | `p_booking_id`, `p_notes text default null`, `p_photo_urls text[] default []`, `p_user_id uuid default auth.uid()` | `void` | booking return flow RPC | updates `bookings`, inserts `booking_timeline` |
 | `try_acquire_booking_webhook_lock` | Advisory lock wrapper for webhook dedupe. | `p_lock_key bigint` | `boolean` | HitPay webhook route | no row mutation; takes advisory xact lock |
@@ -1026,6 +1026,7 @@ Admin access is enforced by `src/app/admin/layout.tsx` by loading `profiles.is_a
 | `/admin/verifications` | `src/app/admin/verifications/page.tsx` | Verification queue. |
 | `/admin/kyc-verification` | `src/app/admin/kyc-verification/page.tsx` | Bank KYC review queue. |
 | `/admin/payouts` | `src/app/admin/payouts/page.tsx` | Payout operations. |
+| `/admin/refunds` | `src/app/admin/refunds/page.tsx` | Refund operations, manual confirmation, retry/failure handling, and refund breakdown audit. |
 | `/admin/transactions` | `src/app/admin/transactions/page.tsx` | Transaction ledger view. |
 | `/admin/categories` | `src/app/admin/categories/page.tsx` | Category management. |
 | `/admin/inventory` | `src/app/admin/inventory/page.tsx` | Inventory oversight. |
@@ -1263,10 +1264,11 @@ Key admin components and action hooks:
 - `admin-review-table.tsx` `[CC]` calls `hideReview`, `unhideReview`, `flagReview`, `unflagReview`.
 - `admin-category-form.tsx` `[CC]` calls `createCategory`, `updateCategory`.
 - `admin-category-table.tsx` `[CC]` calls `toggleCategoryActive`, `updateCategory`.
-- `platform-settings-form.tsx` `[CC]` calls `updatePlatformSetting`.
+- `platform-settings-form.tsx` `[CC]` calls `updatePlatformSetting` and `updateFeeConfigSetting`; exposes fee settings, payout delay, and cancellation full-refund windows.
 - `kyc-verification-list.tsx` `[CC]` calls `verifyKYC`.
 - `payout-process-dialog.tsx` `[CC]` calls `processPayoutToLister`.
 - `payout-fail-dialog.tsx` `[CC]` calls `markPayoutFailedByAdmin`.
+- `refund-actions.tsx` `[CC]` calls `retryRefund`, `markRefundManuallyProcessed`, and `markRefundFailed`.
 - `expire-unpaid-bookings-button.tsx` `[CC]` calls `expireUnconfirmedBookings`.
 - Read-only/support components: `admin-sidebar`, `admin-page-header`, `admin-chart`, `admin-stats-cards`, `admin-audit-table`, `document-viewer-modal`, `document-viewer-modal-route`.
 
@@ -1345,7 +1347,7 @@ This is the concise action map. All actions live under `src/actions/*.ts`.
 - `confirmReturnAndComplete(...)`
   Lister inspects return, restores stock, marks booking completed, triggers payout, creates extra notifications if damage/missing parts requires deposit review, notifies both parties.
 - `cancelBookingAsRenter(...)`
-  Allows renter cancellation only before active/returned; computes 0-12h / 12-24h / >24h refund overrides, releases stock, cancels booking, adds timeline, calls refund action, notifies lister.
+  Allows renter cancellation only before active/returned; releases stock, cancels booking, calls policy-based refund processing, adds timeline, notifies lister.
 - `raiseDispute(bookingId, reason)`
   Active/returned only; updates to `disputed`, adds timeline, notifies other party and admins, calls `holdPaymentForDispute`.
 - `getIncomingBookings(userId, status?)`
@@ -1382,7 +1384,7 @@ This is the concise action map. All actions live under `src/actions/*.ts`.
 - `handlePaymentConfirmed(params)`
   Idempotently records paid booking state, transaction, timeline, and notifications.
 - `processCancellationRefund(bookingId, options?)`
-  Uses override amounts or RPC refund calculation, inserts refund/transaction rows, calls HitPay refund API, updates booking refund fields, adds timeline, notifies renter/admins on failure.
+  Uses override amounts or RPC refund calculation, inserts refund/transaction rows, calls HitPay refund API, updates booking refund fields, adds timeline, and routes failed/expired HitPay refunds to admin follow-up.
 - `handleFailedPayout(payoutId, failureReason)`
   Marks payout failed and notifies lister/admins.
 - `processPayoutToLister(payoutId, adminId?)`
@@ -1734,20 +1736,20 @@ Cancellation and dispute exits:
 
 ### Cancellation refund rules implemented in app
 
-The app-level renter cancellation logic in `cancelBookingAsRenter` is authoritative for current UX:
+Current renter cancellation uses `calculate_cancellation_refund` through `processCancellationRefund`:
 
-- `<= 12 hours since payment`: 100% refund of `total_price`.
-- `> 12 and <= 24 hours since payment`: 50% of rental subtotal plus full deposit.
-- `> 24 hours since payment`: deposit only.
+- Flexible / moderate / strict full-refund windows are stored in `fee_config` as hours after payment and are editable from `/admin/settings`.
+- Within the configured full-refund window: refund rental subtotal plus deposit; renter service fee is retained.
+- Outside the configured window: flexible and moderate refund 50% of rental subtotal plus deposit; strict refunds deposit only.
 
 Lister cancellation / auto-cancel:
 
-- Full refund.
+- Full refund of `total_price`.
 - Listing is paused when lister cancels or times out.
 
 Important note:
 
-- SQL function `calculate_cancellation_refund` uses listing cancellation policy and **hours since payment**, not actual hours before start date, so current repo has policy logic plus app overrides. The app applies explicit overrides for renter cancellations and uses RPC/default logic otherwise.
+- SQL function `calculate_cancellation_refund` uses listing cancellation policy and **hours since payment**, not actual hours before start date. The legacy refund column `hours_before_start` stores this elapsed-hours value for compatibility.
 
 ### Payment flow
 
@@ -1926,6 +1928,7 @@ Implementation:
 - Calls HitPay refund API via existing payment request/payment ids.
 - Tracks `pending` -> `completed` / `processing` / `failed`.
 - On expired/unavailable HitPay refund scenarios, admins are notified for manual processing.
+- `/admin/refunds` lists pending/processing/failed/completed refunds, highlights action-needed refunds, shows policy/timing and amount breakdowns, and lets admins retry HitPay, mark manual completion, or mark failed.
 
 ## 15. Notification System
 
