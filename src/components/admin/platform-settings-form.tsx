@@ -46,6 +46,9 @@ type SettingsState = {
 
 type FeeConfigState = {
   payout_delay_days: number;
+  cancellation_flexible_full_refund_hours: number;
+  cancellation_moderate_full_refund_hours: number;
+  cancellation_strict_full_refund_hours: number;
 };
 
 function toNumber(value: JsonValue | undefined, fallback: number) {
@@ -92,7 +95,7 @@ function SettingHint({
   metadata,
 }: {
   label: string;
-  settingKey: keyof SettingsState;
+  settingKey: string;
   metadata: Record<string, SettingMeta | undefined>;
 }) {
   const details = metadata[settingKey];
@@ -123,6 +126,18 @@ export function PlatformSettingsForm({
   const initialFeeState = useMemo<FeeConfigState>(
     () => ({
       payout_delay_days: toNumber(initialFeeConfig.payout_delay_days, 1),
+      cancellation_flexible_full_refund_hours: toNumber(
+        initialFeeConfig.cancellation_flexible_full_refund_hours,
+        24,
+      ),
+      cancellation_moderate_full_refund_hours: toNumber(
+        initialFeeConfig.cancellation_moderate_full_refund_hours,
+        72,
+      ),
+      cancellation_strict_full_refund_hours: toNumber(
+        initialFeeConfig.cancellation_strict_full_refund_hours,
+        168,
+      ),
     }),
     [initialFeeConfig],
   );
@@ -219,6 +234,77 @@ export function PlatformSettingsForm({
               }
               type="number"
               value={feeState.payout_delay_days}
+            />
+          </div>
+        </CardContent>
+      </Card>
+
+      <Card className="border-border/70 bg-white shadow-sm">
+        <CardHeader>
+          <CardTitle>Refund Policy</CardTitle>
+        </CardHeader>
+        <CardContent className="grid gap-5 md:grid-cols-3">
+          <div className="space-y-2">
+            <SettingHint
+              label="Flexible full refund window"
+              metadata={metadata}
+              settingKey="cancellation_flexible_full_refund_hours"
+            />
+            <p className="text-xs text-muted-foreground">
+              Hours after payment where renter cancellations refund subtotal and deposit.
+            </p>
+            <Input
+              min={0}
+              onChange={(event) =>
+                updateFeeField(
+                  "cancellation_flexible_full_refund_hours",
+                  Number(event.target.value) || 0,
+                )
+              }
+              type="number"
+              value={feeState.cancellation_flexible_full_refund_hours}
+            />
+          </div>
+          <div className="space-y-2">
+            <SettingHint
+              label="Moderate full refund window"
+              metadata={metadata}
+              settingKey="cancellation_moderate_full_refund_hours"
+            />
+            <p className="text-xs text-muted-foreground">
+              Hours after payment where renter cancellations refund subtotal and deposit.
+            </p>
+            <Input
+              min={0}
+              onChange={(event) =>
+                updateFeeField(
+                  "cancellation_moderate_full_refund_hours",
+                  Number(event.target.value) || 0,
+                )
+              }
+              type="number"
+              value={feeState.cancellation_moderate_full_refund_hours}
+            />
+          </div>
+          <div className="space-y-2">
+            <SettingHint
+              label="Strict full refund window"
+              metadata={metadata}
+              settingKey="cancellation_strict_full_refund_hours"
+            />
+            <p className="text-xs text-muted-foreground">
+              Hours after payment where renter cancellations refund subtotal and deposit.
+            </p>
+            <Input
+              min={0}
+              onChange={(event) =>
+                updateFeeField(
+                  "cancellation_strict_full_refund_hours",
+                  Number(event.target.value) || 0,
+                )
+              }
+              type="number"
+              value={feeState.cancellation_strict_full_refund_hours}
             />
           </div>
         </CardContent>

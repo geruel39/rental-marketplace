@@ -15,13 +15,17 @@ import {
 } from "@/components/ui/table";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { cn, formatCurrency, formatDate } from "@/lib/utils";
-import type { Booking, Listing, Profile, Refund } from "@/types";
+import type { Booking, Listing, Profile, Refund, Transaction } from "@/types";
 
 type SearchParams = Record<string, string | string[] | undefined>;
 type RefundStatus = Refund["status"] | "all";
 
 type AdminRefundRowRaw = Refund & {
   renter: Profile | Profile[] | null;
+  transaction:
+    | Pick<Transaction, "external_reference" | "external_notes">
+    | Array<Pick<Transaction, "external_reference" | "external_notes">>
+    | null;
   booking:
     | (Booking & {
         listing: Pick<Listing, "id" | "title"> | Array<Pick<Listing, "id" | "title">> | null;
@@ -38,6 +42,7 @@ type AdminRefundRowRaw = Refund & {
 
 type AdminRefundRow = Refund & {
   renter: Profile;
+  transaction: Pick<Transaction, "external_reference" | "external_notes"> | null;
   booking: Booking & {
     listing: Pick<Listing, "id" | "title"> | null;
     lister: Profile | null;
@@ -86,6 +91,7 @@ export default async function AdminRefundsPage({
     .select(
       `
         *,
+        transaction:transactions!refunds_transaction_id_fkey(external_reference, external_notes),
         renter:profiles!refunds_renter_id_fkey(*),
         booking:bookings!refunds_booking_id_fkey(
           *,
@@ -119,6 +125,7 @@ export default async function AdminRefundsPage({
   const refunds = ((data ?? []) as AdminRefundRowRaw[])
     .map((refund) => {
       const renter = unwrapRelation(refund.renter);
+      const transaction = unwrapRelation(refund.transaction);
       const booking = unwrapRelation(refund.booking);
       const listing = unwrapRelation(booking?.listing);
       const lister = unwrapRelation(booking?.lister);
@@ -129,6 +136,7 @@ export default async function AdminRefundsPage({
 
       return {
         ...refund,
+        transaction,
         renter,
         booking: {
           ...booking,
@@ -253,12 +261,14 @@ export default async function AdminRefundsPage({
                     </TableCell>
                     <TableCell className="max-w-[220px]">
                       <p className="capitalize">{refund.refund_reason.replaceAll("_", " ")}</p>
+                      <RefundPolicyDetails compact refund={refund} />
                       {refund.failure_reason ? (
                         <p className="mt-1 text-xs text-rose-700">{refund.failure_reason}</p>
                       ) : null}
                     </TableCell>
                     <TableCell className="font-semibold">
                       {formatCurrency(refund.refund_amount, refund.currency)}
+                      <RefundAmountBreakdown compact refund={refund} />
                     </TableCell>
                     <TableCell>
                       <RefundStatusBadge status={refund.status} />
@@ -328,12 +338,22 @@ function ActionRefundCard({ refund }: { refund: AdminRefundRow }) {
             <RefundStatusBadge status={refund.status} />
           </div>
           <p className="text-sm text-muted-foreground">
-            {refund.booking.listing?.title ?? `Booking ${refund.booking_id.slice(0, 8)}`} ·{" "}
+            {refund.booking.listing?.title ?? `Booking ${refund.booking_id.slice(0, 8)}`} -{" "}
             {formatCurrency(refund.refund_amount, refund.currency)}
           </p>
+          <RefundPolicyDetails refund={refund} />
+          <RefundAmountBreakdown refund={refund} />
           <p className="text-sm text-rose-700">
             {refund.failure_reason ?? "Manual processing or retry is required."}
           </p>
+          {refund.transaction?.external_reference ? (
+            <p className="text-sm text-muted-foreground">
+              Manual reference: {refund.transaction.external_reference}
+            </p>
+          ) : null}
+          {refund.note ? (
+            <p className="max-w-3xl text-sm text-muted-foreground">{refund.note}</p>
+          ) : null}
           <div className="flex flex-wrap gap-3 text-sm">
             <Link className="font-medium text-brand-navy hover:underline" href={`/admin/bookings/${refund.booking_id}`}>
               View booking
@@ -346,5 +366,50 @@ function ActionRefundCard({ refund }: { refund: AdminRefundRow }) {
         <RefundActions refund={refund} />
       </div>
     </div>
+  );
+}
+
+function getPolicyText(refund: Refund) {
+  const policy = refund.cancellation_policy?.replaceAll("_", " ") ?? "not recorded";
+  const hoursSincePayment = refund.hours_before_start;
+
+  if (typeof hoursSincePayment === "number") {
+    return `${policy} policy - ${hoursSincePayment} hours since payment`;
+  }
+
+  return `${policy} policy`;
+}
+
+function RefundPolicyDetails({
+  refund,
+  compact = false,
+}: {
+  refund: Refund;
+  compact?: boolean;
+}) {
+  return (
+    <p className={cn("text-muted-foreground", compact ? "mt-1 text-xs" : "text-sm")}>
+      {getPolicyText(refund)}
+    </p>
+  );
+}
+
+function RefundAmountBreakdown({
+  refund,
+  compact = false,
+}: {
+  refund: Refund;
+  compact?: boolean;
+}) {
+  const items = [
+    `Deposit ${formatCurrency(refund.deposit_refund ?? 0, refund.currency)}`,
+    `Cancellation fee ${formatCurrency(refund.cancellation_fee ?? 0, refund.currency)}`,
+    `Platform retained ${formatCurrency(refund.platform_fee_retained ?? 0, refund.currency)}`,
+  ];
+
+  return (
+    <p className={cn("text-muted-foreground", compact ? "mt-1 text-xs font-normal" : "text-sm")}>
+      {items.join(" | ")}
+    </p>
   );
 }

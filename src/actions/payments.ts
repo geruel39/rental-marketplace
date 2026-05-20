@@ -2877,6 +2877,7 @@ export async function processCancellationRefund(
         deposit_refund: depositRefund,
         cancellation_fee: cancellationFee,
         cancellation_policy: policyApplied,
+        // Legacy DB column name; the value is now elapsed hours since payment.
         hours_before_start: hoursSincePayment,
         currency: "SGD",
         hitpay_payment_id: booking.hitpay_payment_id,

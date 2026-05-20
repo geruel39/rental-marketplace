@@ -117,7 +117,7 @@ CREATE TABLE IF NOT EXISTS refunds (
   
   -- Cancellation policy applied
   cancellation_policy TEXT,
-  hours_before_start INTEGER,                        -- How early was cancelled
+  hours_before_start INTEGER,                        -- Legacy name; stores hours since payment
   
   currency TEXT DEFAULT 'SGD',
   
@@ -212,9 +212,9 @@ INSERT INTO fee_config (key, value, description) VALUES
   ('platform_service_fee_renter', 0.05, 'Platform service fee charged to renter (5%)'),
   ('platform_service_fee_lister', 0.05, 'Platform fee deducted from lister payout (5%)'),
   ('platform_absorbs_hitpay_fee', 0, 'Set to 1 if platform absorbs HitPay fee, 0 if renter pays'),
-  ('cancellation_flexible_full_refund_hours', 24, 'Hours before start for full refund (flexible policy)'),
-  ('cancellation_moderate_full_refund_hours', 72, 'Hours before start for full refund (moderate policy)'),
-  ('cancellation_strict_full_refund_hours', 168, 'Hours before start for full refund (strict = 7 days)'),
+  ('cancellation_flexible_full_refund_hours', 24, 'Hours after payment for full refund (flexible policy)'),
+  ('cancellation_moderate_full_refund_hours', 72, 'Hours after payment for full refund (moderate policy)'),
+  ('cancellation_strict_full_refund_hours', 168, 'Hours after payment for full refund (strict = 7 days)'),
   ('payout_delay_days', 1, 'Days after rental completion before auto-payout triggers'),
   ('max_payout_retry_count', 3, 'Max times lister can retry a failed payout')
 ON CONFLICT (key) DO NOTHING;
@@ -307,7 +307,7 @@ AS $$
 DECLARE
   v_booking RECORD;
   v_listing RECORD;
-  v_hours_before_start INTEGER;
+  v_hours_since_payment INTEGER;
   v_full_refund_hours INTEGER;
   v_refund_amount DECIMAL;
   v_cancellation_fee DECIMAL;
@@ -358,9 +358,9 @@ BEGIN
     );
   END IF;
 
-  -- Calculate hours since payment (approximate hours before rental start)
-  -- Since we don't have a fixed start date, we use hours since payment
-  v_hours_before_start := EXTRACT(EPOCH FROM (NOW() - v_booking.paid_at)) / 3600;
+  -- Calculate elapsed hours since the renter paid. Older application code stores
+  -- this value in refunds.hours_before_start for schema compatibility.
+  v_hours_since_payment := EXTRACT(EPOCH FROM (NOW() - v_booking.paid_at)) / 3600;
 
   -- Get full refund threshold based on policy
   CASE COALESCE(v_listing.cancellation_policy, 'flexible')
@@ -378,7 +378,7 @@ BEGIN
   END CASE;
 
   -- Determine refund amount
-  IF v_hours_before_start <= v_full_refund_hours THEN
+  IF v_hours_since_payment <= v_full_refund_hours THEN
     -- Within full refund window: refund everything except service fee
     -- Platform retains its service fee (renter's portion)
     v_refund_amount := v_booking.subtotal + v_booking.deposit_amount;
@@ -419,7 +419,7 @@ BEGIN
     'deposit_refund', v_deposit_refund,
     'reason', v_reason,
     'policy_applied', v_listing.cancellation_policy,
-    'hours_since_payment', v_hours_before_start,
+    'hours_since_payment', v_hours_since_payment,
     'full_refund_threshold_hours', v_full_refund_hours
   );
 END;

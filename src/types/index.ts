@@ -544,6 +544,7 @@ export interface Refund {
   deposit_refund: number;
   cancellation_fee: number;
   cancellation_policy?: string;
+  /** Legacy DB column name; value stores hours elapsed since payment. */
   hours_before_start?: number;
   currency: string;
   hitpay_refund_id?: string;
