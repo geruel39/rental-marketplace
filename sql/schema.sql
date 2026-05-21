@@ -409,7 +409,16 @@ CREATE POLICY "profiles_update" ON profiles
 
 -- LISTINGS POLICIES
 CREATE POLICY "listings_select" ON listings
-  FOR SELECT USING (status = 'active' OR owner_id = auth.uid());
+  FOR SELECT USING (
+    status = 'active'
+    OR owner_id = auth.uid()
+    OR EXISTS (
+      SELECT 1
+      FROM bookings
+      WHERE bookings.listing_id = listings.id
+        AND auth.uid() IN (bookings.renter_id, bookings.lister_id)
+    )
+  );
 CREATE POLICY "listings_insert" ON listings
   FOR INSERT WITH CHECK (auth.uid() = owner_id);
 CREATE POLICY "listings_update" ON listings

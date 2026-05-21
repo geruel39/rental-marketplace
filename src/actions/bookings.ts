@@ -55,6 +55,12 @@ const PAYMENT_EXPIRY_HOURS = 24;
 const PROOFS_BUCKET = "booking-proofs";
 const MAX_PROOF_PHOTOS = 5;
 const MAX_PROOF_FILE_BYTES = 10 * 1024 * 1024;
+const BOOKING_WITH_DETAILS_SELECT = `
+  *,
+  listing:listings!bookings_listing_id_fkey(*),
+  renter:profiles!bookings_renter_id_fkey(*),
+  lister:profiles!bookings_lister_id_fkey(*)
+`;
 
 type SupabaseClient = Awaited<ReturnType<typeof createClient>>;
 type AdminSupabaseClient = ReturnType<typeof createAdminClient>;
@@ -148,6 +154,43 @@ function unwrapRelation<T>(value: MaybeArray<T>): T | null {
   }
 
   return value ?? null;
+}
+
+function hasCompleteBookingRelations(booking: BookingRecord) {
+  return Boolean(
+    unwrapRelation(booking.listing) &&
+      unwrapRelation(booking.renter) &&
+      unwrapRelation(booking.lister),
+  );
+}
+
+async function hydrateMissingBookingRelations(
+  bookings: BookingRecord[],
+): Promise<BookingRecord[]> {
+  const missingIds = bookings
+    .filter((booking) => !hasCompleteBookingRelations(booking))
+    .map((booking) => booking.id);
+
+  if (missingIds.length === 0) {
+    return bookings;
+  }
+
+  const admin = createAdminClient();
+  const { data, error } = await admin
+    .from("bookings")
+    .select(BOOKING_WITH_DETAILS_SELECT)
+    .in("id", missingIds);
+
+  if (error) {
+    console.error("hydrateMissingBookingRelations failed:", error);
+    return bookings;
+  }
+
+  const hydratedById = new Map(
+    ((data ?? []) as BookingRecord[]).map((booking) => [booking.id, booking]),
+  );
+
+  return bookings.map((booking) => hydratedById.get(booking.id) ?? booking);
 }
 
 function getActorDisplayName(profile: Profile | null, fallback?: string | null) {
@@ -453,14 +496,7 @@ async function getBookingRecord(
   async function fetchBooking() {
     return supabase
       .from("bookings")
-      .select(
-        `
-          *,
-          listing:listings!bookings_listing_id_fkey(*),
-          renter:profiles!bookings_renter_id_fkey(*),
-          lister:profiles!bookings_lister_id_fkey(*)
-        `,
-      )
+      .select(BOOKING_WITH_DETAILS_SELECT)
       .eq("id", bookingId)
       .maybeSingle<BookingRecord>();
   }
@@ -487,7 +523,21 @@ async function getBookingRecord(
   const lister = unwrapRelation(data.lister);
 
   if (!listing || !renter || !lister) {
-    throw new Error("Booking relations are incomplete");
+    const [hydrated] = await hydrateMissingBookingRelations([data]);
+    const hydratedListing = unwrapRelation(hydrated.listing);
+    const hydratedRenter = unwrapRelation(hydrated.renter);
+    const hydratedLister = unwrapRelation(hydrated.lister);
+
+    if (!hydratedListing || !hydratedRenter || !hydratedLister) {
+      throw new Error("Booking relations are incomplete");
+    }
+
+    return {
+      ...hydrated,
+      listing: hydratedListing,
+      renter: hydratedRenter,
+      lister: hydratedLister,
+    };
   }
 
   return { ...data, listing, renter, lister };
@@ -1628,14 +1678,7 @@ export async function getIncomingBookings(
     const supabase = await createClient();
     let query = supabase
       .from("bookings")
-      .select(
-        `
-          *,
-          listing:listings!bookings_listing_id_fkey(*),
-          renter:profiles!bookings_renter_id_fkey(*),
-          lister:profiles!bookings_lister_id_fkey(*)
-        `,
-      )
+      .select(BOOKING_WITH_DETAILS_SELECT)
       .eq("lister_id", userId)
       .order("created_at", { ascending: false });
 
@@ -1648,7 +1691,13 @@ export async function getIncomingBookings(
       throw error;
     }
 
-    return (data ?? []).flatMap((booking) => {
+    const bookings = await hydrateMissingBookingRelations(
+      ((data ?? []) as BookingRecord[]).filter(
+        (booking) => booking.lister_id === userId,
+      ),
+    );
+
+    return bookings.flatMap((booking) => {
       const typed = booking as BookingRecord;
       const isPaid =
         Boolean(typed.paid_at) && typed.hitpay_payment_status === "completed";
@@ -1678,14 +1727,7 @@ export async function getMyRentals(
     const supabase = await createClient();
     let query = supabase
       .from("bookings")
-      .select(
-        `
-          *,
-          listing:listings!bookings_listing_id_fkey(*),
-          renter:profiles!bookings_renter_id_fkey(*),
-          lister:profiles!bookings_lister_id_fkey(*)
-        `,
-      )
+      .select(BOOKING_WITH_DETAILS_SELECT)
       .eq("renter_id", userId)
       .order("created_at", { ascending: false });
 
@@ -1698,7 +1740,13 @@ export async function getMyRentals(
       throw error;
     }
 
-    return (data ?? []).flatMap((booking) => {
+    const bookings = await hydrateMissingBookingRelations(
+      ((data ?? []) as BookingRecord[]).filter(
+        (booking) => booking.renter_id === userId,
+      ),
+    );
+
+    return bookings.flatMap((booking) => {
       const typed = booking as BookingRecord;
       const isPaid =
         Boolean(typed.paid_at) && typed.hitpay_payment_status === "completed";
