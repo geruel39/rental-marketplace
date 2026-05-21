@@ -1225,24 +1225,24 @@ async function createHitPayRefund(params: {
     throw new Error("Missing required environment variable: HITPAY_API_KEY");
   }
 
-  const body = new URLSearchParams({
-    amount: roundMoney(params.amount).toFixed(2),
-    payment_id: params.paymentId,
-  });
+  void params.paymentRequestId;
 
-  const response = await fetch(
-    `${getHitPayApiUrl()}/payment-requests/${params.paymentRequestId}/refund`,
-    {
-      method: "POST",
-      headers: {
-        "X-BUSINESS-API-KEY": apiKey,
-        "X-Requested-With": "XMLHttpRequest",
-        "Content-Type": "application/x-www-form-urlencoded",
-      },
-      body: body.toString(),
-      cache: "no-store",
+  const body = {
+    amount: roundMoney(params.amount),
+    payment_id: params.paymentId,
+    send_email: "false",
+  };
+
+  const response = await fetch(`${getHitPayApiUrl()}/refund`, {
+    method: "POST",
+    headers: {
+      "X-BUSINESS-API-KEY": apiKey,
+      "X-Requested-With": "XMLHttpRequest",
+      "Content-Type": "application/json",
     },
-  );
+    body: JSON.stringify(body),
+    cache: "no-store",
+  });
 
   const rawText = await response.text();
   if (!response.ok) {
